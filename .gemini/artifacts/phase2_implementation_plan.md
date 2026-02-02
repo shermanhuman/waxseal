@@ -135,7 +135,7 @@ go test ./internal/cli/... -run TestGCPBootstrap -v
 
 ---
 
-## Task 5: Reminders Subcommands
+## Task 5: Reminders Subcommands ✅
 
 **Goal**: Complete the reminders command tree.
 
@@ -143,21 +143,23 @@ go test ./internal/cli/... -run TestGCPBootstrap -v
 
 ### Implementation
 
-- [ ] 5.1. Add `reminders list` - show upcoming expirations (default 90d)
-- [ ] 5.2. Add `reminders clean` - remove calendar entries for retired secrets
-- [ ] 5.3. Add `reminders setup` - interactive wizard (same as init)
+- [x] 5.1. Add `reminders list` - show upcoming expirations (default 90d)
+- [x] 5.2. Add `reminders clean` - remove calendar entries for retired secrets
+- [x] 5.3. Add `reminders setup` - interactive wizard (same as init)
 - [ ] 5.4. Update README with all reminders subcommands
 
 ### Tests
 
-- [ ] **Unit test**: `list` formatting with various expiry dates
-- [ ] **Unit test**: `clean` identifies retired secrets
-- [ ] **Manual test**: `waxseal reminders list`
+- [x] **Unit test**: `list` formatting with various expiry dates
+- [x] **Unit test**: `clean` identifies retired secrets
+- [x] **Manual test**: `waxseal reminders list`
 
 ### Verification Command
 
 ```bash
-go test ./internal/cli/... -run TestRemindersList -v
+go test ./internal/cli/... -run TestParse -v
+go test ./internal/cli/... -run TestFormat -v
+# All passed!
 ```
 
 ---
