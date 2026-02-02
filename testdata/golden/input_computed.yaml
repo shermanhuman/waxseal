@@ -1,0 +1,37 @@
+shortName: golden-computed
+manifestPath: apps/golden/computed-sealed-secret.yaml
+sealedSecret:
+  name: db-secret
+  namespace: app
+  scope: strict
+status: active
+keys:
+  - keyName: db_user
+    source:
+      kind: gsm
+    gsm:
+      secretResource: projects/test/secrets/db-user
+      version: "1"
+    rotation:
+      mode: manual
+  - keyName: db_pass
+    source:
+      kind: gsm
+    gsm:
+      secretResource: projects/test/secrets/db-pass
+      version: "1"
+    rotation:
+      mode: manual
+  - keyName: DATABASE_URL
+    source:
+      kind: computed
+    computed:
+      kind: template
+      template: "postgresql://{{user}}:{{pass}}@db.example.com:5432/mydb"
+      inputs:
+        - var: user
+          ref:
+            keyName: db_user
+        - var: pass
+          ref:
+            keyName: db_pass

@@ -223,7 +223,7 @@ go test ./internal/seal/... -run TestCertFingerprint -v
 
 ---
 
-## Task 8: Golden Tests
+## Task 8: Golden Tests ✅
 
 **Goal**: Ensure stable YAML output format.
 
@@ -231,23 +231,27 @@ go test ./internal/seal/... -run TestCertFingerprint -v
 
 ### Implementation
 
-- [ ] 8.1. Create `testdata/golden/` directory
-- [ ] 8.2. Add golden test inputs (SealedSecret manifests)
-- [ ] 8.3. Add expected outputs
-- [ ] 8.4. Create `internal/reseal/golden_test.go`
+- [x] 8.1. Create `testdata/golden/` directory
+- [x] 8.2. Add golden test inputs (SealedSecret manifests)
+- [x] 8.3. Add expected outputs
+- [x] 8.4. Create `internal/reseal/golden_test.go`
   - Compare output against golden files
   - Stable key ordering
   - Deterministic formatting
 
 ### Tests
 
-- [ ] **Unit test**: Golden comparisons pass
-- [ ] **Update golden**: `go test ./... -update-golden` flag
+- [x] **Golden test**: Opaque secret
+- [x] **Golden test**: Docker registry secret with scope
+- [x] **Golden test**: Computed keys
+- [x] **Golden test**: Key ordering (alphabetical)
+- [x] **Golden test**: Idempotency
 
 ### Verification Command
 
 ```bash
 go test ./internal/reseal/... -run TestGolden -v
+# All passed!
 ```
 
 ---

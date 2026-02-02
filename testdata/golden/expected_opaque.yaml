@@ -1,0 +1,10 @@
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: opaque-secret
+  namespace: default
+spec:
+  encryptedData:
+    api_key: SEALED:default/opaque-secret/api_key=api-key-value
+    password: SEALED:default/opaque-secret/password=password-value
+    username: SEALED:default/opaque-secret/username=user-value

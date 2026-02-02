@@ -1,0 +1,17 @@
+shortName: golden-docker
+manifestPath: apps/golden/docker-sealed-secret.yaml
+sealedSecret:
+  name: docker-registry
+  namespace: infra
+  scope: namespace-wide
+  type: kubernetes.io/dockerconfigjson
+status: active
+keys:
+  - keyName: .dockerconfigjson
+    source:
+      kind: gsm
+    gsm:
+      secretResource: projects/test/secrets/docker-config
+      version: "1"
+    rotation:
+      mode: manual

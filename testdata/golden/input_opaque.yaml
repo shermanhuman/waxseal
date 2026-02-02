@@ -1,0 +1,36 @@
+shortName: golden-opaque
+manifestPath: apps/golden/opaque-sealed-secret.yaml
+sealedSecret:
+  name: opaque-secret
+  namespace: default
+  scope: strict
+  type: Opaque
+status: active
+keys:
+  - keyName: password
+    source:
+      kind: gsm
+    gsm:
+      secretResource: projects/test/secrets/password
+      version: "1"
+    rotation:
+      mode: manual
+  - keyName: api_key
+    source:
+      kind: gsm
+    gsm:
+      secretResource: projects/test/secrets/api-key
+      version: "2"
+    rotation:
+      mode: generated
+      generator:
+        kind: randomBase64
+        bytes: 32
+  - keyName: username
+    source:
+      kind: gsm
+    gsm:
+      secretResource: projects/test/secrets/username
+      version: "1"
+    rotation:
+      mode: manual

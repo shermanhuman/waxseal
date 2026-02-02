@@ -1,0 +1,10 @@
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: db-secret
+  namespace: app
+spec:
+  encryptedData:
+    DATABASE_URL: SEALED:app/db-secret/DATABASE_URL=postgresql://admin:secret123@db.example.com:5432/mydb
+    db_pass: SEALED:app/db-secret/db_pass=secret123
+    db_user: SEALED:app/db-secret/db_user=admin
