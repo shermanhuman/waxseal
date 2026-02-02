@@ -1,0 +1,15 @@
+# Make line endings deterministic across OSes.
+# Store and check out text files with LF.
+* text=auto eol=lf
+
+# Common binary formats
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.tgz binary
+*.7z binary
