@@ -9,7 +9,7 @@ This document tracks the remaining features from `.plan/` that are not yet imple
 
 ---
 
-## Task 1: Retire Command
+## Task 1: Retire Command ✅
 
 **Goal**: Allow operators to mark secrets as retired and optionally remove manifests.
 
@@ -17,20 +17,20 @@ This document tracks the remaining features from `.plan/` that are not yet imple
 
 ### Implementation
 
-- [ ] 1.1. Create `internal/cli/retire.go`
+- [x] 1.1. Create `internal/cli/retire.go`
   - Mark metadata `status: retired`, set `retiredAt`, `retireReason`
   - Optionally delete manifest file with `--delete-manifest` flag
   - Optionally clear reminders with `--clear-reminders` flag
-- [ ] 1.2. Add retirement validation to `validate` command
+- [x] 1.2. Add retirement validation to `validate` command
   - Warn if retired secret manifest still exists
 - [ ] 1.3. Update README with `retire` command usage
 
 ### Tests
 
-- [ ] **Unit test**: `retire` updates metadata correctly
-- [ ] **Unit test**: `retire --delete-manifest` removes file
-- [ ] **Integration test**: Retired secrets are skipped by `reseal --all`
-- [ ] **Manual test**: Run `waxseal retire my-secret --dry-run`
+- [x] **Unit test**: `retire` updates metadata correctly
+- [x] **Unit test**: `retire --delete-manifest` removes file
+- [x] **Integration test**: Retired secrets are skipped by `reseal --all`
+- [x] **Manual test**: Run `waxseal retire my-secret --dry-run`
 
 ### Verification Command
 
