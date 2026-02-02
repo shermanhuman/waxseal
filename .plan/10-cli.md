@@ -119,6 +119,9 @@
 - `waxseal gcp bootstrap`
   - Opinionated, deterministic provisioning for the GCP project that backs GSM.
   - Cross-platform (built into the Go binary); no standalone scripts.
+  - Depends on `gcloud` being installed and already authenticated.
+    - waxseal shells out to `gcloud` for project/IAM/API setup (avoid re-implementing billing/IAM edge cases).
+    - If `gcloud` is missing or not authenticated, fail closed with actionable instructions.
   - Responsibilities (v1):
     - optionally create the project and link billing
     - enable required APIs (Secret Manager, IAM, STS, etc)

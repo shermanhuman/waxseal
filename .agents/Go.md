@@ -22,6 +22,8 @@ See `.agents/Formats.md` for the YAML vs JSON policy.
 - Keep dependencies minimal and pinned
 - Prefer Go subcommands over repo scripts for operator workflows (portable, reviewable, versioned).
 
+For cloud provisioning flows (e.g., GCP bootstrap), it is acceptable (and preferred in v1) to shell out to vendor CLIs like `gcloud`, assuming operators already have them installed and authenticated.
+
 ## Formats
 
 - Repo config/metadata: YAML (`.waxseal/config.yaml`, `.waxseal/metadata/*.yaml`).

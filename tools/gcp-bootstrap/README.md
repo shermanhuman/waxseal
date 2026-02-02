@@ -1,22 +1,9 @@
 # GCP bootstrap (waxseal)
 
-Run the script to create/configure a dedicated GCP project for waxseal.
+Deprecated: the v1 plan removes repo scripts for bootstrap.
 
-- No service account keys.
-- GitHub Actions uses OIDC → Workload Identity Federation.
-- Least-privilege custom roles.
+Use the cross-platform Go command instead:
 
-## Run (PowerShell)
+- `waxseal gcp bootstrap` (implemented in Go; shells out to `gcloud` which must already be installed and authenticated)
 
-```powershell
-cd tools/gcp-bootstrap
-./gcp-bootstrap.ps1 -ProjectId <project-id> -CreateProject -BillingAccountId <billing-id> -FolderId <folder-id> -GitHubRepo <owner/repo>
-```
-
-If the project already exists, omit `-CreateProject` and billing/folder/org flags.
-
-Optional:
-
-- `-EnableRemindersApi` to enable `calendar.googleapis.com`.
-- `-DefaultBranchRef refs/heads/main` to restrict GitHub OIDC to a branch.
-- `-SecretsPrefix waxseal-` to scope Secret Manager access by naming convention.
+The canonical behavior and flags live in the planning docs under `.plan/`.

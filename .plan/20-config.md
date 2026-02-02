@@ -86,6 +86,7 @@ GSM guidance (implementation relevant):
 Provisioning guidance (operator workflow):
 
 - Prefer deterministic, no-click-ops GCP-side setup via `waxseal gcp bootstrap`.
+  - v1 implementation shells out to `gcloud` (assumed installed and already authenticated).
 - For CI: prefer Workload Identity Federation (GitHub OIDC) instead of long-lived secrets.
 
 Calendar guidance (implementation relevant):
