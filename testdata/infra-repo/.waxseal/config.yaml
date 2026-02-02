@@ -1,0 +1,22 @@
+version: "1"
+store:
+  kind: gsm
+  projectId: waxseal-test-project
+controller:
+  namespace: kube-system
+  serviceName: sealed-secrets
+cert:
+  repoCertPath: keys/pub-cert.pem
+  verifyAgainstCluster: true
+discovery:
+  includeGlobs:
+    - "apps/**/*.yaml"
+  excludeGlobs:
+    - "apps/**/kustomization.yaml"
+reminders:
+  enabled: true
+  provider: google-calendar
+  calendarId: primary
+  leadTimeDays: [30, 7, 1]
+  auth:
+    kind: adc

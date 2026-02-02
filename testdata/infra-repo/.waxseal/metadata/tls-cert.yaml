@@ -1,0 +1,31 @@
+shortName: tls-cert
+manifestPath: apps/ingress/tls-sealed-secret.yaml
+sealedSecret:
+  name: wildcard-tls
+  namespace: ingress-nginx
+  scope: cluster-wide
+  type: kubernetes.io/tls
+status: active
+keys:
+  - keyName: tls.crt
+    source:
+      kind: gsm
+    gsm:
+      secretResource: projects/waxseal-test-project/secrets/wildcard-tls-cert
+      version: "5"
+    rotation:
+      mode: external
+    expiry:
+      expiresAt: "2026-03-01T00:00:00Z"
+      source: certificate
+  - keyName: tls.key
+    source:
+      kind: gsm
+    gsm:
+      secretResource: projects/waxseal-test-project/secrets/wildcard-tls-key
+      version: "5"
+    rotation:
+      mode: external
+    expiry:
+      expiresAt: "2026-03-01T00:00:00Z"
+      source: certificate

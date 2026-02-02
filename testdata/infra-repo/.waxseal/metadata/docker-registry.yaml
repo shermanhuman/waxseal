@@ -1,0 +1,17 @@
+shortName: docker-registry
+manifestPath: apps/shared/docker-registry-sealed-secret.yaml
+sealedSecret:
+  name: docker-registry-creds
+  namespace: default
+  scope: namespace-wide
+  type: kubernetes.io/dockerconfigjson
+status: active
+keys:
+  - keyName: .dockerconfigjson
+    source:
+      kind: gsm
+    gsm:
+      secretResource: projects/waxseal-test-project/secrets/docker-registry-config
+      version: "2"
+    rotation:
+      mode: external

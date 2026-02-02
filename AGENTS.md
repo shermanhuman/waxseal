@@ -7,13 +7,15 @@
 - **Go**: 1.25.x
 - **CLI**: github.com/spf13/cobra (skip Viper - use direct YAML parsing)
 - **YAML**: sigs.k8s.io/yaml
-- **Logging**: stdlib `log/slog`
+- **Logging**: stdlib `log/slog` with `Redacted` type
+- **GCP**: cloud.google.com/go/secretmanager, google.golang.org/api/calendar
 
 ## Commands
 
 ```bash
 go build ./...   # Build
 go test ./...    # Test
+go run ./cmd/waxseal --help  # Run from source
 ```
 
 ## Planning Documents
@@ -36,14 +38,34 @@ go test ./...    # Test
 ```
 cmd/waxseal/main.go     # Thin entry point
 internal/
-  cli/                  # Cobra commands
-  core/                 # Domain types + interfaces
+  cli/                  # Cobra commands, user interaction
+  core/                 # Domain types (errors, metadata), no I/O
   config/               # Config loading/validation
-  files/                # Atomic writes, file walking
-  seal/                 # kubeseal integration
-  store/                # Secret store interface (GSM)
-  reminders/            # Calendar integration
+  files/                # Atomic writes, YAML validators
+  seal/                 # Sealer interface, SealedSecret parsing
+  store/                # Store interface (GSM), FakeStore
+  template/             # Computed key templates, cycle detection
+  reseal/               # Orchestration engine
+  reminders/            # Calendar provider interface
+  logging/              # Redacted type, safe structured logging
+testdata/
+  infra-repo/           # Test fixture repo structure
 ```
+
+## Package Responsibilities
+
+| Package      | Responsibility                                             |
+| ------------ | ---------------------------------------------------------- |
+| `cli/`       | Cobra commands, user interaction, output formatting        |
+| `core/`      | Domain types (SecretMetadata, errors), **no I/O**          |
+| `config/`    | Config loading, validation, defaults                       |
+| `files/`     | Atomic writes, YAML validators                             |
+| `seal/`      | Sealer interface, hybrid encryption, SealedSecret parsing  |
+| `store/`     | Store interface, FakeStore for testing, GSM implementation |
+| `template/`  | Computed key templates, cycle detection                    |
+| `reminders/` | Calendar provider interface, Google Calendar               |
+| `reseal/`    | Orchestration (fetch → compute → seal → write)             |
+| `logging/`   | Redacted type, safe structured logging                     |
 
 ## Critical Rules
 
@@ -61,6 +83,62 @@ internal/
 - Validate output before replacing files
 - Return errors with context: `fmt.Errorf("context: %w", err)`
 
+## Error Handling
+
+**Sentinel errors** in `core/errors.go`:
+
+- `ErrNotFound` - Resource not found
+- `ErrPermissionDenied` - Access denied
+- `ErrValidation` - Invalid input
+- `ErrCycle` - Dependency cycle
+- `ErrAlreadyExists` - Resource exists
+- `ErrRetired` - Secret is retired
+
+**Usage:**
+
+```go
+// Check sentinel
+if errors.Is(err, core.ErrValidation) { ... }
+
+// Wrap with context
+return core.WrapNotFound("projects/x/secrets/foo", err)
+return core.NewValidationError("version", "must be numeric")
+```
+
+## Testing Patterns
+
+### Test Fakes
+
+| Fake           | Location                | Purpose                  |
+| -------------- | ----------------------- | ------------------------ |
+| `FakeStore`    | `store/fake.go`         | In-memory GSM mock       |
+| `FakeSealer`   | `seal/sealer.go`        | Deterministic encryption |
+| `FakeProvider` | `reminders/calendar.go` | Mock calendar API        |
+
+### Using FakeStore
+
+```go
+store := store.NewFakeStore()
+store.SetVersion("projects/p/secrets/s", "1", []byte("value"))
+data, _ := store.AccessVersion(ctx, "projects/p/secrets/s", "1")
+```
+
+### Using FakeSealer
+
+```go
+sealer := seal.NewFakeSealer()
+encrypted, _ := sealer.Seal("name", "ns", "key", []byte("val"), "strict")
+// Returns: "SEALED:ns/name/key=val"
+```
+
+### Test Fixtures
+
+- `testdata/infra-repo/` - Complete repo structure
+  - `.waxseal/config.yaml` - Sample config
+  - `.waxseal/metadata/` - Sample metadata files
+  - `apps/` - Sample SealedSecret manifests
+  - `keys/pub-cert.pem` - Certificate placeholder
+
 ## File Formats
 
 - **Repo config/metadata**: YAML (`.waxseal/config.yaml`, `.waxseal/metadata/*.yaml`)
@@ -72,3 +150,23 @@ internal/
 
 - See `.agent/workflows/go-dev.md` for Go development guidelines
 - See `.agent/workflows/formats.md` for format decisions
+
+## Exit Codes
+
+| Code | Meaning                                  |
+| ---- | ---------------------------------------- |
+| 0    | Success                                  |
+| 1    | Partial failure (some operations failed) |
+| 2    | Complete failure / validation error      |
+
+## Security Logging
+
+Never log secret values. Use the `Redacted` type:
+
+```go
+import "github.com/shermanhuman/waxseal/internal/logging"
+
+secret := logging.Redacted("super-secret-value")
+logging.Info("processing", "value", secret)
+// Logs: "value=[REDACTED]"
+```
