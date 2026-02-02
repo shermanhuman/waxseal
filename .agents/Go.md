@@ -20,6 +20,7 @@ See `.agents/Formats.md` for the YAML vs JSON policy.
 - Safe writes (atomic, never leave partial/garbage YAML)
 - Never log secrets
 - Keep dependencies minimal and pinned
+- Prefer Go subcommands over repo scripts for operator workflows (portable, reviewable, versioned).
 
 ## Formats
 

@@ -27,7 +27,7 @@
      - Recommended for teams: create a dedicated shared calendar and grant write access to the identity used by ADC, then set its `calendarId`.
   4) Verify access: waxseal performs a non-destructive Calendar API call (list calendars or create+delete a probe event) and fails closed with actionable error output.
 
-  Note: prefer bootstrapping the GCP project/IAM via `tools/gcp-bootstrap/` rather than manual console steps.
+  Note: GCP-side provisioning is not a script in v1. Use `waxseal gcp bootstrap` (or let `init` offer to run it) to keep setup deterministic and cross-platform.
 
 - `waxseal discover`
   - Discover existing SealedSecret manifests in a repo and register them into `.waxseal/` metadata.
@@ -115,6 +115,25 @@
   - Explicitly push plaintext from cluster into GSM to establish the GSM-as-source-of-truth model.
   - In practice, this is normally invoked via `waxseal init` (happy path).
   - If reminders are enabled, auto-sync reminders for any keys that have `expiry.expiresAt`.
+
+- `waxseal gcp bootstrap`
+  - Opinionated, deterministic provisioning for the GCP project that backs GSM.
+  - Cross-platform (built into the Go binary); no standalone scripts.
+  - Responsibilities (v1):
+    - optionally create the project and link billing
+    - enable required APIs (Secret Manager, IAM, STS, etc)
+    - create service accounts for separate trust boundaries (CI vs operator)
+    - create/update custom roles (least privilege)
+    - bind IAM roles with IAM Conditions scoped by secret-name prefix
+    - optionally configure Workload Identity Federation for GitHub Actions OIDC
+  - Suggested flags (v1):
+    - `--project-id` (required)
+    - `--create-project` (optional)
+    - `--billing-account-id`, `--folder-id` or `--org-id` (required if creating project)
+    - `--github-repo <owner/repo>` + `--default-branch-ref refs/heads/main` (optional)
+    - `--enable-reminders-api` (optional, enables Calendar API)
+    - `--secrets-prefix waxseal-` (optional, default `waxseal-`)
+    - `--dry-run` (optional)
 
 - `waxseal reminders`
   - Surface and synchronize expiration reminders.
