@@ -85,7 +85,33 @@ func (e *Engine) ResealAll(ctx context.Context) ([]*Result, error) {
 		}
 
 		shortName := strings.TrimSuffix(entry.Name(), ".yaml")
-		result, err := e.ResealOne(ctx, shortName)
+
+		// Check if retired before attempting reseal
+		metadataPath := filepath.Join(metadataDir, entry.Name())
+		data, err := os.ReadFile(metadataPath)
+		if err != nil {
+			results = append(results, &Result{
+				ShortName: shortName,
+				Error:     err,
+			})
+			continue
+		}
+		metadata, err := core.ParseMetadata(data)
+		if err != nil {
+			results = append(results, &Result{
+				ShortName: shortName,
+				Error:     err,
+			})
+			continue
+		}
+
+		// Skip retired secrets silently
+		if metadata.IsRetired() {
+			logging.Info("skipping retired secret", "shortName", shortName)
+			continue
+		}
+
+		result, err := e.resealFromMetadata(ctx, metadata)
 		if err != nil {
 			// Record error but continue with other secrets
 			results = append(results, &Result{

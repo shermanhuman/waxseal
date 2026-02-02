@@ -266,6 +266,77 @@ keys:
 	}
 }
 
+// TestRetiredSecretSkippedByResealAll verifies reseal --all skips retired secrets.
+func TestRetiredSecretSkippedByResealAll(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	setupTestRepo(t, dir)
+
+	// Create an active secret
+	active := `shortName: active-secret
+manifestPath: apps/active/sealed-secret.yaml
+sealedSecret:
+  name: active-secret
+  namespace: active
+  scope: strict
+status: active
+keys:
+  - keyName: key
+    source:
+      kind: gsm
+    gsm:
+      secretResource: projects/test/secrets/active
+      version: "1"
+    rotation:
+      mode: manual
+`
+	// Create a retired secret
+	retired := `shortName: retired-secret
+manifestPath: apps/retired/sealed-secret.yaml
+sealedSecret:
+  name: retired-secret
+  namespace: retired
+  scope: strict
+status: retired
+retiredAt: "2025-01-01T00:00:00Z"
+retireReason: "No longer needed"
+keys:
+  - keyName: key
+    source:
+      kind: gsm
+    gsm:
+      secretResource: projects/test/secrets/retired
+      version: "1"
+    rotation:
+      mode: manual
+`
+	writeFile(t, filepath.Join(dir, ".waxseal", "metadata", "active-secret.yaml"), active)
+	writeFile(t, filepath.Join(dir, ".waxseal", "metadata", "retired-secret.yaml"), retired)
+	os.MkdirAll(filepath.Join(dir, "apps", "active"), 0o755)
+	os.MkdirAll(filepath.Join(dir, "apps", "retired"), 0o755)
+
+	// Setup store
+	fakeStore := store.NewFakeStore()
+	fakeStore.SetVersion("projects/test/secrets/active", "1", []byte("active-value"))
+	fakeStore.SetVersion("projects/test/secrets/retired", "1", []byte("retired-value"))
+
+	engine := reseal.NewEngine(fakeStore, seal.NewFakeSealer(), dir, false)
+	results, err := engine.ResealAll(ctx)
+	if err != nil {
+		t.Fatalf("ResealAll failed: %v", err)
+	}
+
+	// Should only have 1 result (active secret)
+	if len(results) != 1 {
+		t.Errorf("len(results) = %d, want 1 (retired should be skipped)", len(results))
+	}
+
+	// The result should be for the active secret
+	if results[0].ShortName != "active-secret" {
+		t.Errorf("result.ShortName = %q, want %q", results[0].ShortName, "active-secret")
+	}
+}
+
 // TestMissingGSMSecretFails verifies proper error when GSM secret is missing.
 func TestMissingGSMSecretFails(t *testing.T) {
 	ctx := context.Background()
