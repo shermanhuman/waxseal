@@ -136,6 +136,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 			var orgID string
 			orgs, _ := GetOrganizations()
 			if len(orgs) > 0 {
+				fmt.Printf("Found %d organizations.\n", len(orgs))
 				var options []huh.Option[string]
 				for _, o := range orgs {
 					// Name is "organizations/12345", we need "12345"
@@ -145,12 +146,18 @@ func runInit(cmd *cobra.Command, args []string) error {
 				}
 				options = append(options, huh.NewOption("No Organization (Standalone)", ""))
 
-				err = huh.NewSelect[string]().
+				sel := huh.NewSelect[string]().
 					Title("Organization").
 					Description("Select where to create the project").
 					Options(options...).
 					Value(&orgID).
-					Run()
+					Filtering(true)
+
+				if len(options) > 5 {
+					sel.Height(8)
+				}
+
+				err = sel.Run()
 				if err != nil {
 					return err
 				}
