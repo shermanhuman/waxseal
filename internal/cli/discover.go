@@ -1,13 +1,12 @@
 package cli
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
+	"github.com/charmbracelet/huh"
 	"github.com/shermanhuman/waxseal/internal/config"
 	"github.com/shermanhuman/waxseal/internal/seal"
 	"github.com/spf13/cobra"
@@ -103,35 +102,74 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	fmt.Printf("Found %d SealedSecret manifests:\n\n", len(found))
+	// Separate new vs already-registered secrets
+	var newSecrets []discoveredSecret
+	var shortNames []string
 
-	reader := bufio.NewReader(os.Stdin)
-
-	// Process each discovered secret
+	// Process each discovered secret to categorize
 	for _, ds := range found {
 		shortName := deriveShortName(ds.sealedSecret.Metadata.Namespace, ds.sealedSecret.Metadata.Name)
 		metadataPath := filepath.Join(metadataDir, shortName+".yaml")
 
-		// Check if already registered
+		// Skip already registered
 		if _, err := os.Stat(metadataPath); err == nil {
-			fmt.Printf("  %-30s (already registered)\n", shortName)
 			continue
 		}
+		newSecrets = append(newSecrets, ds)
+		shortNames = append(shortNames, shortName)
+	}
 
-		fmt.Printf("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-		fmt.Printf("Secret: %s\n", shortName)
-		fmt.Printf("  Namespace: %s\n", ds.sealedSecret.Metadata.Namespace)
-		fmt.Printf("  Name:      %s\n", ds.sealedSecret.Metadata.Name)
-		fmt.Printf("  Path:      %s\n", ds.path)
-		fmt.Printf("  Keys:      %v\n", ds.sealedSecret.GetEncryptedKeys())
-		fmt.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
+	// Show what we found
+	if len(found) == 0 {
+		fmt.Println("No SealedSecret manifests found.")
+		return nil
+	}
+
+	fmt.Printf("\n📦 Found %d SealedSecret manifest(s):\n\n", len(found))
+	for _, ds := range found {
+		shortName := deriveShortName(ds.sealedSecret.Metadata.Namespace, ds.sealedSecret.Metadata.Name)
+		metadataPath := filepath.Join(metadataDir, shortName+".yaml")
+		status := "new"
+		if _, err := os.Stat(metadataPath); err == nil {
+			status = "already registered"
+		}
+		fmt.Printf("  • %-40s [%s]\n", shortName, status)
+		fmt.Printf("    Path: %s\n", ds.path)
+		fmt.Printf("    Keys: %v\n\n", ds.sealedSecret.GetEncryptedKeys())
+	}
+
+	if len(newSecrets) == 0 {
+		fmt.Println("All discovered secrets are already registered.")
+		return nil
+	}
+
+	// Explain next steps
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Printf("\n🔧 Next: Configure metadata for %d new secret(s)\n\n", len(newSecrets))
+	fmt.Println("For each secret, waxseal needs to know:")
+	fmt.Println("  • How each key value is rotated (generated, external, or unknown)")
+	fmt.Println("  • Whether any keys are templated (composed from other values)")
+	fmt.Println("")
+	fmt.Println("This metadata enables waxseal to:")
+	fmt.Println("  • Automatically re-seal secrets when certificates change")
+	fmt.Println("  • Guide you through rotation with the correct steps")
+	fmt.Println("  • Track expiration dates and send reminders")
+	fmt.Println("")
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	// Process each new secret
+	for i, ds := range newSecrets {
+		shortName := shortNames[i]
+		metadataPath := filepath.Join(metadataDir, shortName+".yaml")
+
+		fmt.Printf("\n📋 Configuring: %s (%d/%d)\n", shortName, i+1, len(newSecrets))
 
 		var stub string
 		if discoverNonInteractive {
 			stub = generateMetadataStub(ds, shortName, projectID, nil, "", "", "")
 		} else {
 			// Interactive mode
-			description, documentation, owner, keyConfigs, err := runInteractiveWizard(reader, ds, shortName, projectID)
+			description, documentation, owner, keyConfigs, err := runInteractiveWizard(ds, shortName, projectID)
 			if err != nil {
 				return err
 			}
@@ -173,7 +211,7 @@ type discoveredSecret struct {
 
 type keyConfig struct {
 	keyName    string
-	sourceKind string // "gsm" (default) or "computed"
+	sourceKind string // "gsm" (default) or "templated"
 
 	// GSM fields
 	gsmResource  string
@@ -183,7 +221,7 @@ type keyConfig struct {
 	genType   string // randomBase64, randomHex
 	genLength string // keep as string for simple input handling
 
-	// Computed fields
+	// Templated fields
 	template string
 
 	expiry string
@@ -197,7 +235,7 @@ func deriveShortName(namespace, name string) string {
 	return short
 }
 
-func runInteractiveWizard(reader *bufio.Reader, ds discoveredSecret, shortName, projectID string) (string, string, string, []keyConfig, error) {
+func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) (string, string, string, []keyConfig, error) {
 	keys := ds.sealedSecret.GetEncryptedKeys()
 	configs := make([]keyConfig, 0, len(keys))
 
@@ -205,113 +243,117 @@ func runInteractiveWizard(reader *bufio.Reader, ds discoveredSecret, shortName, 
 
 	// Ask for project if not configured
 	if projectID == "" {
-		fmt.Print("GCP Project ID: ")
-		input, _ := reader.ReadString('\n')
-		projectID = strings.TrimSpace(input)
+		err := huh.NewInput().
+			Title("GCP Project ID").
+			Description("The GCP project where your secrets are stored").
+			Placeholder("<PROJECT>").
+			Value(&projectID).
+			Run()
+		if err != nil {
+			return "", "", "", nil, err
+		}
 		if projectID == "" {
 			projectID = "<PROJECT>"
 		}
 	}
 
-	// Secret-level metadata
-	fmt.Printf("\nMetadata for %s:\n", shortName)
+	// Secret-level metadata (optional)
+	err := huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Description").
+				Description("Brief description of this secret (optional)").
+				Value(&description),
+			huh.NewInput().
+				Title("Documentation URL").
+				Description("Link to runbook or docs (optional)").
+				Value(&documentation),
+			huh.NewInput().
+				Title("Owner").
+				Description("Team or person responsible (optional)").
+				Value(&owner),
+		).Title(fmt.Sprintf("Metadata for %s", shortName)),
+	).Run()
+	if err != nil {
+		return "", "", "", nil, err
+	}
 
-	fmt.Print("  Description (optional): ")
-	input, _ := reader.ReadString('\n')
-	description = strings.TrimSpace(input)
-
-	fmt.Print("  Documentation URL (optional): ")
-	input, _ = reader.ReadString('\n')
-	documentation = strings.TrimSpace(input)
-
-	fmt.Print("  Owner (optional, e.g. team-name): ")
-	input, _ = reader.ReadString('\n')
-	owner = strings.TrimSpace(input)
-
-	fmt.Println("\nConfigure each key:")
-	fmt.Println("  Sources: gsm (default), computed")
-	fmt.Println("  Rotation modes: manual, generated, external, unknown")
-	fmt.Println()
+	// Configure each key
+	fmt.Printf("\n🔑 Configuring %d key(s):\n", len(keys))
 
 	for _, keyName := range keys {
 		config := keyConfig{keyName: keyName}
 
-		// Source kind
-		fmt.Printf("  [%s] Source kind [gsm/computed] (Enter for gsm): ", keyName)
-		input, _ = reader.ReadString('\n')
-		input = strings.TrimSpace(strings.ToLower(input))
-		if input == "computed" || input == "c" {
-			config.sourceKind = "computed"
-			fmt.Printf("    Template (e.g. {{.password}}): ")
-			tmpl, _ := reader.ReadString('\n')
-			config.template = strings.TrimSpace(tmpl)
-			fmt.Println("    (Note: You will need to edit the metadata file to map inputs)")
+		fmt.Printf("\n  Key: %s\n", keyName)
+
+		// Is this key templated (composed from other values)?
+		var isTemplated bool
+		err := huh.NewConfirm().
+			Title("Is this key templated?").
+			Description("Templated keys are composed from other values using a template\n(e.g., a DATABASE_URL built from username, password, host, port)").
+			Affirmative("Yes, it's templated").
+			Negative("No, it's a standalone value").
+			Value(&isTemplated).
+			Run()
+		if err != nil {
+			return "", "", "", nil, err
+		}
+
+		if isTemplated {
+			config.sourceKind = "templated"
+			var template string
+			err := huh.NewInput().
+				Title("Template").
+				Description("Use {{varName}} for variables (e.g., postgresql://{{username}}:{{password}}@{{host}}/{{db}})").
+				Placeholder("postgresql://{{username}}:{{password}}@{{host}}:{{port}}/{{db}}").
+				Value(&template).
+				Run()
+			if err != nil {
+				return "", "", "", nil, err
+			}
+			config.template = template
+			fmt.Println("    ℹ️  Edit the metadata file to map template inputs to other keys")
 		} else {
 			config.sourceKind = "gsm"
 
-			// Generate default GSM resource
-			defaultGSM := fmt.Sprintf("projects/%s/secrets/%s-%s", projectID, shortName, sanitizeGSMName(keyName))
-
-			// GSM Resource
-			fmt.Printf("    GSM resource (Enter for default):\n")
-			fmt.Printf("      Default: %s\n", defaultGSM)
-			fmt.Print("      > ")
-			input, _ = reader.ReadString('\n')
-			input = strings.TrimSpace(input)
-			if input == "" {
-				config.gsmResource = defaultGSM
-			} else {
-				config.gsmResource = input
-			}
+			// Generate default GSM resource using manifest filename + secret name
+			manifestBase := strings.TrimSuffix(filepath.Base(ds.path), filepath.Ext(ds.path))
+			defaultGSM := fmt.Sprintf("projects/%s/secrets/%s-%s", projectID, manifestBase, sanitizeGSMName(keyName))
+			config.gsmResource = defaultGSM
 
 			// Rotation mode
-			fmt.Printf("    Rotation mode [manual/generated/external/unknown] (Enter for manual): ")
-			input, _ = reader.ReadString('\n')
-			input = strings.TrimSpace(strings.ToLower(input))
-			switch input {
-			case "generated", "g":
-				config.rotationMode = "generated"
-				fmt.Printf("      Generator type [randomBase64/randomHex] (Enter for randomBase64): ")
-				gt, _ := reader.ReadString('\n')
-				gt = strings.TrimSpace(gt)
-				if gt == "" {
-					gt = "randomBase64"
-				}
-				config.genType = gt
-
-				fmt.Printf("      Length (Enter for 32): ")
-				classes, _ := reader.ReadString('\n')
-				classes = strings.TrimSpace(classes)
-				// reusing var names lazily? No, 'genLength'
-				if classes == "" {
-					classes = "32"
-				}
-				config.genLength = classes
-
-			case "external", "e":
-				config.rotationMode = "external"
-
-			case "unknown", "u":
-				config.rotationMode = "unknown"
-			default:
-				config.rotationMode = "manual"
+			err := huh.NewSelect[string]().
+				Title("How is this key rotated?").
+				Description("This helps waxseal guide you through rotation").
+				Options(
+					huh.NewOption("Unknown - I'm not sure yet (safe default)", "unknown"),
+					huh.NewOption("Generated - waxseal can auto-generate (random bytes, tokens)", "generated"),
+					huh.NewOption("External - rotated by an external system (API portal, vendor)", "external"),
+				).
+				Value(&config.rotationMode).
+				Run()
+			if err != nil {
+				return "", "", "", nil, err
 			}
 
-			// Expiry (optional)
-			fmt.Printf("    Expiry date (YYYY-MM-DD, Enter to skip): ")
-			input, _ = reader.ReadString('\n')
-			input = strings.TrimSpace(input)
-			if input != "" {
-				if _, err := time.Parse("2006-01-02", input); err == nil {
-					config.expiry = input
-				} else {
-					fmt.Printf("      ⚠ Invalid date format, skipping expiry\n")
+			// If generated, ask for generator config
+			if config.rotationMode == "generated" {
+				err := huh.NewSelect[string]().
+					Title("Generator type").
+					Options(
+						huh.NewOption("Random Base64 (URL-safe, good for tokens)", "randomBase64"),
+						huh.NewOption("Random Hex (hexadecimal string)", "randomHex"),
+					).
+					Value(&config.genType).
+					Run()
+				if err != nil {
+					return "", "", "", nil, err
 				}
+				config.genLength = "32" // Default length
 			}
 		}
 
 		configs = append(configs, config)
-		fmt.Println()
 	}
 
 	return description, documentation, owner, configs, nil
@@ -344,7 +386,7 @@ func generateMetadataStub(ds discoveredSecret, shortName, projectID string, keyC
 			kc.sourceKind = "gsm"
 		}
 
-		if kc.sourceKind == "computed" {
+		if kc.sourceKind == "templated" {
 			keys.WriteString(fmt.Sprintf(`  - keyName: %s
     source:
       kind: computed
