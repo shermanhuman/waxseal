@@ -287,11 +287,13 @@ func EnsureGcloudADC(scopes ...string) error {
 	}
 
 	if _, err := os.Stat(adcPath); os.IsNotExist(err) {
-		fmt.Println("GCP Application Default Credentials (ADC) not found.")
+		fmt.Println("Application Default Credentials (ADC) missing.")
+		fmt.Println("  (Note: This is separate from 'gcloud auth login'. ADC is required for WaxSeal to call APIs.)")
+
 		if len(scopes) > 0 {
 			fmt.Println("Additional access scopes required: " + strings.Join(scopes, ", "))
 		} else {
-			fmt.Println("WaxSeal's backend requires these to talk to the Secret Manager API.")
+			fmt.Println("WaxSeal needs these credentials to talk to Secret Manager.")
 		}
 
 		fmt.Print("Run 'gcloud auth application-default login' now? [Y/n]: ")
@@ -403,4 +405,25 @@ func GetBillingAccounts() ([]GCPBillingAccount, error) {
 	}
 
 	return accounts, nil
+}
+
+// GetProjects returns a list of available GCP projects
+func GetProjects() ([]GCPProject, error) {
+	cmd := exec.Command("gcloud", "projects", "list", "--format=json", "--limit=50")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list projects: %w", err)
+	}
+
+	var projects []GCPProject
+	if err := json.Unmarshal(output, &projects); err != nil {
+		return nil, fmt.Errorf("failed to parse projects: %w", err)
+	}
+
+	return projects, nil
+}
+
+type GCPProject struct {
+	ProjectID string `json:"projectId"`
+	Name      string `json:"name"`
 }

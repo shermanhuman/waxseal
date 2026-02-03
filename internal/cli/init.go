@@ -219,20 +219,46 @@ func runInit(cmd *cobra.Command, args []string) error {
 				return err
 			}
 
-			// Get project ID with huh input
-			err = huh.NewInput().
-				Title("GCP Project ID").
-				Description("The human-readable project slug (e.g. my-app-prod)").
-				Value(&projectID).
-				Validate(func(s string) error {
-					if s == "" {
-						return fmt.Errorf("project ID is required")
-					}
-					return nil
-				}).
-				Run()
-			if err != nil {
-				return err
+			// Try to list projects
+			projects, _ := GetProjects()
+			var options []huh.Option[string]
+			for _, p := range projects {
+				label := fmt.Sprintf("%s (%s)", p.Name, p.ProjectID)
+				options = append(options, huh.NewOption(label, p.ProjectID))
+			}
+			options = append(options, huh.NewOption("Enter manually...", "manual"))
+
+			if len(options) > 1 {
+				var choice string
+				err = huh.NewSelect[string]().
+					Title("Select GCP Project").
+					Options(options...).
+					Value(&choice).
+					Filtering(true).
+					Run()
+				if err != nil {
+					return err
+				}
+				if choice != "manual" {
+					projectID = choice
+				}
+			}
+
+			if projectID == "" {
+				err = huh.NewInput().
+					Title("GCP Project ID").
+					Description("The human-readable project slug (e.g. my-app-prod)").
+					Value(&projectID).
+					Validate(func(s string) error {
+						if s == "" {
+							return fmt.Errorf("project ID is required")
+						}
+						return nil
+					}).
+					Run()
+				if err != nil {
+					return err
+				}
 			}
 		}
 	}
