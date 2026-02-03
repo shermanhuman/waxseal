@@ -221,18 +221,25 @@ func runGCPBootstrap(cmd *cobra.Command, args []string) error {
 			fmt.Printf("[DRY RUN] %s\n", c.desc)
 			fmt.Printf("  gcloud %s\n\n", strings.Join(c.args, " "))
 		} else {
-			fmt.Printf("→ %s...\n", c.desc)
-			if err := runGcloud(c.args...); err != nil {
+			var runErr error
+			_ = spinner.New().
+				Title(fmt.Sprintf("%s...", c.desc)).
+				Type(spinner.Dots).
+				Action(func() {
+					runErr = runGcloud(c.args...)
+				}).
+				Run()
+
+			if runErr != nil {
 				// If it's an "already exists" error, we can proceed (idempotent)
-				if strings.Contains(strings.ToLower(err.Error()), "already exists") {
-					fmt.Printf("  Already exists, skipping\n")
+				if strings.Contains(strings.ToLower(runErr.Error()), "already exists") {
+					fmt.Printf("✓ %s (already done)\n", c.desc)
 				} else {
 					// Critical failure - stop execution
-					fmt.Printf("  ERROR: %v\n", err)
-					return fmt.Errorf("step '%s' failed", c.desc)
+					return fmt.Errorf("step '%s' failed: %v", c.desc, runErr)
 				}
 			} else {
-				fmt.Printf("  ✓ Done\n")
+				fmt.Printf("✓ %s\n", c.desc)
 			}
 		}
 	}
