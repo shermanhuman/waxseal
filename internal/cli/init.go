@@ -278,6 +278,26 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Offer reminders setup
+	if !initNonInteractive {
+		fmt.Println()
+		var setupReminders bool
+		err := huh.NewConfirm().
+			Title("Set up expiration reminders?").
+			Description("Create Google Calendar events for secret rotation reminders.\nRequires Calendar API enabled in your GCP project.").
+			Value(&setupReminders).
+			Run()
+		if err == nil && setupReminders {
+			fmt.Println()
+			fmt.Println("Running reminders setup...")
+			remindersSetupCmd.SetArgs([]string{})
+			if err := remindersSetupCmd.Execute(); err != nil {
+				fmt.Printf("⚠️  Reminders setup failed: %v\n", err)
+				fmt.Println("   You can run 'waxseal reminders setup' later.")
+			}
+		}
+	}
+
 	fmt.Println()
 	fmt.Println("✓ WaxSeal initialization complete!")
 	fmt.Println()

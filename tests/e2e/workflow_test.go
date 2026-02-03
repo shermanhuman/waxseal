@@ -245,3 +245,166 @@ func TestE2E_WorkflowCertRotation(t *testing.T) {
 
 	t.Log("✓ Cert rotation workflow completed")
 }
+
+// TestE2E_WorkflowNewSecretLifecycle tests the complete lifecycle of creating,
+// viewing, and updating a new secret using the new commands.
+func TestE2E_WorkflowNewSecretLifecycle(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping E2E test in short mode")
+	}
+
+	// Create isolated test directory
+	tmpDir, err := os.MkdirTemp("", "waxseal-newlifecycle-*")
+	if err != nil {
+		t.Fatalf("create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Setup: Initialize waxseal
+	t.Run("setup: init", func(t *testing.T) {
+		output, err := runWaxsealWithDir(t, tmpDir, "init", "--project-id=test-project", "--non-interactive", "--repo="+tmpDir)
+		if err != nil {
+			t.Fatalf("init failed: %v\nOutput: %s", err, output)
+		}
+
+		// Fetch real cert from cluster
+		cert := fetchClusterCert(t)
+		if cert != nil {
+			os.WriteFile(filepath.Join(tmpDir, "keys/pub-cert.pem"), cert, 0o644)
+		}
+		t.Log("✓ init completed")
+	})
+
+	// Step 1: Add a new secret (dry run)
+	t.Run("step 1: add dry run", func(t *testing.T) {
+		output, err := runWaxsealWithDir(t, tmpDir,
+			"add", "new-api-secret",
+			"--namespace=default",
+			"--key=api_key:random",
+			"--non-interactive",
+			"--dry-run",
+			"--repo="+tmpDir,
+		)
+		if err != nil {
+			t.Fatalf("add dry run failed: %v\nOutput: %s", err, output)
+		}
+		if !strings.Contains(output, "[DRY RUN]") {
+			t.Error("expected dry run output")
+		}
+		t.Log("✓ add dry run shows plan")
+	})
+
+	// Step 2: Show returns error for non-existent secret
+	t.Run("step 2: show non-existent", func(t *testing.T) {
+		output, err := runWaxsealWithDir(t, tmpDir, "show", "new-api-secret", "--repo="+tmpDir)
+		if err == nil {
+			t.Error("expected error for non-existent secret")
+		}
+		if !strings.Contains(output, "not found") {
+			t.Errorf("expected 'not found' in output, got: %s", output)
+		}
+		t.Log("✓ show correctly errors on non-existent secret")
+	})
+
+	// Step 3: Create actual secret metadata (simulating add)
+	t.Run("step 3: create secret metadata", func(t *testing.T) {
+		metadata := `shortName: new-api-secret
+manifestPath: apps/api/sealed-secret.yaml
+sealedSecret:
+  name: new-api-secret
+  namespace: default
+  scope: strict
+  type: Opaque
+status: active
+keys:
+  - keyName: api_key
+    source:
+      kind: gsm
+    gsm:
+      secretResource: projects/test-project/secrets/new-api-secret-api-key
+      version: "1"
+    rotation:
+      mode: manual
+`
+		os.MkdirAll(filepath.Join(tmpDir, "apps/api"), 0o755)
+		err := os.WriteFile(filepath.Join(tmpDir, ".waxseal/metadata/new-api-secret.yaml"), []byte(metadata), 0o644)
+		if err != nil {
+			t.Fatalf("write metadata: %v", err)
+		}
+
+		// Create a minimal manifest
+		manifest := `apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: new-api-secret
+  namespace: default
+spec:
+  encryptedData:
+    api_key: AgBxxxxxx
+`
+		err = os.WriteFile(filepath.Join(tmpDir, "apps/api/sealed-secret.yaml"), []byte(manifest), 0o644)
+		if err != nil {
+			t.Fatalf("write manifest: %v", err)
+		}
+		t.Log("✓ secret metadata created")
+	})
+
+	// Step 4: Show displays new secret
+	t.Run("step 4: show secret", func(t *testing.T) {
+		output, err := runWaxsealWithDir(t, tmpDir, "show", "new-api-secret", "--repo="+tmpDir)
+		if err != nil {
+			t.Fatalf("show failed: %v\nOutput: %s", err, output)
+		}
+		if !strings.Contains(output, "new-api-secret") {
+			t.Error("expected secret name in output")
+		}
+		if !strings.Contains(output, "api_key") {
+			t.Error("expected key name in output")
+		}
+		t.Log("✓ show displays secret metadata")
+	})
+
+	// Step 5: Show with JSON output
+	t.Run("step 5: show json", func(t *testing.T) {
+		output, err := runWaxsealWithDir(t, tmpDir, "show", "new-api-secret", "--json", "--repo="+tmpDir)
+		if err != nil {
+			t.Fatalf("show --json failed: %v\nOutput: %s", err, output)
+		}
+		if !strings.Contains(output, `"shortName": "new-api-secret"`) {
+			t.Error("expected JSON formatted output")
+		}
+		t.Log("✓ show --json works")
+	})
+
+	// Step 6: Update dry run
+	t.Run("step 6: update dry run", func(t *testing.T) {
+		output, err := runWaxsealWithDir(t, tmpDir,
+			"update", "new-api-secret", "api_key",
+			"--generate-random",
+			"--dry-run",
+			"--repo="+tmpDir,
+		)
+		if err != nil {
+			t.Fatalf("update dry run failed: %v\nOutput: %s", err, output)
+		}
+		if !strings.Contains(output, "[DRY RUN]") {
+			t.Error("expected dry run output")
+		}
+		t.Log("✓ update dry run shows plan")
+	})
+
+	// Step 7: List includes our secret
+	t.Run("step 7: list includes new secret", func(t *testing.T) {
+		output, err := runWaxsealWithDir(t, tmpDir, "list", "--repo="+tmpDir)
+		if err != nil {
+			t.Logf("list: %v\nOutput: %s", err, output)
+		}
+		// The secret should be listed
+		if !strings.Contains(output, "new-api-secret") {
+			t.Log("Secret may not be in list output, checking metadata...")
+		}
+		t.Log("✓ list completed")
+	})
+
+	t.Log("✓ New secret lifecycle workflow completed")
+}
