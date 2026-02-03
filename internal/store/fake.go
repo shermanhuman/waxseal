@@ -99,6 +99,22 @@ func (f *FakeStore) SecretExists(ctx context.Context, secretResource string) (bo
 	return ok, nil
 }
 
+// CreateSecretVersion creates a secret if needed and adds a version.
+func (f *FakeStore) CreateSecretVersion(ctx context.Context, secretResource string, data []byte) (string, error) {
+	// Try to add a version first
+	version, err := f.AddVersion(ctx, secretResource, data)
+	if err == nil {
+		return version, nil
+	}
+
+	// If secret doesn't exist, create it
+	if core.IsNotFound(err) {
+		return f.CreateSecret(ctx, secretResource, data)
+	}
+
+	return "", err
+}
+
 // SetVersion sets a specific version for testing (bypasses normal versioning).
 func (f *FakeStore) SetVersion(secretResource, version string, data []byte) {
 	f.mu.Lock()

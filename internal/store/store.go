@@ -24,6 +24,11 @@ type Store interface {
 	// Returns ErrAlreadyExists if the secret already exists.
 	CreateSecret(ctx context.Context, secretResource string, data []byte) (string, error)
 
+	// CreateSecretVersion creates a secret if needed and adds a version.
+	// This is an idempotent operation - it won't fail if secret already exists.
+	// Useful for bootstrapping where you want to ensure data is stored.
+	CreateSecretVersion(ctx context.Context, secretResource string, data []byte) (string, error)
+
 	// SecretExists checks if a secret exists.
 	SecretExists(ctx context.Context, secretResource string) (bool, error)
 }

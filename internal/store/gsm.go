@@ -130,6 +130,23 @@ func (g *GSMStore) CreateSecret(ctx context.Context, secretResource string, data
 	return g.AddVersion(ctx, secretResource, data)
 }
 
+// CreateSecretVersion creates a secret if it doesn't exist and adds a version.
+// This is an idempotent operation for bootstrapping secrets.
+func (g *GSMStore) CreateSecretVersion(ctx context.Context, secretResource string, data []byte) (string, error) {
+	// Try to add a version first (secret may already exist)
+	version, err := g.AddVersion(ctx, secretResource, data)
+	if err == nil {
+		return version, nil
+	}
+
+	// If secret doesn't exist, create it
+	if core.IsNotFound(err) {
+		return g.CreateSecret(ctx, secretResource, data)
+	}
+
+	return "", err
+}
+
 // SecretExists checks if a secret exists.
 func (g *GSMStore) SecretExists(ctx context.Context, secretResource string) (bool, error) {
 	req := &secretmanagerpb.GetSecretRequest{

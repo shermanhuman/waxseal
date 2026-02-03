@@ -74,3 +74,18 @@ func (e ValidationError) Is(target error) bool {
 func NewValidationError(field, message string) error {
 	return ValidationError{Field: field, Message: message}
 }
+
+// IsNotFound checks if an error is a not found error.
+func IsNotFound(err error) bool {
+	return errors.Is(err, ErrNotFound)
+}
+
+// IsPermissionDenied checks if an error is a permission denied error.
+func IsPermissionDenied(err error) bool {
+	return errors.Is(err, ErrPermissionDenied)
+}
+
+// IsAlreadyExists checks if an error is an already exists error.
+func IsAlreadyExists(err error) bool {
+	return errors.Is(err, ErrAlreadyExists)
+}
