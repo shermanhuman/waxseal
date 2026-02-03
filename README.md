@@ -1,7 +1,8 @@
 # WaxSeal
-<img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/0d96fa12-479b-4f80-9cbc-d115ec31ea42" />
 
 > GitOps-friendly SealedSecrets management with Google Secret Manager as the source of truth.
+
+<img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/0d96fa12-479b-4f80-9cbc-d115ec31ea42" />
 
 WaxSeal keeps plaintext out of Git by synchronizing Kubernetes SealedSecrets with Google Secret Manager (GSM). All secret values live in GSM; Git stores only encrypted ciphertext and metadata.
 
