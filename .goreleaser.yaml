@@ -1,0 +1,42 @@
+# .goreleaser.yaml
+version: 2
+project_name: waxseal
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    main: ./cmd/waxseal
+    ldflags:
+      - -s -w -X github.com/shermanhuman/waxseal/internal/cli.Version={{.Version}} -X github.com/shermanhuman/waxseal/internal/cli.Commit={{.Commit}} -X github.com/shermanhuman/waxseal/internal/cli.BuildDate={{.Date}}
+
+archives:
+  - format: tar.gz
+    # use zip for windows archives
+    format_overrides:
+      - goos: windows
+        format: zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  name_template: "{{ .Tag }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
