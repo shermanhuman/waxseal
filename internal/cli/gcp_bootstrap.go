@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/huh/spinner"
 	"github.com/spf13/cobra"
 )
 
@@ -231,9 +232,15 @@ func runGCPBootstrap(cmd *cobra.Command, args []string) error {
 				Run()
 
 			if runErr != nil {
-				// If it's an "already exists" error, we can proceed (idempotent)
-				if strings.Contains(strings.ToLower(runErr.Error()), "already exists") {
+				errMsg := strings.ToLower(runErr.Error())
+				// If it's an "already exists" error (local idempotency), we can proceed
+				// "Project '...' already exists." -> We likely own it.
+				if strings.Contains(errMsg, "already exists") {
 					fmt.Printf("✓ %s (already done)\n", c.desc)
+				} else if strings.Contains(errMsg, "already in use") {
+					// "Project ID ... is already in use by another project." -> Global conflict.
+					// We return a specific error so init.go can handle it.
+					return fmt.Errorf("project_collision")
 				} else {
 					// Critical failure - stop execution
 					return fmt.Errorf("step '%s' failed: %v", c.desc, runErr)

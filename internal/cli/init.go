@@ -163,50 +163,27 @@ func runInit(cmd *cobra.Command, args []string) error {
 				}
 			}
 
-			// 1. Get Project ID
-			err = huh.NewInput().
-				Title("Desired Project ID").
-				Description("Lower-case slug (e.g. waxseal-prod-secrets)").
-				Value(&projectID).
-				Validate(func(s string) error {
-					if s == "" {
-						return fmt.Errorf("project ID is required")
-					}
-					if len(s) < 6 || len(s) > 30 {
-						return fmt.Errorf("project ID must be between 6 and 30 characters")
-					}
-					match, _ := regexp.MatchString("^[a-z][a-z0-9-]*$", s)
-					if !match {
-						return fmt.Errorf("project ID must start with a letter and contain only lowercase letters, digits, and hyphens")
-					}
-					return nil
-				}).
-				Run()
-			if err != nil {
-				return err
-			}
-
-			// 2. Resolve Billing Account
+			// 1. Resolve Billing Account (Before project loop)
 			var billingID string
 
 			// Try to fetch available accounts
 			accounts, _ := GetBillingAccounts()
-			var options []huh.Option[string]
+			var billingOptions []huh.Option[string]
 			for _, acc := range accounts {
 				if acc.Open {
 					id := strings.TrimPrefix(acc.Name, "billingAccounts/")
 					label := fmt.Sprintf("%s (%s)", acc.DisplayName, id)
-					options = append(options, huh.NewOption(label, id))
+					billingOptions = append(billingOptions, huh.NewOption(label, id))
 				}
 			}
-			options = append(options, huh.NewOption("Enter manually...", "manual"))
+			billingOptions = append(billingOptions, huh.NewOption("Enter manually...", "manual"))
 
 			// If we found accounts, let user choose
-			if len(options) > 1 {
+			if len(billingOptions) > 1 {
 				var choice string
 				err = huh.NewSelect[string]().
 					Title("Billing Account").
-					Options(options...).
+					Options(billingOptions...).
 					Value(&choice).
 					Run()
 				if err != nil {
@@ -235,22 +212,85 @@ func runInit(cmd *cobra.Command, args []string) error {
 				}
 			}
 
-			// Setup bootstrap flags
-			gcpProjectID = projectID
-			gcpCreateProject = true
-			gcpBillingAccountID = billingID
-			gcpOrgID = orgID
+			// Project Creation Loop
+			for {
+				if projectID == "" {
+					err = huh.NewInput().
+						Title("Desired Project ID").
+						Description("Lower-case slug (e.g. waxseal-prod-secrets)").
+						Value(&projectID).
+						Validate(func(s string) error {
+							if s == "" {
+								return fmt.Errorf("project ID is required")
+							}
+							if len(s) < 6 || len(s) > 30 {
+								return fmt.Errorf("project ID must be between 6 and 30 characters")
+							}
+							match, _ := regexp.MatchString("^[a-z][a-z0-9-]*$", s)
+							if !match {
+								return fmt.Errorf("project ID must start with a letter and contain only lowercase letters, digits, and hyphens")
+							}
+							return nil
+						}).
+						Run()
+					if err != nil {
+						return err
+					}
+				}
 
-			// Run bootstrap (this now handles Auth and ADC proactively)
-			if err := runGCPBootstrap(cmd, nil); err != nil {
-				return fmt.Errorf("bootstrap failed: %w", err)
+				// Setup bootstrap flags
+				gcpProjectID = projectID
+				gcpCreateProject = true
+				gcpBillingAccountID = billingID
+				gcpOrgID = orgID
+
+				// Run bootstrap
+				err := runGCPBootstrap(cmd, nil)
+				if err == nil {
+					// Success
+					fmt.Println()
+					fmt.Println("✓ GCP Project created and bootstrapped.")
+					fmt.Println("Proceeding with WaxSeal initialization...")
+					fmt.Println()
+					break
+				}
+
+				// Handle Collisions
+				if strings.Contains(strings.ToLower(err.Error()), "project_collision") {
+					var resolution string
+					err = huh.NewSelect[string]().
+						Title(fmt.Sprintf("Project ID '%s' is unavailable.", projectID)).
+						Description("It is already in use by another project (globally).").
+						Options(
+							huh.NewOption("Try a different Project ID", "retry"),
+							huh.NewOption(fmt.Sprintf("Use existing project '%s' (if you own it)", projectID), "use_existing"),
+							huh.NewOption("Select another existing project", "select_existing"),
+						).
+						Value(&resolution).
+						Run()
+					if err != nil {
+						return err
+					}
+
+					if resolution == "use_existing" {
+						setupChoice = "existing"
+						// Break loop; projectID is set, fall through to "existing" logic
+						break
+					} else if resolution == "select_existing" {
+						setupChoice = "existing"
+						projectID = "" // Clear so we get the list
+						break
+					}
+					// Retry
+					projectID = ""
+					continue
+				} else {
+					return fmt.Errorf("bootstrap failed: %w", err)
+				}
 			}
+		}
 
-			fmt.Println()
-			fmt.Println("✓ GCP Project created and bootstrapped.")
-			fmt.Println("Proceeding with WaxSeal initialization...")
-			fmt.Println()
-		} else {
+		if setupChoice == "existing" {
 			// Ensure authed even for existing project since discover/add will need it
 			if err := EnsureGcloudAuth(); err != nil {
 				return err
@@ -259,28 +299,30 @@ func runInit(cmd *cobra.Command, args []string) error {
 				return err
 			}
 
-			// Try to list projects
-			projects, _ := GetProjects()
-			var options []huh.Option[string]
-			for _, p := range projects {
-				label := fmt.Sprintf("%s (%s)", p.Name, p.ProjectID)
-				options = append(options, huh.NewOption(label, p.ProjectID))
-			}
-			options = append(options, huh.NewOption("Enter manually...", "manual"))
-
-			if len(options) > 1 {
-				var choice string
-				err = huh.NewSelect[string]().
-					Title("Select GCP Project").
-					Options(options...).
-					Value(&choice).
-					Filtering(true).
-					Run()
-				if err != nil {
-					return err
+			// Try to list projects only if we need one
+			if projectID == "" {
+				projects, _ := GetProjects()
+				var options []huh.Option[string]
+				for _, p := range projects {
+					label := fmt.Sprintf("%s (%s)", p.Name, p.ProjectID)
+					options = append(options, huh.NewOption(label, p.ProjectID))
 				}
-				if choice != "manual" {
-					projectID = choice
+				options = append(options, huh.NewOption("Enter manually...", "manual"))
+
+				if len(options) > 1 {
+					var choice string
+					err = huh.NewSelect[string]().
+						Title("Select GCP Project").
+						Options(options...).
+						Value(&choice).
+						Filtering(true).
+						Run()
+					if err != nil {
+						return err
+					}
+					if choice != "manual" {
+						projectID = choice
+					}
 				}
 			}
 
