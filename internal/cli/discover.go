@@ -128,14 +128,14 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 
 		var stub string
 		if discoverNonInteractive {
-			stub = generateMetadataStub(ds, shortName, projectID, nil)
+			stub = generateMetadataStub(ds, shortName, projectID, nil, "", "", "")
 		} else {
 			// Interactive mode
-			keyConfigs, err := runInteractiveWizard(reader, ds, shortName, projectID)
+			description, documentation, owner, keyConfigs, err := runInteractiveWizard(reader, ds, shortName, projectID)
 			if err != nil {
 				return err
 			}
-			stub = generateMetadataStub(ds, shortName, projectID, keyConfigs)
+			stub = generateMetadataStub(ds, shortName, projectID, keyConfigs, description, documentation, owner)
 		}
 
 		if dryRun {
@@ -186,9 +186,11 @@ func deriveShortName(namespace, name string) string {
 	return short
 }
 
-func runInteractiveWizard(reader *bufio.Reader, ds discoveredSecret, shortName, projectID string) ([]keyConfig, error) {
+func runInteractiveWizard(reader *bufio.Reader, ds discoveredSecret, shortName, projectID string) (string, string, string, []keyConfig, error) {
 	keys := ds.sealedSecret.GetEncryptedKeys()
 	configs := make([]keyConfig, 0, len(keys))
+
+	var description, documentation, owner string
 
 	// Ask for project if not configured
 	if projectID == "" {
@@ -200,11 +202,27 @@ func runInteractiveWizard(reader *bufio.Reader, ds discoveredSecret, shortName, 
 		}
 	}
 
+	// Secret-level metadata
+	fmt.Printf("\nMetadata for %s:\n", shortName)
+
+	fmt.Print("  Description (optional): ")
+	input, _ := reader.ReadString('\n')
+	description = strings.TrimSpace(input)
+
+	fmt.Print("  Documentation URL (optional): ")
+	input, _ = reader.ReadString('\n')
+	documentation = strings.TrimSpace(input)
+
+	fmt.Print("  Owner (optional, e.g. team-name): ")
+	input, _ = reader.ReadString('\n')
+	owner = strings.TrimSpace(input)
+
 	fmt.Println("\nConfigure each key:")
 	fmt.Println("  Rotation modes: manual, generated, derived, static, unknown")
 	fmt.Println()
 
 	for _, keyName := range keys {
+		// ... (existing key loop logic) ...
 		config := keyConfig{keyName: keyName}
 
 		// Generate default GSM resource
@@ -256,10 +274,10 @@ func runInteractiveWizard(reader *bufio.Reader, ds discoveredSecret, shortName, 
 		fmt.Println()
 	}
 
-	return configs, nil
+	return description, documentation, owner, configs, nil
 }
 
-func generateMetadataStub(ds discoveredSecret, shortName, projectID string, keyConfigs []keyConfig) string {
+func generateMetadataStub(ds discoveredSecret, shortName, projectID string, keyConfigs []keyConfig, description, documentation, owner string) string {
 	ss := ds.sealedSecret
 
 	// If no key configs provided, use defaults (non-interactive mode)
@@ -296,14 +314,25 @@ func generateMetadataStub(ds discoveredSecret, shortName, projectID string, keyC
 		}
 	}
 
+	var meta strings.Builder
+	if description != "" {
+		meta.WriteString(fmt.Sprintf("description: \"%s\"\n", description))
+	}
+	if documentation != "" {
+		meta.WriteString(fmt.Sprintf("documentation: \"%s\"\n", documentation))
+	}
+	if owner != "" {
+		meta.WriteString(fmt.Sprintf("owner: \"%s\"\n", owner))
+	}
+
 	return fmt.Sprintf(`shortName: %s
 manifestPath: %s
-sealedSecret:
+%ssealedSecret:
   name: %s
   namespace: %s
   scope: %s
   type: %s
 status: active
 keys:
-%s`, shortName, ds.path, ss.Metadata.Name, ss.Metadata.Namespace, ss.GetScope(), ss.GetSecretType(), keys.String())
+%s`, shortName, ds.path, meta.String(), ss.Metadata.Name, ss.Metadata.Namespace, ss.GetScope(), ss.GetSecretType(), keys.String())
 }
