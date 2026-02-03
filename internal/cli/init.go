@@ -470,9 +470,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println("Looking for existing SealedSecrets...")
 		fmt.Println()
 
-		// Call discover command
-		discoverCmd.SetArgs([]string{})
-		if err := discoverCmd.Execute(); err != nil {
+		// Call discover command (call run directly to avoid re-parsing root args)
+		discoverNonInteractive = initNonInteractive
+		if err := runDiscover(cmd, []string{}); err != nil {
 			// Don't fail init if discover has issues
 			fmt.Printf("Note: discover encountered an issue: %v\n", err)
 			fmt.Println("You can run 'waxseal discover' later to find existing SealedSecrets.")
@@ -496,8 +496,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 							continue
 						}
 						fmt.Printf("\nBootstrapping %s...\n", shortName)
-						bootstrapCmd.SetArgs([]string{shortName})
-						if err := bootstrapCmd.Execute(); err != nil {
+						if err := runBootstrap(cmd, []string{shortName}); err != nil {
 							fmt.Printf("⚠️  Could not bootstrap %s: %v\n", shortName, err)
 							fmt.Println("   You can run 'waxseal bootstrap " + shortName + "' later.")
 						}
@@ -519,8 +518,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if err == nil && setupReminders {
 			fmt.Println()
 			fmt.Println("Running reminders setup...")
-			remindersSetupCmd.SetArgs([]string{})
-			if err := remindersSetupCmd.Execute(); err != nil {
+			if err := runRemindersSetup(cmd, []string{}); err != nil {
 				fmt.Printf("⚠️  Reminders setup failed: %v\n", err)
 				fmt.Println("   You can run 'waxseal reminders setup' later.")
 			}
