@@ -24,8 +24,10 @@ go build -o waxseal ./cmd/waxseal
 
 ```bash
 cd my-infra-repo
-waxseal init --project-id=my-gcp-project
+waxseal init
 ```
+
+The interactive wizard will prompt for your GCP project and controller settings.
 
 This creates:
 

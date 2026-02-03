@@ -23,7 +23,7 @@ func TestE2E_WorkflowHappyPath(t *testing.T) {
 
 	// Step 1: Initialize
 	t.Run("step 1: init", func(t *testing.T) {
-		output, err := runWaxsealWithDir(t, tmpDir, "init", "--project-id=test-project", "--repo="+tmpDir)
+		output, err := runWaxsealWithDir(t, tmpDir, "init", "--project-id=test-project", "--non-interactive", "--repo="+tmpDir)
 		if err != nil {
 			t.Fatalf("init failed: %v\nOutput: %s", err, output)
 		}
