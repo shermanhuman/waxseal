@@ -1,11 +1,14 @@
 package cli
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/shermanhuman/waxseal/internal/config"
 	"github.com/shermanhuman/waxseal/internal/seal"
 	"github.com/spf13/cobra"
 )
@@ -39,9 +42,21 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("create metadata directory: %w", err)
 	}
 
+	// Load config to get project ID
+	configFile := configPath
+	if !filepath.IsAbs(configFile) {
+		configFile = filepath.Join(repoPath, configFile)
+	}
+
+	var projectID string
+	cfg, err := config.Load(configFile)
+	if err == nil && cfg.Store.ProjectID != "" {
+		projectID = cfg.Store.ProjectID
+	}
+
 	// Walk repo and find SealedSecrets
 	var found []discoveredSecret
-	err := filepath.Walk(repoPath, func(path string, info os.FileInfo, err error) error {
+	err = filepath.Walk(repoPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -90,6 +105,8 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Found %d SealedSecret manifests:\n\n", len(found))
 
+	reader := bufio.NewReader(os.Stdin)
+
 	// Process each discovered secret
 	for _, ds := range found {
 		shortName := deriveShortName(ds.sealedSecret.Metadata.Namespace, ds.sealedSecret.Metadata.Name)
@@ -101,11 +118,31 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		// Create metadata stub
-		stub := generateMetadataStub(ds, shortName)
+		fmt.Printf("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+		fmt.Printf("Secret: %s\n", shortName)
+		fmt.Printf("  Namespace: %s\n", ds.sealedSecret.Metadata.Namespace)
+		fmt.Printf("  Name:      %s\n", ds.sealedSecret.Metadata.Name)
+		fmt.Printf("  Path:      %s\n", ds.path)
+		fmt.Printf("  Keys:      %v\n", ds.sealedSecret.GetEncryptedKeys())
+		fmt.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
+
+		var stub string
+		if discoverNonInteractive {
+			stub = generateMetadataStub(ds, shortName, projectID, nil)
+		} else {
+			// Interactive mode
+			keyConfigs, err := runInteractiveWizard(reader, ds, shortName, projectID)
+			if err != nil {
+				return err
+			}
+			stub = generateMetadataStub(ds, shortName, projectID, keyConfigs)
+		}
 
 		if dryRun {
-			fmt.Printf("  %-30s [DRY RUN]\n", shortName)
+			fmt.Printf("  [DRY RUN] Would create: %s\n", metadataPath)
+			fmt.Println("\n--- Generated metadata ---")
+			fmt.Println(stub)
+			fmt.Println("---")
 			continue
 		}
 
@@ -113,7 +150,7 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("write metadata %s: %w", shortName, err)
 		}
 
-		fmt.Printf("  %-30s ✓ created\n", shortName)
+		fmt.Printf("✓ Created: %s\n", metadataPath)
 	}
 
 	fmt.Printf("\nMetadata stubs written to %s\n", metadataDir)
@@ -121,7 +158,9 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 	if discoverNonInteractive {
 		fmt.Println("\nNote: Rotation modes set to 'unknown'. Update metadata to configure rotation.")
 	} else {
-		fmt.Println("\nRun 'waxseal list' to view registered secrets.")
+		fmt.Println("\nNext steps:")
+		fmt.Println("  1. Run 'waxseal bootstrap <shortName>' to push secrets to GSM")
+		fmt.Println("  2. Run 'waxseal list' to view registered secrets")
 	}
 
 	return nil
@@ -132,6 +171,13 @@ type discoveredSecret struct {
 	sealedSecret *seal.SealedSecret
 }
 
+type keyConfig struct {
+	keyName      string
+	gsmResource  string
+	rotationMode string
+	expiry       string
+}
+
 func deriveShortName(namespace, name string) string {
 	// Use namespace-name format, sanitizing for filesystem
 	short := namespace + "-" + name
@@ -140,20 +186,114 @@ func deriveShortName(namespace, name string) string {
 	return short
 }
 
-func generateMetadataStub(ds discoveredSecret, shortName string) string {
+func runInteractiveWizard(reader *bufio.Reader, ds discoveredSecret, shortName, projectID string) ([]keyConfig, error) {
+	keys := ds.sealedSecret.GetEncryptedKeys()
+	configs := make([]keyConfig, 0, len(keys))
+
+	// Ask for project if not configured
+	if projectID == "" {
+		fmt.Print("GCP Project ID: ")
+		input, _ := reader.ReadString('\n')
+		projectID = strings.TrimSpace(input)
+		if projectID == "" {
+			projectID = "<PROJECT>"
+		}
+	}
+
+	fmt.Println("\nConfigure each key:")
+	fmt.Println("  Rotation modes: manual, generated, derived, static, unknown")
+	fmt.Println()
+
+	for _, keyName := range keys {
+		config := keyConfig{keyName: keyName}
+
+		// Generate default GSM resource
+		defaultGSM := fmt.Sprintf("projects/%s/secrets/%s-%s", projectID, shortName, sanitizeGSMName(keyName))
+
+		// GSM Resource
+		fmt.Printf("  [%s] GSM resource (Enter for default):\n", keyName)
+		fmt.Printf("    Default: %s\n", defaultGSM)
+		fmt.Print("    > ")
+		input, _ := reader.ReadString('\n')
+		input = strings.TrimSpace(input)
+		if input == "" {
+			config.gsmResource = defaultGSM
+		} else {
+			config.gsmResource = input
+		}
+
+		// Rotation mode
+		fmt.Printf("  [%s] Rotation mode [manual/generated/derived/static/unknown] (Enter for manual): ", keyName)
+		input, _ = reader.ReadString('\n')
+		input = strings.TrimSpace(strings.ToLower(input))
+		switch input {
+		case "generated", "g":
+			config.rotationMode = "generated"
+		case "derived", "d":
+			config.rotationMode = "derived"
+		case "static", "s":
+			config.rotationMode = "static"
+		case "unknown", "u":
+			config.rotationMode = "unknown"
+		default:
+			config.rotationMode = "manual"
+		}
+
+		// Expiry (optional)
+		fmt.Printf("  [%s] Expiry date (YYYY-MM-DD, Enter to skip): ", keyName)
+		input, _ = reader.ReadString('\n')
+		input = strings.TrimSpace(input)
+		if input != "" {
+			// Validate date format
+			if _, err := time.Parse("2006-01-02", input); err == nil {
+				config.expiry = input
+			} else {
+				fmt.Printf("    ⚠ Invalid date format, skipping expiry\n")
+			}
+		}
+
+		configs = append(configs, config)
+		fmt.Println()
+	}
+
+	return configs, nil
+}
+
+func generateMetadataStub(ds discoveredSecret, shortName, projectID string, keyConfigs []keyConfig) string {
 	ss := ds.sealedSecret
 
+	// If no key configs provided, use defaults (non-interactive mode)
+	if keyConfigs == nil {
+		keyConfigs = make([]keyConfig, 0)
+		for _, keyName := range ss.GetEncryptedKeys() {
+			gsmResource := fmt.Sprintf("projects/%s/secrets/%s-%s", projectID, shortName, sanitizeGSMName(keyName))
+			if projectID == "" {
+				gsmResource = fmt.Sprintf("projects/<PROJECT>/secrets/%s-%s", shortName, sanitizeGSMName(keyName))
+			}
+			keyConfigs = append(keyConfigs, keyConfig{
+				keyName:      keyName,
+				gsmResource:  gsmResource,
+				rotationMode: "unknown",
+			})
+		}
+	}
+
 	var keys strings.Builder
-	for _, keyName := range ss.GetEncryptedKeys() {
+	for _, kc := range keyConfigs {
 		keys.WriteString(fmt.Sprintf(`  - keyName: %s
     source:
       kind: gsm
     gsm:
-      secretResource: "projects/<PROJECT>/secrets/%s-%s"
+      secretResource: "%s"
       version: "1"
     rotation:
-      mode: unknown
-`, keyName, shortName, keyName))
+      mode: %s
+`, kc.keyName, kc.gsmResource, kc.rotationMode))
+
+		if kc.expiry != "" {
+			keys.WriteString(fmt.Sprintf(`    expiry: "%s"
+`, kc.expiry))
+		}
 	}
 
 	return fmt.Sprintf(`shortName: %s

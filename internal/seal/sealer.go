@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/shermanhuman/waxseal/internal/core"
 )
@@ -96,6 +97,44 @@ func (s *CertSealer) Seal(name, namespace, key string, value []byte, scope strin
 // GetCertFingerprint returns the SHA256 fingerprint of the certificate.
 func (s *CertSealer) GetCertFingerprint() string {
 	return fmt.Sprintf("%x", sha256Sum(s.cert.Raw))
+}
+
+// GetCertNotAfter returns the certificate's expiry time.
+func (s *CertSealer) GetCertNotAfter() time.Time {
+	return s.cert.NotAfter
+}
+
+// GetCertNotBefore returns the certificate's start time.
+func (s *CertSealer) GetCertNotBefore() time.Time {
+	return s.cert.NotBefore
+}
+
+// IsExpired returns true if the certificate has expired.
+func (s *CertSealer) IsExpired() bool {
+	return time.Now().After(s.cert.NotAfter)
+}
+
+// ExpiresWithinDays returns true if the certificate expires within n days.
+func (s *CertSealer) ExpiresWithinDays(days int) bool {
+	threshold := time.Now().AddDate(0, 0, days)
+	return s.cert.NotAfter.Before(threshold)
+}
+
+// DaysUntilExpiry returns the number of days until the certificate expires.
+// Returns negative if already expired.
+func (s *CertSealer) DaysUntilExpiry() int {
+	duration := time.Until(s.cert.NotAfter)
+	return int(duration.Hours() / 24)
+}
+
+// GetSubject returns the certificate subject.
+func (s *CertSealer) GetSubject() string {
+	return s.cert.Subject.String()
+}
+
+// GetIssuer returns the certificate issuer.
+func (s *CertSealer) GetIssuer() string {
+	return s.cert.Issuer.String()
 }
 
 // FakeSealer is a test implementation that returns predictable output.

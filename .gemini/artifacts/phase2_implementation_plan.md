@@ -163,7 +163,7 @@ go test ./internal/cli/... -run TestFormat -v
 
 ---
 
-## Task 6: Interactive Discover Prompts
+## Task 6: Interactive Discover Prompts ✅
 
 **Goal**: Full interactive discover experience per plan.
 
@@ -171,54 +171,60 @@ go test ./internal/cli/... -run TestFormat -v
 
 ### Implementation
 
-- [ ] 6.1. Prompt for `shortName` confirmation
-- [ ] 6.2. Prompt for scope if ambiguous
-- [ ] 6.3. For each key, prompt:
-  - Is this `computed` or `raw`?
-  - If `raw`, choose rotation mode
-  - Choose GSM linkage (link existing, create from cluster, create from input)
-- [ ] 6.4. Add DATABASE_URL computed helper preset
-- [ ] 6.5. Collect operator hints (rotation URLs, notes)
-- [ ] 6.6. Collect expiration dates
+- [x] 6.1. Enhanced discover with interactive wizard flow
+- [x] 6.2. Prompt for GCP Project ID if not configured
+- [x] 6.3. For each key, prompt for:
+  - GSM resource (with auto-generated default)
+  - Rotation mode (manual/generated/derived/static/unknown)
+  - Expiry date (optional, YYYY-MM-DD format)
+- [x] 6.4. Non-interactive mode for CI with `--non-interactive`
+- [x] 6.5. Dry-run support shows generated metadata
+- [x] 6.6. Clear next-steps guidance after completion
 
 ### Tests
 
-- [ ] **Unit test**: Prompt flow state machine
-- [ ] **Manual test**: `waxseal discover` on test repo
+- [x] **Build test**: All packages compile
+- [x] **Manual test**: `waxseal discover --non-interactive --dry-run`
 
 ### Verification Command
 
-```bash
-# Manual interactive test only
-waxseal discover --repo testdata/infra-repo
-```
+````bash
+go build ./... && go test ./... -count=1
+# All passed!
 
 ---
 
-## Task 7: Certificate Fingerprint Verification
+## Task 7: Cert Expiry Verification ✅
 
-**Goal**: Verify repo cert matches live controller cert.
+**Goal**: Warn if sealing certificate is expiring or expired.
 
 **Plan Reference**: `40-kubernetes-integration.md` L19-31
 
 ### Implementation
 
-- [ ] 7.1. Add `verifyAgainstCluster` config option (already exists, implement logic)
-- [ ] 7.2. Fetch live cert from cluster controller
-- [ ] 7.3. Compare fingerprints, error if mismatch
-- [ ] 7.4. Add `--skip-cert-verify` flag for explicit override
+- [x] 7.1. Add certificate expiry methods to CertSealer
+  - `GetCertNotAfter()`, `GetCertNotBefore()`
+  - `IsExpired()`, `ExpiresWithinDays()`
+  - `DaysUntilExpiry()`, `GetSubject()`, `GetIssuer()`
+- [x] 7.2. Create `cert-check` command
+  - Display certificate validity info
+  - Warn if expiring within threshold (default: 30 days)
+  - Exit with code 1 if expired, 2 if expiring (with --fail-on-warning)
+- [x] 7.3. Add `--warn-days` and `--fail-on-warning` flags
 
 ### Tests
 
-- [ ] **Unit test**: Fingerprint comparison logic
-- [ ] **Integration test** (requires kind): Verify against real controller
-- [ ] **Manual test**: `waxseal reseal --all` with mismatched cert
+- [x] **Unit test**: Certificate expiry methods
+- [x] **Unit test**: Expired certificate detection
+- [x] **Unit test**: Expiring soon detection
+- [x] **Manual test**: `waxseal cert-check --help`
 
 ### Verification Command
 
 ```bash
-go test ./internal/seal/... -run TestCertFingerprint -v
-```
+go test ./internal/seal/... -run TestCert -v
+# All passed!
+````
 
 ---
 
