@@ -71,8 +71,15 @@ waxseal reseal --all --dry-run
 | `validate`        | Validate repo and metadata consistency (CI-friendly) |
 | `reseal`          | Reseal secrets from GSM to SealedSecret manifests    |
 | `rotate`          | Rotate secret values and reseal                      |
+| `retire`          | Mark a secret as retired and optionally delete       |
+| `reencrypt`       | Re-encrypt all secrets with new cluster certificate  |
+| `bootstrap`       | Push existing cluster secrets to GSM                 |
+| `cert-check`      | Check sealing certificate expiry                     |
+| `gcp bootstrap`   | Set up GCP infrastructure for WaxSeal                |
 | `reminders sync`  | Sync expiry reminders to Google Calendar             |
 | `reminders clear` | Remove calendar reminders for a secret               |
+| `reminders list`  | List secrets with upcoming expiry                    |
+| `reminders setup` | Configure reminder settings                          |
 
 ### Global Flags
 
@@ -239,6 +246,109 @@ waxseal reminders sync
 ```
 
 This creates events at 30, 7, and 1 days before expiry.
+
+## Retiring Secrets
+
+When a secret is no longer needed, retire it instead of deleting:
+
+```bash
+# Mark as retired
+waxseal retire my-app-secrets --reason "Migrated to new service"
+
+# Retire and delete the manifest file
+waxseal retire my-app-secrets --delete-manifest
+
+# Retire and link to replacement
+waxseal retire old-secret --replaced-by new-secret
+```
+
+Retired secrets are skipped during `reseal --all` operations.
+
+## Re-encrypting After Cert Rotation
+
+When the SealedSecrets controller certificate rotates:
+
+```bash
+# Fetch new cert from cluster and re-encrypt all secrets
+waxseal reencrypt
+
+# Use a specific new certificate file
+waxseal reencrypt --new-cert /path/to/new-cert.pem
+
+# Preview what would be done
+waxseal reencrypt --dry-run
+```
+
+## Bootstrapping Existing Secrets
+
+Import existing Kubernetes secrets to GSM:
+
+```bash
+# Push a discovered secret's values to GSM
+waxseal bootstrap my-app-secrets
+
+# Preview without making changes
+waxseal bootstrap my-app-secrets --dry-run
+```
+
+This reads the secret from the cluster and pushes values to GSM.
+
+## Certificate Expiry Checking
+
+Monitor your sealing certificate:
+
+```bash
+# Check certificate expiry
+waxseal cert-check
+
+# Warn if expiring within 90 days
+waxseal cert-check --warn-days 90
+
+# Fail in CI if expiring soon
+waxseal cert-check --fail-on-warning
+```
+
+Exit codes:
+
+- `0` - Certificate valid
+- `1` - Certificate expired
+- `2` - Certificate expiring soon (with `--fail-on-warning`)
+
+## GCP Infrastructure Setup
+
+Set up GCP project for WaxSeal:
+
+```bash
+# Bootstrap existing project
+waxseal gcp bootstrap --project-id my-project
+
+# Create new project with billing
+waxseal gcp bootstrap --project-id my-project --create-project \
+  --billing-account-id 01XXXX-XXXXXX
+
+# Set up Workload Identity for GitHub Actions
+waxseal gcp bootstrap --project-id my-project \
+  --github-repo owner/repo
+
+# Preview what would be done
+waxseal gcp bootstrap --project-id my-project --dry-run
+```
+
+## Operator Hints
+
+Provide guidance for manual rotation:
+
+```yaml
+- keyName: stripe_key
+  operatorHints:
+    provider: stripe
+    rotationUrl: https://dashboard.stripe.com/apikeys
+    docUrl: https://stripe.com/docs/keys
+    contact: platform-team@company.com
+    notes: "Regenerate in Stripe Dashboard, then update GSM"
+```
+
+During `waxseal rotate`, hints are displayed to guide operators.
 
 ## CI/CD Integration
 
