@@ -16,6 +16,21 @@
 go build ./...   # Build
 go test ./...    # Test
 go run ./cmd/waxseal --help  # Run from source
+go install ./cmd/waxseal    # Install to $GOPATH/bin
+waxseal --version           # Check version
+```
+
+### Production Build (with version info)
+
+```bash
+VERSION=$(git describe --tags --always --dirty)
+COMMIT=$(git rev-parse --short HEAD)
+BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+go build -ldflags "-X github.com/shermanhuman/waxseal/internal/cli.Version=$VERSION \
+                   -X github.com/shermanhuman/waxseal/internal/cli.Commit=$COMMIT \
+                   -X github.com/shermanhuman/waxseal/internal/cli.BuildDate=$BUILD_DATE" \
+  -o waxseal ./cmd/waxseal
 ```
 
 ## Planning Documents

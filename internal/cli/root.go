@@ -19,6 +19,13 @@ var (
 	yes        bool
 )
 
+// Version information (can be overridden at build time via ldflags)
+var (
+	Version   = "0.0.1"
+	Commit    = "dev"
+	BuildDate = "unknown"
+)
+
 // rootCmd is the base command for waxseal.
 var rootCmd = &cobra.Command{
 	Use:   "waxseal",
@@ -33,6 +40,7 @@ Primary commands:
   - waxseal reseal --all    Non-interactive ciphertext refresh
   - waxseal rotate          Value rotation with operator guidance
   - waxseal init            Happy-path onboarding`,
+	Version: Version,
 }
 
 func init() {
@@ -40,6 +48,12 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&configPath, "config", ".waxseal/config.yaml", "Path to waxseal config file")
 	rootCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "Show what would be done without making changes")
 	rootCmd.PersistentFlags().BoolVar(&yes, "yes", false, "Skip confirmation prompts (where applicable)")
+
+	// Custom version template to show commit and build date
+	rootCmd.SetVersionTemplate(`waxseal {{.Version}}
+Commit: ` + Commit + `
+Built:  ` + BuildDate + `
+`)
 }
 
 // Execute runs the root command.
