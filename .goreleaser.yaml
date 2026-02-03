@@ -34,12 +34,12 @@ builds:
 
 archives:
   - id: nix
-    builds: [waxseal-nix]
+    ids: [waxseal-nix]
     formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
   - id: windows
-    builds: [waxseal-win]
+    ids: [waxseal-win]
     formats: [zip]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
