@@ -410,11 +410,17 @@ Required IAM roles:
 # Build
 go build ./...
 
-# Test
+# Unit tests
 go test ./...
 
-# Run from source
-go run ./cmd/waxseal --help
+# E2E tests (requires Docker Desktop only)
+docker compose -f docker-compose.e2e.yaml up --build
+
+# Lint
+golangci-lint run ./...
+
+# Release builds
+GOOS=linux go build -o waxseal-linux ./cmd/waxseal
 ```
 
 ## License

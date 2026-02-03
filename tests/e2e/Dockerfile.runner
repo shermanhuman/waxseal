@@ -1,0 +1,33 @@
+# E2E test runner - installs all tools in container
+FROM golang:1.25-alpine
+
+# Install base tools
+RUN apk add --no-cache \
+    curl \
+    bash \
+    git \
+    ca-certificates \
+    docker-cli
+
+# Install kubectl
+RUN curl -LO "https://dl.k8s.io/release/v1.29.2/bin/linux/amd64/kubectl" && \
+    chmod +x kubectl && \
+    mv kubectl /usr/local/bin/
+
+# Install kind
+RUN curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.22.0/kind-linux-amd64 && \
+    chmod +x ./kind && \
+    mv ./kind /usr/local/bin/
+
+# Install kubeseal
+RUN curl -L https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.26.1/kubeseal-0.26.1-linux-amd64.tar.gz | tar xz && \
+    mv kubeseal /usr/local/bin/
+
+# Install Helm
+RUN curl -fsSL https://get.helm.sh/helm-v3.14.2-linux-amd64.tar.gz | tar xz && \
+    mv linux-amd64/helm /usr/local/bin/ && \
+    rm -rf linux-amd64
+
+WORKDIR /workspace
+
+ENTRYPOINT ["/bin/bash"]

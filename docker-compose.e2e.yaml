@@ -1,0 +1,22 @@
+# WaxSeal E2E Testing
+# Uses host network so kind cluster is accessible
+
+services:
+  e2e:
+    build:
+      context: .
+      dockerfile: tests/e2e/Dockerfile.runner
+    container_name: waxseal-e2e
+    privileged: true
+    network_mode: host
+    volumes:
+      # Docker socket for kind
+      - //var/run/docker.sock:/var/run/docker.sock
+      # Mount source code read-write for go build
+      - ./:/workspace
+    environment:
+      - WAXSEAL_E2E=1
+      - KEEP_CLUSTER=${KEEP_CLUSTER:-}
+      - HOME=/root
+    working_dir: /workspace
+    entrypoint: ["/bin/bash", "/workspace/tests/e2e/docker-entrypoint.sh"]
