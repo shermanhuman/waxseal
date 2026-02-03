@@ -223,11 +223,13 @@ func runGCPBootstrap(cmd *cobra.Command, args []string) error {
 		} else {
 			fmt.Printf("→ %s...\n", c.desc)
 			if err := runGcloud(c.args...); err != nil {
-				// Some errors are expected (already exists), continue
-				if !strings.Contains(err.Error(), "already exists") {
-					fmt.Printf("  ⚠ Warning: %v\n", err)
-				} else {
+				// If it's an "already exists" error, we can proceed (idempotent)
+				if strings.Contains(strings.ToLower(err.Error()), "already exists") {
 					fmt.Printf("  Already exists, skipping\n")
+				} else {
+					// Critical failure - stop execution
+					fmt.Printf("  ERROR: %v\n", err)
+					return fmt.Errorf("step '%s' failed", c.desc)
 				}
 			} else {
 				fmt.Printf("  ✓ Done\n")

@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/charmbracelet/huh"
@@ -111,8 +112,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 		err := huh.NewSelect[string]().
 			Title("How do you want to set up GCP?").
 			Options(
-				huh.NewOption("Use an existing GCP project", "existing"),
 				huh.NewOption("Create a new GCP project (fully automated)", "create"),
+				huh.NewOption("Use an existing GCP project", "existing"),
 			).
 			Value(&setupChoice).
 			Run()
@@ -139,6 +140,13 @@ func runInit(cmd *cobra.Command, args []string) error {
 				Validate(func(s string) error {
 					if s == "" {
 						return fmt.Errorf("project ID is required")
+					}
+					if len(s) < 6 || len(s) > 30 {
+						return fmt.Errorf("project ID must be between 6 and 30 characters")
+					}
+					match, _ := regexp.MatchString("^[a-z][a-z0-9-]*$", s)
+					if !match {
+						return fmt.Errorf("project ID must start with a letter and contain only lowercase letters, digits, and hyphens")
 					}
 					return nil
 				}).
