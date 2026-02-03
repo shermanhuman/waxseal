@@ -1,4 +1,5 @@
 # WaxSeal
+<img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/0d96fa12-479b-4f80-9cbc-d115ec31ea42" />
 
 > GitOps-friendly SealedSecrets management with Google Secret Manager as the source of truth.
 
