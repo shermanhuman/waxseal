@@ -165,11 +165,14 @@ reminders:
 	if !cfg.Reminders.Enabled {
 		t.Error("reminders.enabled should be true")
 	}
-	if cfg.Reminders.Provider != "google-calendar" {
-		t.Errorf("reminders.provider = %q, want %q", cfg.Reminders.Provider, "google-calendar")
+	if cfg.Reminders.Provider != "tasks" {
+		t.Errorf("reminders.provider = %q, want %q", cfg.Reminders.Provider, "tasks")
 	}
 	if cfg.Reminders.CalendarID != "primary" {
 		t.Errorf("reminders.calendarId = %q, want %q", cfg.Reminders.CalendarID, "primary")
+	}
+	if cfg.Reminders.TasklistID != "@default" {
+		t.Errorf("reminders.tasklistId = %q, want %q", cfg.Reminders.TasklistID, "@default")
 	}
 }
 

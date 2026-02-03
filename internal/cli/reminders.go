@@ -103,12 +103,18 @@ func runRemindersSync(cmd *cobra.Command, args []string) error {
 		fmt.Print(`
 reminders:
   enabled: true
-  provider: google-calendar
-  calendarId: primary
+  provider: tasks  # tasks (default), calendar, both, none
+  # tasklistId: "@default"  # Optional, defaults to user's primary task list
+  # calendarId: primary     # Only needed if provider is calendar or both
   leadTimeDays: [30, 7, 1]
   auth:
     kind: adc
 `)
+		return nil
+	}
+
+	if cfg.Reminders.Provider == "none" {
+		fmt.Println("Reminders provider is set to 'none'. Nothing to sync.")
 		return nil
 	}
 
@@ -145,28 +151,64 @@ reminders:
 		return nil
 	}
 
-	// Create provider
-	provider, err := reminders.NewGoogleCalendarProvider(
-		ctx,
-		cfg.Reminders.CalendarID,
-		cfg.Reminders.LeadTimeDays,
-	)
-	if err != nil {
-		return fmt.Errorf("create calendar provider: %w", err)
+	// Create providers based on config
+	var providers []reminders.Provider
+
+	switch cfg.Reminders.Provider {
+	case "tasks", "": // Tasks is default
+		p, err := reminders.NewGoogleTasksProvider(ctx, cfg.Reminders.TasklistID, cfg.Reminders.LeadTimeDays)
+		if err != nil {
+			return fmt.Errorf("create tasks provider: %w", err)
+		}
+		fmt.Println("Using Google Tasks (tasks appear in Calendar)")
+		providers = append(providers, p)
+
+	case "calendar":
+		p, err := reminders.NewGoogleCalendarProvider(ctx, cfg.Reminders.CalendarID, cfg.Reminders.LeadTimeDays)
+		if err != nil {
+			return fmt.Errorf("create calendar provider: %w", err)
+		}
+		fmt.Println("Using Google Calendar events")
+		providers = append(providers, p)
+
+	case "both":
+		tp, err := reminders.NewGoogleTasksProvider(ctx, cfg.Reminders.TasklistID, cfg.Reminders.LeadTimeDays)
+		if err != nil {
+			return fmt.Errorf("create tasks provider: %w", err)
+		}
+		cp, err := reminders.NewGoogleCalendarProvider(ctx, cfg.Reminders.CalendarID, cfg.Reminders.LeadTimeDays)
+		if err != nil {
+			return fmt.Errorf("create calendar provider: %w", err)
+		}
+		fmt.Println("Using both Google Tasks and Calendar events")
+		providers = append(providers, tp, cp)
+
+	default:
+		return fmt.Errorf("unknown provider: %s (use: tasks, calendar, both, none)", cfg.Reminders.Provider)
 	}
 
-	// Sync
-	result, err := provider.SyncReminders(ctx, expiringSecrets)
-	if err != nil {
-		return fmt.Errorf("sync reminders: %w", err)
+	// Sync to all providers
+	var totalCreated, totalUpdated, totalSkipped int
+	var allErrors []error
+
+	for _, provider := range providers {
+		result, err := provider.SyncReminders(ctx, expiringSecrets)
+		if err != nil {
+			allErrors = append(allErrors, fmt.Errorf("sync reminders: %w", err))
+			continue
+		}
+		totalCreated += result.Created
+		totalUpdated += result.Updated
+		totalSkipped += result.Skipped
+		allErrors = append(allErrors, result.Errors...)
 	}
 
 	fmt.Printf("✓ Created: %d, Updated: %d, Skipped: %d\n",
-		result.Created, result.Updated, result.Skipped)
+		totalCreated, totalUpdated, totalSkipped)
 
-	if len(result.Errors) > 0 {
+	if len(allErrors) > 0 {
 		fmt.Fprintf(os.Stderr, "\nErrors:\n")
-		for _, e := range result.Errors {
+		for _, e := range allErrors {
 			fmt.Fprintf(os.Stderr, "  - %v\n", e)
 		}
 	}
@@ -197,17 +239,47 @@ func runRemindersClear(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	provider, err := reminders.NewGoogleCalendarProvider(
-		ctx,
-		cfg.Reminders.CalendarID,
-		cfg.Reminders.LeadTimeDays,
-	)
-	if err != nil {
-		return fmt.Errorf("create calendar provider: %w", err)
+	// Create providers based on config
+	var providers []reminders.Provider
+
+	switch cfg.Reminders.Provider {
+	case "tasks", "": // Tasks is default
+		p, err := reminders.NewGoogleTasksProvider(ctx, cfg.Reminders.TasklistID, cfg.Reminders.LeadTimeDays)
+		if err != nil {
+			return fmt.Errorf("create tasks provider: %w", err)
+		}
+		providers = append(providers, p)
+
+	case "calendar":
+		p, err := reminders.NewGoogleCalendarProvider(ctx, cfg.Reminders.CalendarID, cfg.Reminders.LeadTimeDays)
+		if err != nil {
+			return fmt.Errorf("create calendar provider: %w", err)
+		}
+		providers = append(providers, p)
+
+	case "both":
+		tp, err := reminders.NewGoogleTasksProvider(ctx, cfg.Reminders.TasklistID, cfg.Reminders.LeadTimeDays)
+		if err != nil {
+			return fmt.Errorf("create tasks provider: %w", err)
+		}
+		cp, err := reminders.NewGoogleCalendarProvider(ctx, cfg.Reminders.CalendarID, cfg.Reminders.LeadTimeDays)
+		if err != nil {
+			return fmt.Errorf("create calendar provider: %w", err)
+		}
+		providers = append(providers, tp, cp)
+
+	case "none":
+		fmt.Println("Reminders provider is set to 'none'. Nothing to clear.")
+		return nil
+
+	default:
+		return fmt.Errorf("unknown provider: %s", cfg.Reminders.Provider)
 	}
 
-	if err := provider.DeleteReminders(ctx, shortName); err != nil {
-		return fmt.Errorf("delete reminders: %w", err)
+	for _, provider := range providers {
+		if err := provider.DeleteReminders(ctx, shortName); err != nil {
+			return fmt.Errorf("delete reminders: %w", err)
+		}
 	}
 
 	fmt.Printf("✓ Cleared reminders for %s\n", shortName)

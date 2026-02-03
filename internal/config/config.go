@@ -63,8 +63,9 @@ type ClusterConfig struct {
 // RemindersConfig configures expiration reminders.
 type RemindersConfig struct {
 	Enabled            bool        `json:"enabled"`
-	Provider           string      `json:"provider,omitempty"`           // default: "google-calendar"
-	CalendarID         string      `json:"calendarId,omitempty"`         // default: "primary"
+	Provider           string      `json:"provider,omitempty"`           // "tasks" (default), "calendar", "both", "none"
+	CalendarID         string      `json:"calendarId,omitempty"`         // For calendar provider, default: "primary"
+	TasklistID         string      `json:"tasklistId,omitempty"`         // For tasks provider, default: "@default"
 	LeadTimeDays       []int       `json:"leadTimeDays,omitempty"`       // default: [30, 7, 1]
 	EventTitleTemplate string      `json:"eventTitleTemplate,omitempty"` // default template
 	Auth               *AuthConfig `json:"auth,omitempty"`
@@ -168,10 +169,13 @@ func (c *Config) applyDefaults() {
 	// Reminders defaults
 	if c.Reminders != nil && c.Reminders.Enabled {
 		if c.Reminders.Provider == "" {
-			c.Reminders.Provider = "google-calendar"
+			c.Reminders.Provider = "tasks" // Tasks is default - auto-appears in Calendar
 		}
 		if c.Reminders.CalendarID == "" {
 			c.Reminders.CalendarID = "primary"
+		}
+		if c.Reminders.TasklistID == "" {
+			c.Reminders.TasklistID = "@default" // User's primary task list
 		}
 		if len(c.Reminders.LeadTimeDays) == 0 {
 			c.Reminders.LeadTimeDays = []int{30, 7, 1}
