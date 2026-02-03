@@ -155,7 +155,7 @@ func runRotate(cmd *cobra.Command, args []string) error {
 		case "external", "manual":
 			fmt.Printf("  Mode: %s\n", key.Rotation.Mode)
 			if key.OperatorHints != nil {
-				fmt.Printf("  Operator hints available in GSM: %s\n", key.OperatorHints.GSM.SecretResource)
+				displayOperatorHints(key.OperatorHints, key.KeyName)
 			}
 			fmt.Println("  Please update the value externally, then press Enter to continue...")
 			if !dryRun && !yes {
@@ -269,6 +269,30 @@ func generateValue(gen *core.GeneratorConfig) ([]byte, error) {
 	}
 }
 
+// displayOperatorHints prints operator hints for manual rotation
+func displayOperatorHints(hints *core.OperatorHints, keyName string) {
+	fmt.Printf("\n  ┌─ Operator Hints for %s ─\n", keyName)
+	if hints.Provider != "" {
+		fmt.Printf("  │ Provider:    %s\n", hints.Provider)
+	}
+	if hints.RotationURL != "" {
+		fmt.Printf("  │ Rotation URL: %s\n", hints.RotationURL)
+	}
+	if hints.DocURL != "" {
+		fmt.Printf("  │ Docs:        %s\n", hints.DocURL)
+	}
+	if hints.Contact != "" {
+		fmt.Printf("  │ Contact:     %s\n", hints.Contact)
+	}
+	if hints.Notes != "" {
+		fmt.Printf("  │ Notes:       %s\n", hints.Notes)
+	}
+	if hints.GSM != nil && hints.GSM.SecretResource != "" {
+		fmt.Printf("  │ Extended hints in GSM: %s\n", hints.GSM.SecretResource)
+	}
+	fmt.Printf("  └────────────────────────────\n\n")
+}
+
 func serializeMetadata(m *core.SecretMetadata) string {
 	var sb strings.Builder
 
@@ -326,6 +350,33 @@ func serializeMetadata(m *core.SecretMetadata) string {
 			sb.WriteString(fmt.Sprintf("      expiresAt: \"%s\"\n", k.Expiry.ExpiresAt))
 			if k.Expiry.Source != "" {
 				sb.WriteString(fmt.Sprintf("      source: %s\n", k.Expiry.Source))
+			}
+		}
+
+		if k.OperatorHints != nil {
+			sb.WriteString("    operatorHints:\n")
+			if k.OperatorHints.RotationURL != "" {
+				sb.WriteString(fmt.Sprintf("      rotationUrl: %s\n", k.OperatorHints.RotationURL))
+			}
+			if k.OperatorHints.DocURL != "" {
+				sb.WriteString(fmt.Sprintf("      docUrl: %s\n", k.OperatorHints.DocURL))
+			}
+			if k.OperatorHints.Notes != "" {
+				sb.WriteString(fmt.Sprintf("      notes: %q\n", k.OperatorHints.Notes))
+			}
+			if k.OperatorHints.Contact != "" {
+				sb.WriteString(fmt.Sprintf("      contact: %s\n", k.OperatorHints.Contact))
+			}
+			if k.OperatorHints.Provider != "" {
+				sb.WriteString(fmt.Sprintf("      provider: %s\n", k.OperatorHints.Provider))
+			}
+			if k.OperatorHints.GSM != nil {
+				sb.WriteString("      gsm:\n")
+				sb.WriteString(fmt.Sprintf("        secretResource: %s\n", k.OperatorHints.GSM.SecretResource))
+				sb.WriteString(fmt.Sprintf("        version: \"%s\"\n", k.OperatorHints.GSM.Version))
+			}
+			if k.OperatorHints.Format != "" {
+				sb.WriteString(fmt.Sprintf("      format: %s\n", k.OperatorHints.Format))
 			}
 		}
 

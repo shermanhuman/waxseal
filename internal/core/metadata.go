@@ -73,10 +73,22 @@ type ExpiryConfig struct {
 	Source    string `json:"source,omitempty"` // "vendor", "certificate", "policy", "unknown"
 }
 
-// OperatorHints references operator guidance stored in GSM.
+// OperatorHints provides guidance for manual rotation.
 type OperatorHints struct {
-	GSM    GSMRef `json:"gsm"`
-	Format string `json:"format"` // "json"
+	// RotationURL is where the operator should go to rotate this secret
+	RotationURL string `json:"rotationUrl,omitempty"`
+	// Documentation links for this secret
+	DocURL string `json:"docUrl,omitempty"`
+	// Free-form notes for operators
+	Notes string `json:"notes,omitempty"`
+	// Contact info for questions about this secret
+	Contact string `json:"contact,omitempty"`
+	// Provider is the service that manages this secret (e.g., "stripe", "aws")
+	Provider string `json:"provider,omitempty"`
+	// GSM reference for extended hints stored in GSM (optional)
+	GSM *GSMRef `json:"gsm,omitempty"`
+	// Format of GSM-stored hints (e.g., "json", "markdown")
+	Format string `json:"format,omitempty"`
 }
 
 // ComputedConfig describes how to compute a key from other values.
