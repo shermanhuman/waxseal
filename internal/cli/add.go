@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
@@ -72,7 +71,7 @@ func init() {
 }
 
 func runAdd(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
 	shortName := args[0]
 
 	// Check if already exists
@@ -120,7 +119,11 @@ func runAdd(cmd *cobra.Command, args []string) error {
 
 			var value []byte
 			if generateRandom {
-				value = generateRandomBytes(addRandomLength)
+				var err error
+				value, err = generateRandomBytes(addRandomLength)
+				if err != nil {
+					return fmt.Errorf("generate value for key %q: %w", keyName, err)
+				}
 			} else {
 				return fmt.Errorf("key %q requires a value (use key:random or interactive mode)", keyName)
 			}
@@ -350,7 +353,10 @@ func runAddInteractive(shortName, projectID string) (namespace, manifestPath, sc
 		var value []byte
 		switch valueSource {
 		case "random":
-			value = generateRandomBytes(32)
+			value, err = generateRandomBytes(32)
+			if err != nil {
+				return namespace, manifestPath, scope, secretType, nil, fmt.Errorf("generate random value: %w", err)
+			}
 			fmt.Printf("  Generated random value for %s\n", keyName)
 		case "enter":
 			var valueStr string
@@ -382,12 +388,14 @@ func runAddInteractive(shortName, projectID string) (namespace, manifestPath, sc
 	return
 }
 
-func generateRandomBytes(length int) []byte {
+func generateRandomBytes(length int) ([]byte, error) {
 	bytes := make([]byte, length)
-	rand.Read(bytes)
+	if _, err := rand.Read(bytes); err != nil {
+		return nil, fmt.Errorf("generate random bytes: %w", err)
+	}
 	// Return as base64 encoded
 	encoded := base64.StdEncoding.EncodeToString(bytes)
-	return []byte(encoded)
+	return []byte(encoded), nil
 }
 
 // buildSealedSecretManifest creates a SealedSecret structure.

@@ -67,6 +67,56 @@ testdata/
 | `reseal/`    | Orchestration (fetch → compute → seal → write)             |
 | `logging/`   | Redacted type, safe structured logging                     |
 
+## CLI Architecture
+
+### Global Flags (Cobra Pattern)
+
+The CLI uses package-level variables for global flags—a common Cobra pattern:
+
+```go
+// root.go
+var (
+    repoPath   string  // --repo flag
+    configPath string  // --config flag
+    dryRun     bool    // --dry-run flag
+)
+```
+
+**Trade-off:** Simpler wiring vs. reduced testability. For larger CLIs, consider
+dependency injection via a struct. The current approach is acceptable for waxseal's
+scope and matches many production Cobra CLIs (kubectl, helm, etc.).
+
+### Context in Commands
+
+Always use `cmd.Context()` instead of `context.Background()`:
+
+```go
+func runFoo(cmd *cobra.Command, args []string) error {
+    ctx := cmd.Context()  // ✓ Supports signal handling
+    // NOT: ctx := context.Background()
+}
+```
+
+### gRPC Error Handling (GSM)
+
+Use gRPC status codes instead of string matching:
+
+```go
+import (
+    "google.golang.org/grpc/codes"
+    "google.golang.org/grpc/status"
+)
+
+if st, ok := status.FromError(err); ok {
+    switch st.Code() {
+    case codes.NotFound:
+        return core.WrapNotFound(resource, err)
+    case codes.PermissionDenied:
+        return core.WrapPermissionDenied(resource, err)
+    }
+}
+```
+
 ## Critical Rules
 
 ### Never Do

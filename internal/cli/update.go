@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bufio"
-	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
@@ -59,7 +58,7 @@ func init() {
 }
 
 func runUpdate(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
 	shortName := args[0]
 	keyName := args[1]
 
@@ -113,7 +112,9 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	var newValue []byte
 	if updateGenerateRandom {
 		bytes := make([]byte, updateRandomLength)
-		rand.Read(bytes)
+		if _, err := rand.Read(bytes); err != nil {
+			return fmt.Errorf("generate random bytes: %w", err)
+		}
 		encoded := base64.StdEncoding.EncodeToString(bytes)
 		newValue = []byte(encoded)
 		fmt.Printf("Generated random value (%d bytes, base64 encoded)\n", updateRandomLength)

@@ -55,7 +55,7 @@ func init() {
 }
 
 func runBootstrap(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
 	shortName := args[0]
 
 	// Load metadata

@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
@@ -57,7 +56,7 @@ func init() {
 }
 
 func runRotate(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
 	shortName := args[0]
 
 	var keyName string

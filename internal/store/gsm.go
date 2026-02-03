@@ -9,6 +9,8 @@ import (
 	secretmanager "cloud.google.com/go/secretmanager/apiv1"
 	"cloud.google.com/go/secretmanager/apiv1/secretmanagerpb"
 	"github.com/shermanhuman/waxseal/internal/core"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // GSMStore implements Store using Google Secret Manager.
@@ -52,15 +54,7 @@ func (g *GSMStore) AccessVersion(ctx context.Context, secretResource string, ver
 
 	result, err := g.client.AccessSecretVersion(ctx, req)
 	if err != nil {
-		// Check for common error types
-		errStr := err.Error()
-		if contains(errStr, "NotFound") || contains(errStr, "not found") {
-			return nil, core.WrapNotFound(secretResource+"/versions/"+version, err)
-		}
-		if contains(errStr, "PermissionDenied") || contains(errStr, "permission denied") {
-			return nil, core.WrapPermissionDenied(secretResource, err)
-		}
-		return nil, fmt.Errorf("access secret version: %w", err)
+		return nil, wrapGRPCError(err, secretResource+"/versions/"+version, "access secret version")
 	}
 
 	return result.Payload.Data, nil
@@ -77,14 +71,7 @@ func (g *GSMStore) AddVersion(ctx context.Context, secretResource string, data [
 
 	result, err := g.client.AddSecretVersion(ctx, req)
 	if err != nil {
-		errStr := err.Error()
-		if contains(errStr, "NotFound") || contains(errStr, "not found") {
-			return "", core.WrapNotFound(secretResource, err)
-		}
-		if contains(errStr, "PermissionDenied") || contains(errStr, "permission denied") {
-			return "", core.WrapPermissionDenied(secretResource, err)
-		}
-		return "", fmt.Errorf("add secret version: %w", err)
+		return "", wrapGRPCError(err, secretResource, "add secret version")
 	}
 
 	// Extract version number from the full resource name
@@ -116,14 +103,11 @@ func (g *GSMStore) CreateSecret(ctx context.Context, secretResource string, data
 
 	_, err := g.client.CreateSecret(ctx, createReq)
 	if err != nil {
-		errStr := err.Error()
-		if contains(errStr, "AlreadyExists") || contains(errStr, "already exists") {
+		// For CreateSecret, AlreadyExists means we should return that specific error
+		if st, ok := status.FromError(err); ok && st.Code() == codes.AlreadyExists {
 			return "", fmt.Errorf("%s: %w", secretResource, core.ErrAlreadyExists)
 		}
-		if contains(errStr, "PermissionDenied") || contains(errStr, "permission denied") {
-			return "", core.WrapPermissionDenied(secretResource, err)
-		}
-		return "", fmt.Errorf("create secret: %w", err)
+		return "", wrapGRPCError(err, secretResource, "create secret")
 	}
 
 	// Add the initial version
@@ -155,8 +139,7 @@ func (g *GSMStore) SecretExists(ctx context.Context, secretResource string) (boo
 
 	_, err := g.client.GetSecret(ctx, req)
 	if err != nil {
-		errStr := err.Error()
-		if contains(errStr, "NotFound") || contains(errStr, "not found") {
+		if st, ok := status.FromError(err); ok && st.Code() == codes.NotFound {
 			return false, nil
 		}
 		return false, fmt.Errorf("get secret: %w", err)
@@ -187,17 +170,22 @@ func extractSecretIDFromResource(resource string) string {
 	return ""
 }
 
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsImpl(s, substr))
-}
-
-func containsImpl(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
+// wrapGRPCError wraps a gRPC error with appropriate domain error types.
+// Uses gRPC status codes for reliable error detection instead of string matching.
+func wrapGRPCError(err error, resource string, operation string) error {
+	if st, ok := status.FromError(err); ok {
+		switch st.Code() {
+		case codes.NotFound:
+			return core.WrapNotFound(resource, err)
+		case codes.PermissionDenied:
+			return core.WrapPermissionDenied(resource, err)
+		case codes.AlreadyExists:
+			return fmt.Errorf("%s: %w: %v", resource, core.ErrAlreadyExists, err)
+		case codes.InvalidArgument:
+			return core.WrapValidation(operation, err)
 		}
 	}
-	return false
+	return fmt.Errorf("%s: %w", operation, err)
 }
 
 // Validate version is numeric for external callers

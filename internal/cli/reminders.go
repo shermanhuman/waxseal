@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bufio"
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -85,7 +84,7 @@ func init() {
 }
 
 func runRemindersSync(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
 
 	// Load config
 	configFile := configPath
@@ -176,7 +175,7 @@ reminders:
 }
 
 func runRemindersClear(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
 	shortName := args[0]
 
 	// Load config

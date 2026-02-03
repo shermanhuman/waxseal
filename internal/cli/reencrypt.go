@@ -56,7 +56,7 @@ func init() {
 }
 
 func runReencrypt(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
 
 	// Load config
 	configFile := configPath
