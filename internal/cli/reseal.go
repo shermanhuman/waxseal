@@ -43,6 +43,7 @@ var resealAll bool
 func init() {
 	rootCmd.AddCommand(resealCmd)
 	resealCmd.Flags().BoolVar(&resealAll, "all", false, "Reseal all active secrets")
+	addMetadataCheck(resealCmd)
 }
 
 func runReseal(cmd *cobra.Command, args []string) error {

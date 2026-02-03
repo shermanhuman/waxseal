@@ -49,6 +49,7 @@ func init() {
 	retireCmd.Flags().StringVar(&retireReplacedBy, "replaced-by", "", "Short name of replacement secret")
 	retireCmd.Flags().BoolVar(&retireDeleteManifest, "delete-manifest", false, "Also delete the SealedSecret manifest file")
 	retireCmd.Flags().BoolVar(&retireClearReminders, "clear-reminders", false, "Also clear calendar reminders for this secret")
+	addMetadataCheck(retireCmd)
 }
 
 func runRetire(cmd *cobra.Command, args []string) error {

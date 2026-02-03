@@ -320,7 +320,7 @@ make e2e-teardown
 
 ---
 
-## Task 11: Auto-Bootstrap Offer
+## Task 11: Auto-Bootstrap Offer ✅
 
 **Goal**: Offer to run discover if metadata is missing.
 
@@ -328,21 +328,24 @@ make e2e-teardown
 
 ### Implementation
 
-- [ ] 11.1. Check for `.waxseal/` at command start
-- [ ] 11.2. If missing, print message and offer to run `discover`
-- [ ] 11.3. Support `--yes` flag for non-interactive automation
+- [x] 11.1. Check for `.waxseal/` at command start
+- [x] 11.2. If missing, print message and offer to run `discover`
+- [x] 11.3. Support `--yes` flag for non-interactive automation
 
 ### Tests
 
-- [ ] **Unit test**: Detection logic
-- [ ] **Manual test**: Run command in empty repo
+- [x] **Unit test**: Detection logic (`requiresMetadata`)
+- [x] **Unit test**: Missing config detection
+- [x] **Unit test**: Missing metadata detection
+- [x] **Unit test**: Existing metadata passes
+- [x] **Manual test**: Run command in empty repo
 
 ### Verification Command
 
 ```bash
-# Manual test in empty directory
-waxseal list
-# Should prompt to run discover
+go test ./internal/cli/... -run TestRequires -v
+go test ./internal/cli/... -run TestCheckMetadata -v
+# All passed!
 ```
 
 ---

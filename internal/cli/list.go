@@ -22,6 +22,7 @@ Shows shortName, status, key count, rotation modes, and expiration status.`,
 func init() {
 	rootCmd.AddCommand(listCmd)
 	listCmd.Flags().StringP("output", "o", "table", "Output format: table, json")
+	addMetadataCheck(listCmd)
 }
 
 func runList(cmd *cobra.Command, args []string) error {
