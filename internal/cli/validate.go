@@ -124,6 +124,30 @@ func runValidate(cmd *cobra.Command, args []string) error {
 					hasErrors = true
 				}
 			}
+
+			// Hygiene: Validate operatorHints (per plan: must be GSM-backed)
+			if k.OperatorHints != nil {
+				if k.OperatorHints.GSM == nil {
+					fmt.Fprintf(os.Stderr, "ERROR: %s/%s: operatorHints must have gsm reference (inline hints not allowed)\n",
+						m.ShortName, k.KeyName)
+					hasErrors = true
+				} else if k.OperatorHints.Format != "json" {
+					fmt.Fprintf(os.Stderr, "WARNING: %s/%s: operatorHints.format should be 'json' (got %q)\n",
+						m.ShortName, k.KeyName, k.OperatorHints.Format)
+					hasWarnings = true
+				}
+			}
+
+			// Hygiene: Warn on internal hostname patterns in computed.params
+			if k.Computed != nil && len(k.Computed.Params) > 0 {
+				for paramName, paramValue := range k.Computed.Params {
+					if containsInternalHostname(paramValue) {
+						fmt.Fprintf(os.Stderr, "WARNING: %s/%s: computed.params[%s] contains internal hostname pattern\n",
+							m.ShortName, k.KeyName, paramName)
+						hasWarnings = true
+					}
+				}
+			}
 		}
 
 		secretCount++
@@ -179,4 +203,27 @@ func isExpired(expiresAt string) bool {
 		return false
 	}
 	return t.Before(time.Now())
+}
+
+// containsInternalHostname checks if a value contains patterns suggesting
+// internal hostnames that should not be committed to Git.
+func containsInternalHostname(value string) bool {
+	internalPatterns := []string{
+		".internal",
+		".local",
+		".svc.cluster",
+		".corp.",
+		"localhost",
+		"127.0.0.1",
+		"10.0.",
+		"172.16.",
+		"192.168.",
+	}
+	lower := strings.ToLower(value)
+	for _, pattern := range internalPatterns {
+		if strings.Contains(lower, pattern) {
+			return true
+		}
+	}
+	return false
 }

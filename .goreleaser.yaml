@@ -46,6 +46,12 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
+# SBOM generation (per plan: 80-release-and-supply-chain.md)
+sboms:
+  - artifacts: archive
+    documents:
+      - "{{ .ProjectName }}_{{ .Version }}_sbom.spdx.json"
+
 snapshot:
   version_template: "{{ .Tag }}-next"
 
