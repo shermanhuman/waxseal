@@ -126,33 +126,74 @@ func runInit(cmd *cobra.Command, args []string) error {
 				return err
 			}
 
-			var billingID string
-			err = huh.NewForm(
-				huh.NewGroup(
-					huh.NewInput().
-						Title("Desired Project ID").
-						Description("Lower-case slug (e.g. waxseal-prod-secrets)").
-						Value(&projectID).
-						Validate(func(s string) error {
-							if s == "" {
-								return fmt.Errorf("project ID is required")
-							}
-							return nil
-						}),
-					huh.NewInput().
-						Title("Billing Account ID").
-						Description("Format: 01XXXX-XXXXXX-XXXXXX (see console.cloud.google.com/billing)").
-						Value(&billingID).
-						Validate(func(s string) error {
-							if s == "" {
-								return fmt.Errorf("billing ID is required")
-							}
-							return nil
-						}),
-				),
-			).Run()
+			// Ensure auth before fetching billing accounts
+			if err := EnsureGcloudAuth(); err != nil {
+				return err
+			}
+
+			// 1. Get Project ID
+			err = huh.NewInput().
+				Title("Desired Project ID").
+				Description("Lower-case slug (e.g. waxseal-prod-secrets)").
+				Value(&projectID).
+				Validate(func(s string) error {
+					if s == "" {
+						return fmt.Errorf("project ID is required")
+					}
+					return nil
+				}).
+				Run()
 			if err != nil {
 				return err
+			}
+
+			// 2. Resolve Billing Account
+			var billingID string
+
+			// Try to fetch available accounts
+			accounts, _ := GetBillingAccounts()
+			var options []huh.Option[string]
+			for _, acc := range accounts {
+				if acc.Open {
+					id := strings.TrimPrefix(acc.Name, "billingAccounts/")
+					label := fmt.Sprintf("%s (%s)", acc.DisplayName, id)
+					options = append(options, huh.NewOption(label, id))
+				}
+			}
+			options = append(options, huh.NewOption("Enter manually...", "manual"))
+
+			// If we found accounts, let user choose
+			if len(options) > 1 {
+				var choice string
+				err = huh.NewSelect[string]().
+					Title("Billing Account").
+					Options(options...).
+					Value(&choice).
+					Run()
+				if err != nil {
+					return err
+				}
+				if choice != "manual" {
+					billingID = choice
+				}
+			}
+
+			// Fallback to manual input
+			if billingID == "" {
+				err = huh.NewInput().
+					Title("Billing Account ID").
+					Description("Format: 01XXXX-XXXXXX-XXXXXX (see console.cloud.google.com/billing)").
+					Value(&billingID).
+					Validate(func(s string) error {
+						if s == "" {
+							return fmt.Errorf("billing ID is required")
+						}
+						return nil
+					}).
+					Run()
+				if err != nil {
+					return err
+				}
 			}
 
 			// Setup bootstrap flags

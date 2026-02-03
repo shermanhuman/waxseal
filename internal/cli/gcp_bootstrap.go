@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -379,4 +380,27 @@ func runGcloudWithTimeout(timeout time.Duration, args ...string) error {
 		return fmt.Errorf("command timed out after %v - browser may not have opened correctly", timeout)
 	}
 	return err
+}
+
+type GCPBillingAccount struct {
+	Name        string `json:"name"`        // e.g. billingAccounts/01XXXX-XXXXXX-XXXXXX
+	DisplayName string `json:"displayName"` // e.g. My Billing Account
+	Open        bool   `json:"open"`
+}
+
+// GetBillingAccounts returns a list of available billing accounts for the current user
+func GetBillingAccounts() ([]GCPBillingAccount, error) {
+	// Ensure we have JSON output
+	cmd := exec.Command("gcloud", "billing", "accounts", "list", "--format=json")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list billing accounts: %w", err)
+	}
+
+	var accounts []GCPBillingAccount
+	if err := json.Unmarshal(output, &accounts); err != nil {
+		return nil, fmt.Errorf("failed to parse billing accounts: %w", err)
+	}
+
+	return accounts, nil
 }
