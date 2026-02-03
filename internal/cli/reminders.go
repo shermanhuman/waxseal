@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/huh"
 	"github.com/shermanhuman/waxseal/internal/config"
 	"github.com/shermanhuman/waxseal/internal/core"
 	"github.com/shermanhuman/waxseal/internal/reminders"
@@ -355,13 +355,8 @@ func runRemindersList(cmd *cobra.Command, args []string) error {
 }
 
 func runRemindersSetup(cmd *cobra.Command, args []string) error {
-	reader := bufio.NewReader(os.Stdin)
-
 	fmt.Println("WaxSeal Reminders Setup")
 	fmt.Println("=======================")
-	fmt.Println()
-	fmt.Println("This wizard will configure Google Calendar reminders for secret expiration.")
-	fmt.Println()
 
 	// Check for existing config
 	configFile := configPath
@@ -375,72 +370,79 @@ func runRemindersSetup(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	fmt.Println("Prerequisites:")
-	fmt.Println("  1. Enable Google Calendar API in your GCP project")
-	fmt.Println("  2. Set up Application Default Credentials:")
-	fmt.Println("     gcloud auth application-default login \\")
-	fmt.Println("       --scopes https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/calendar.events")
-	fmt.Println()
-
-	fmt.Print("Continue? [y/N]: ")
-	input, _ := reader.ReadString('\n')
-	input = strings.TrimSpace(strings.ToLower(input))
-	if input != "y" && input != "yes" {
-		fmt.Println("Setup cancelled.")
-		return nil
+	// 1. Proactive Auth Check with required scopes
+	// Note: Calendar API requires specific scopes not covered by default ADC
+	fmt.Println("\nChecking authentication...")
+	scopes := []string{
+		"https://www.googleapis.com/auth/cloud-platform",
+		"https://www.googleapis.com/auth/calendar.events",
+	}
+	if err := EnsureGcloudAuth(); err != nil {
+		return err
+	}
+	if err := EnsureGcloudADC(scopes...); err != nil {
+		return err
 	}
 
-	fmt.Println()
+	// 2. Interactive Configuration
+	calendarID := "primary"
+	leadTimeStr := "30, 7, 1"
 
-	// Calendar ID
-	fmt.Println("Choose a calendar:")
-	fmt.Println("  - 'primary' for your main calendar")
-	fmt.Println("  - Or enter a specific calendar ID")
-	fmt.Print("Calendar ID [primary]: ")
-	calendarID, _ := reader.ReadString('\n')
-	calendarID = strings.TrimSpace(calendarID)
-	if calendarID == "" {
-		calendarID = "primary"
+	err = huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Calendar ID").
+				Description("Calendar to create events in.\nUse 'primary' for the account you just logged into.\nOr enter a specific ID (email) if sharing a calendar.").
+				Value(&calendarID),
+			huh.NewInput().
+				Title("Lead Time Days").
+				Description("Comma-separated list of days before expiry to create reminders.").
+				Value(&leadTimeStr).
+				Validate(func(s string) error {
+					if len(parseIntList(s)) == 0 {
+						return fmt.Errorf("must provide at least one day")
+					}
+					return nil
+				}),
+		),
+	).Run()
+	if err != nil {
+		return err
 	}
 
-	// Lead time days
-	fmt.Println()
-	fmt.Println("Lead time days (when to create reminders before expiry)")
-	fmt.Print("Lead time days [30,7,1]: ")
-	leadTimeInput, _ := reader.ReadString('\n')
-	leadTimeInput = strings.TrimSpace(leadTimeInput)
+	leadTimeDays := parseIntList(leadTimeStr)
 
-	leadTimeDays := []int{30, 7, 1}
-	if leadTimeInput != "" {
-		leadTimeDays = parseIntList(leadTimeInput)
-		if len(leadTimeDays) == 0 {
-			leadTimeDays = []int{30, 7, 1}
-		}
-	}
+	// 3. Build config snippet
+	configSnippet := fmt.Sprintf(`
+reminders:
+  enabled: true
+  provider: google-calendar
+  calendarId: %s
+  leadTimeDays: [%s]
+  auth:
+    kind: adc
+`, calendarID, formatIntList(leadTimeDays))
 
-	// Build config snippet
-	fmt.Println()
-	fmt.Println("Add this to your .waxseal/config.yaml:")
-	fmt.Println()
-	fmt.Printf("reminders:\n")
-	fmt.Printf("  enabled: true\n")
-	fmt.Printf("  provider: google-calendar\n")
-	fmt.Printf("  calendarId: %s\n", calendarID)
-	fmt.Printf("  leadTimeDays: [%s]\n", formatIntList(leadTimeDays))
-	fmt.Printf("  auth:\n")
-	fmt.Printf("    kind: adc\n")
-	fmt.Println()
+	fmt.Println("\nGenerated Configuration:")
+	fmt.Println(configSnippet)
 
 	if dryRun {
 		fmt.Println("[DRY RUN] Would update config file")
 		return nil
 	}
 
-	fmt.Print("Would you like to update the config file automatically? [y/N]: ")
-	updateInput, _ := reader.ReadString('\n')
-	updateInput = strings.TrimSpace(strings.ToLower(updateInput))
-	if updateInput != "y" && updateInput != "yes" {
-		fmt.Println("Config not updated. Add the snippet manually.")
+	// 4. Update Config
+	var update bool
+	err = huh.NewConfirm().
+		Title("Update config file automatically?").
+		Value(&update).
+		Run()
+	if err != nil {
+		return nil
+	}
+
+	if !update {
+		fmt.Println("Config not updated. Please add the snippet manually.")
 		return nil
 	}
 

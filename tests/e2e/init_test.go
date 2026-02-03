@@ -49,6 +49,29 @@ func TestE2E_Init(t *testing.T) {
 			args:    []string{"init", "--non-interactive"},
 			wantErr: true,
 		},
+		{
+			name:    "init with skip-reminders flag",
+			args:    []string{"init", "--project-id=test-project", "--non-interactive", "--skip-reminders"},
+			wantErr: false,
+			wantFiles: []string{
+				".waxseal/config.yaml",
+				".waxseal/metadata",
+			},
+			wantContent: map[string]string{
+				".waxseal/config.yaml": "projectId: test-project",
+			},
+		},
+		{
+			name:    "init with custom controller name",
+			args:    []string{"init", "--project-id=test-project", "--controller-name=my-sealed-secrets", "--non-interactive", "--skip-reminders"},
+			wantErr: false,
+			wantFiles: []string{
+				".waxseal/config.yaml",
+			},
+			wantContent: map[string]string{
+				".waxseal/config.yaml": "serviceName: my-sealed-secrets",
+			},
+		},
 	}
 
 	for _, tt := range tests {

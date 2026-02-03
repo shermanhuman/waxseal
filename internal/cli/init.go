@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"os/exec"
@@ -36,6 +35,7 @@ var (
 	initProjectID      string
 	initControllerNS   string
 	initControllerName string
+	initSkipReminders  bool
 )
 
 func init() {
@@ -44,6 +44,7 @@ func init() {
 	initCmd.Flags().StringVar(&initProjectID, "project-id", "", "GCP Project ID for Secret Manager")
 	initCmd.Flags().StringVar(&initControllerNS, "controller-namespace", "kube-system", "Sealed Secrets controller namespace")
 	initCmd.Flags().StringVar(&initControllerName, "controller-name", "sealed-secrets", "Sealed Secrets controller service name")
+	initCmd.Flags().BoolVar(&initSkipReminders, "skip-reminders", false, "Skip the calendar reminders setup prompt")
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
@@ -79,17 +80,19 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// Check if already initialized
 	if _, err := os.Stat(configFile); err == nil && !yes {
 		fmt.Printf("waxseal already initialized at %s\n", waxsealDir)
-		fmt.Print("Overwrite? [y/N]: ")
 		if !confirmOverwrite() {
 			fmt.Println("Aborted.")
 			return nil
 		}
 	}
 
-	// Get project ID
-	projectID := initProjectID
-	if projectID == "" && !initNonInteractive {
-		// Welcome message
+	// Check for prerequisites (always, even non-interactive)
+	if err := CheckKubesealInstalled(); err != nil {
+		return err
+	}
+
+	// Welcome message (interactive only)
+	if !initNonInteractive {
 		fmt.Println()
 		fmt.Println("╔══════════════════════════════════════════════════════════════╗")
 		fmt.Println("║                    Welcome to WaxSeal                        ║")
@@ -98,14 +101,18 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println("WaxSeal syncs your Kubernetes SealedSecrets with Google Secret Manager.")
 		fmt.Println("Secret values are stored in GCP - only encrypted ciphertext goes in Git.")
 		fmt.Println()
+	}
 
+	// Handle GCP setup
+	projectID := initProjectID
+	if projectID == "" && !initNonInteractive {
 		// Project setup choice
 		var setupChoice string
 		err := huh.NewSelect[string]().
 			Title("How do you want to set up GCP?").
 			Options(
 				huh.NewOption("Use an existing GCP project", "existing"),
-				huh.NewOption("Create a new GCP project (requires gcloud CLI)", "create"),
+				huh.NewOption("Create a new GCP project (fully automated)", "create"),
 			).
 			Value(&setupChoice).
 			Run()
@@ -114,34 +121,78 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 
 		if setupChoice == "create" {
-			fmt.Println()
-			fmt.Println("To create a new GCP project, you'll need:")
-			fmt.Println("  • gcloud CLI installed and authenticated (gcloud auth login)")
-			fmt.Println("  • A GCP billing account ID (find at console.cloud.google.com/billing)")
-			fmt.Println()
-			fmt.Println("Run:")
-			fmt.Println("  waxseal gcp bootstrap --project-id=YOUR-PROJECT --create-project --billing-account-id=BILLING-ID")
-			fmt.Println()
-			fmt.Println("This will create the project, enable Secret Manager API, and set up a service account.")
-			fmt.Println()
-			fmt.Println("Then re-run 'waxseal init' with your new project ID.")
-			return nil
-		}
+			// Check for gcloud before proceeding
+			if err := CheckGcloudInstalled(); err != nil {
+				return err
+			}
 
-		// Get project ID with huh input
-		err = huh.NewInput().
-			Title("GCP Project ID").
-			Description("The human-readable project slug (e.g. my-app-prod)").
-			Value(&projectID).
-			Validate(func(s string) error {
-				if s == "" {
-					return fmt.Errorf("project ID is required")
-				}
-				return nil
-			}).
-			Run()
-		if err != nil {
-			return err
+			var billingID string
+			err = huh.NewForm(
+				huh.NewGroup(
+					huh.NewInput().
+						Title("Desired Project ID").
+						Description("Lower-case slug (e.g. waxseal-prod-secrets)").
+						Value(&projectID).
+						Validate(func(s string) error {
+							if s == "" {
+								return fmt.Errorf("project ID is required")
+							}
+							return nil
+						}),
+					huh.NewInput().
+						Title("Billing Account ID").
+						Description("Format: 01XXXX-XXXXXX-XXXXXX (see console.cloud.google.com/billing)").
+						Value(&billingID).
+						Validate(func(s string) error {
+							if s == "" {
+								return fmt.Errorf("billing ID is required")
+							}
+							return nil
+						}),
+				),
+			).Run()
+			if err != nil {
+				return err
+			}
+
+			// Setup bootstrap flags
+			gcpProjectID = projectID
+			gcpCreateProject = true
+			gcpBillingAccountID = billingID
+
+			// Run bootstrap (this now handles Auth and ADC proactively)
+			if err := runGCPBootstrap(cmd, nil); err != nil {
+				return fmt.Errorf("bootstrap failed: %w", err)
+			}
+
+			fmt.Println()
+			fmt.Println("✓ GCP Project created and bootstrapped.")
+			fmt.Println("Proceeding with WaxSeal initialization...")
+			fmt.Println()
+		} else {
+			// Ensure authed even for existing project since discover/add will need it
+			if err := EnsureGcloudAuth(); err != nil {
+				return err
+			}
+			if err := EnsureGcloudADC(); err != nil {
+				return err
+			}
+
+			// Get project ID with huh input
+			err = huh.NewInput().
+				Title("GCP Project ID").
+				Description("The human-readable project slug (e.g. my-app-prod)").
+				Value(&projectID).
+				Validate(func(s string) error {
+					if s == "" {
+						return fmt.Errorf("project ID is required")
+					}
+					return nil
+				}).
+				Run()
+			if err != nil {
+				return err
+			}
 		}
 	}
 	if projectID == "" && initNonInteractive {
@@ -153,20 +204,49 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Interactive prompts for controller
 	if !initNonInteractive {
-		err := huh.NewForm(
-			huh.NewGroup(
-				huh.NewInput().
-					Title("Controller namespace").
-					Description("Kubernetes namespace where Sealed Secrets controller runs").
-					Value(&controllerNS),
-				huh.NewInput().
-					Title("Controller service name").
-					Description("Service name of the Sealed Secrets controller").
-					Value(&controllerName),
-			),
-		).Run()
-		if err != nil {
-			return err
+		// Attempt to discover controller
+		fmt.Println("Scanning cluster for SealedSecrets controller...")
+		discoveredNS, discoveredName, err := discoverController()
+		if err == nil && discoveredNS != "" {
+			fmt.Printf("✓ Found controller in namespace '%s' (service: '%s')\n", discoveredNS, discoveredName)
+			controllerNS = discoveredNS
+			controllerName = discoveredName
+		} else {
+			// Fallback to selection if not automatically found
+			namespaces, err := getNamespaces()
+			if err == nil && len(namespaces) > 0 {
+				var nsOption string
+				err = huh.NewSelect[string]().
+					Title("Controller Namespace").
+					Description("Select the namespace where the SealedSecrets controller is running").
+					Options(huh.NewOptions(namespaces...)...).
+					Value(&nsOption).
+					Run()
+				if err != nil {
+					return err
+				}
+				controllerNS = nsOption
+			} else {
+				// Manual entry backup
+				err = huh.NewInput().
+					Title("Controller Namespace").
+					Description("Could not list namespaces. Enter manually (e.g. kube-system)").
+					Value(&controllerNS).
+					Run()
+				if err != nil {
+					return err
+				}
+			}
+
+			// Service name prompt
+			err = huh.NewInput().
+				Title("Controller Service Name").
+				Description("Service name of the Sealed Secrets controller").
+				Value(&controllerName).
+				Run()
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -279,7 +359,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Offer reminders setup
-	if !initNonInteractive {
+	if !initNonInteractive && !initSkipReminders {
 		fmt.Println()
 		var setupReminders bool
 		err := huh.NewConfirm().
@@ -343,16 +423,56 @@ discovery:
 `, projectID, controllerNS, controllerName)
 }
 
-func prompt(message string) string {
-	fmt.Print(message)
-	reader := bufio.NewReader(os.Stdin)
-	input, _ := reader.ReadString('\n')
-	return strings.TrimSpace(input)
+func confirmOverwrite() bool {
+	var overwrite bool
+	err := huh.NewConfirm().
+		Title("Configuration file already exists. Overwrite?").
+		Value(&overwrite).
+		Run()
+	if err != nil {
+		return false
+	}
+	return overwrite
 }
 
-func confirmOverwrite() bool {
-	reader := bufio.NewReader(os.Stdin)
-	input, _ := reader.ReadString('\n')
-	input = strings.TrimSpace(strings.ToLower(input))
-	return input == "y" || input == "yes"
+// discoverController tries to find the SealedSecrets controller in the cluster
+func discoverController() (string, string, error) {
+	// 1. Try to find pod by label
+	// Standard helm chart uses app.kubernetes.io/name=sealed-secrets
+	cmd := exec.Command("kubectl", "get", "pods", "-A",
+		"-l", "app.kubernetes.io/name=sealed-secrets",
+		"-o", "jsonpath={.items[0].metadata.namespace}/{.items[0].metadata.name}")
+	output, err := cmd.Output()
+	if err == nil && len(output) > 0 {
+		parts := strings.Split(string(output), "/")
+		if len(parts) >= 1 {
+			// Found namespace, now guess service name
+			// Usually: sealed-secrets-controller, sealed-secrets, or similar
+			ns := parts[0]
+			svcName := "sealed-secrets-controller" // standard default
+
+			// Verify service exists
+			check := exec.Command("kubectl", "get", "svc", "-n", ns, svcName)
+			if err := check.Run(); err != nil {
+				// Try alternate name
+				svcName = "sealed-secrets"
+				check = exec.Command("kubectl", "get", "svc", "-n", ns, svcName)
+				if err := check.Run(); err != nil {
+					return "", "", fmt.Errorf("service not found")
+				}
+			}
+			return ns, svcName, nil
+		}
+	}
+	return "", "", fmt.Errorf("controller not found")
+}
+
+// getNamespaces lists all namespaces in the cluster
+func getNamespaces() ([]string, error) {
+	cmd := exec.Command("kubectl", "get", "namespaces", "-o", "jsonpath={.items[*].metadata.name}")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	return strings.Split(string(output), " "), nil
 }

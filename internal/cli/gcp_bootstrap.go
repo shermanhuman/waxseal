@@ -1,10 +1,13 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -79,7 +82,17 @@ func init() {
 
 func runGCPBootstrap(cmd *cobra.Command, args []string) error {
 	// Check for gcloud
-	if err := checkGcloudInstalled(); err != nil {
+	if err := CheckGcloudInstalled(); err != nil {
+		return err
+	}
+
+	// Ensure authed
+	if err := EnsureGcloudAuth(); err != nil {
+		return err
+	}
+
+	// Ensure ADC (required for Go SDK)
+	if err := EnsureGcloudADC(); err != nil {
 		return err
 	}
 
@@ -240,24 +253,130 @@ type gcloudCommand struct {
 	args []string
 }
 
-func checkGcloudInstalled() error {
+func CheckGcloudInstalled() error {
 	_, err := exec.LookPath("gcloud")
 	if err != nil {
 		return fmt.Errorf(`gcloud CLI not found in PATH
 
+WaxSeal uses gcloud to manage GCP infrastructure. 
 Please install the Google Cloud SDK:
-  https://cloud.google.com/sdk/docs/install
-
-Then authenticate:
-  gcloud auth login
-  gcloud auth application-default login`)
+  https://cloud.google.com/sdk/docs/install`)
 	}
 	return nil
 }
 
+func CheckKubesealInstalled() error {
+	_, err := exec.LookPath("kubeseal")
+	if err != nil {
+		fmt.Println("⚠ Warning: 'kubeseal' CLI not found in PATH.")
+		fmt.Println("  WaxSeal requires 'kubeseal' to encrypt secrets for Kubernetes.")
+		fmt.Println("  Install it from: https://github.com/bitnami-labs/sealed-secrets/releases")
+		fmt.Println()
+	}
+	return nil
+}
+
+func EnsureGcloudADC(scopes ...string) error {
+	// Simple check for ADC credentials file.
+	// This isn't perfect but covers the 90% case for local dev.
+	home, _ := os.UserHomeDir()
+	adcPath := filepath.Join(home, "AppData", "Roaming", "gcloud", "application_default_credentials.json")
+	if os.Getenv("OS") != "Windows_NT" {
+		adcPath = filepath.Join(home, ".config", "gcloud", "application_default_credentials.json")
+	}
+
+	if _, err := os.Stat(adcPath); os.IsNotExist(err) {
+		fmt.Println("GCP Application Default Credentials (ADC) not found.")
+		if len(scopes) > 0 {
+			fmt.Println("Additional access scopes required: " + strings.Join(scopes, ", "))
+		} else {
+			fmt.Println("WaxSeal's backend requires these to talk to the Secret Manager API.")
+		}
+
+		fmt.Print("Run 'gcloud auth application-default login' now? [Y/n]: ")
+		var response string
+		fmt.Scanln(&response)
+
+		if response != "" && strings.ToLower(response) != "y" && strings.ToLower(response) != "yes" {
+			fmt.Println("  ⚠ Warning: Without ADC, 'reseal' and 'rotate' will fail unless GOOGLE_APPLICATION_CREDENTIALS is set.")
+			return nil
+		}
+
+		fmt.Println("Launching browser for authentication...")
+		// Show calendar-specific guidance only when calendar scopes are requested
+		hasCalendarScope := false
+		for _, s := range scopes {
+			if strings.Contains(s, "calendar") {
+				hasCalendarScope = true
+				break
+			}
+		}
+		if hasCalendarScope {
+			fmt.Println("👉 Please sign in with the Google Account that owns the calendar you want to use.")
+		}
+		fmt.Println()
+		fmt.Println("Running 'gcloud auth application-default login'...")
+
+		args := []string{"auth", "application-default", "login"}
+		if len(scopes) > 0 {
+			args = append(args, "--scopes="+strings.Join(scopes, ","))
+		}
+
+		if err := runGcloud(args...); err != nil {
+			fmt.Printf("  ⚠ ADC login failed: %v\n", err)
+		}
+	}
+	return nil
+}
+
+func EnsureGcloudAuth() error {
+	for {
+		// Check if already authenticated by checking for an active account
+		cmd := exec.Command("gcloud", "config", "get-value", "account")
+		output, _ := cmd.Output()
+		account := strings.TrimSpace(string(output))
+
+		if account != "" && account != "(unset)" {
+			return nil
+		}
+
+		fmt.Println("GCP credentials not found. WaxSeal requires an active gcloud account.")
+		fmt.Print("Run 'gcloud auth login' now? [Y/n]: ")
+		var response string
+		fmt.Scanln(&response)
+
+		if response != "" && strings.ToLower(response) != "y" && strings.ToLower(response) != "yes" {
+			return fmt.Errorf("gcloud authentication required to continue")
+		}
+
+		fmt.Println("Running 'gcloud auth login'...")
+		if err := runGcloud("auth", "login"); err != nil {
+			fmt.Printf("  ⚠ gcloud login failed: %v\n", err)
+			fmt.Println("Please try again or authenticate manually.")
+			continue
+		}
+
+		// Verify again after login
+		fmt.Println("Verifying authentication...")
+	}
+}
+
 func runGcloud(args ...string) error {
-	cmd := exec.Command("gcloud", args...)
+	return runGcloudWithTimeout(5*time.Minute, args...)
+}
+
+func runGcloudWithTimeout(timeout time.Duration, args ...string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "gcloud", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	cmd.Stdin = os.Stdin
+
+	err := cmd.Run()
+	if ctx.Err() == context.DeadlineExceeded {
+		return fmt.Errorf("command timed out after %v - browser may not have opened correctly", timeout)
+	}
+	return err
 }
