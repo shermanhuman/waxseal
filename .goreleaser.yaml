@@ -7,13 +7,24 @@ before:
     - go mod tidy
 
 builds:
-  - id: waxseal
+  - id: waxseal-nix
     env:
       - CGO_ENABLED=0
     goos:
       - linux
-      - windows
       - darwin
+    goarch:
+      - amd64
+      - arm64
+    main: ./cmd/waxseal
+    ldflags:
+      - -s -w -X github.com/shermanhuman/waxseal/internal/cli.Version={{.Version}} -X github.com/shermanhuman/waxseal/internal/cli.Commit={{.Commit}} -X github.com/shermanhuman/waxseal/internal/cli.BuildDate={{.Date}}
+
+  - id: waxseal-win
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - windows
     goarch:
       - amd64
       - arm64
@@ -23,15 +34,13 @@ builds:
 
 archives:
   - id: nix
-    builds: [waxseal]
+    builds: [waxseal-nix]
     formats: [tar.gz]
-    goos: [linux, darwin]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
   - id: windows
-    builds: [waxseal]
+    builds: [waxseal-win]
     formats: [zip]
-    goos: [windows]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
 checksum:
