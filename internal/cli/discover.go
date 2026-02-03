@@ -172,10 +172,21 @@ type discoveredSecret struct {
 }
 
 type keyConfig struct {
-	keyName      string
+	keyName    string
+	sourceKind string // "gsm" (default) or "computed"
+
+	// GSM fields
 	gsmResource  string
 	rotationMode string
-	expiry       string
+
+	// Generator fields (if rotationMode == generated)
+	genType   string // randomBase64, randomHex
+	genLength string // keep as string for simple input handling
+
+	// Computed fields
+	template string
+
+	expiry string
 }
 
 func deriveShortName(namespace, name string) string {
@@ -218,55 +229,85 @@ func runInteractiveWizard(reader *bufio.Reader, ds discoveredSecret, shortName, 
 	owner = strings.TrimSpace(input)
 
 	fmt.Println("\nConfigure each key:")
-	fmt.Println("  Rotation modes: manual, generated, derived, static, unknown")
+	fmt.Println("  Sources: gsm (default), computed")
+	fmt.Println("  Rotation modes: manual, generated, external, static, unknown")
 	fmt.Println()
 
 	for _, keyName := range keys {
-		// ... (existing key loop logic) ...
 		config := keyConfig{keyName: keyName}
 
-		// Generate default GSM resource
-		defaultGSM := fmt.Sprintf("projects/%s/secrets/%s-%s", projectID, shortName, sanitizeGSMName(keyName))
-
-		// GSM Resource
-		fmt.Printf("  [%s] GSM resource (Enter for default):\n", keyName)
-		fmt.Printf("    Default: %s\n", defaultGSM)
-		fmt.Print("    > ")
-		input, _ := reader.ReadString('\n')
-		input = strings.TrimSpace(input)
-		if input == "" {
-			config.gsmResource = defaultGSM
-		} else {
-			config.gsmResource = input
-		}
-
-		// Rotation mode
-		fmt.Printf("  [%s] Rotation mode [manual/generated/derived/static/unknown] (Enter for manual): ", keyName)
+		// Source kind
+		fmt.Printf("  [%s] Source kind [gsm/computed] (Enter for gsm): ", keyName)
 		input, _ = reader.ReadString('\n')
 		input = strings.TrimSpace(strings.ToLower(input))
-		switch input {
-		case "generated", "g":
-			config.rotationMode = "generated"
-		case "derived", "d":
-			config.rotationMode = "derived"
-		case "static", "s":
-			config.rotationMode = "static"
-		case "unknown", "u":
-			config.rotationMode = "unknown"
-		default:
-			config.rotationMode = "manual"
-		}
+		if input == "computed" || input == "c" {
+			config.sourceKind = "computed"
+			fmt.Printf("    Template (e.g. {{.password}}): ")
+			tmpl, _ := reader.ReadString('\n')
+			config.template = strings.TrimSpace(tmpl)
+			fmt.Println("    (Note: You will need to edit the metadata file to map inputs)")
+		} else {
+			config.sourceKind = "gsm"
 
-		// Expiry (optional)
-		fmt.Printf("  [%s] Expiry date (YYYY-MM-DD, Enter to skip): ", keyName)
-		input, _ = reader.ReadString('\n')
-		input = strings.TrimSpace(input)
-		if input != "" {
-			// Validate date format
-			if _, err := time.Parse("2006-01-02", input); err == nil {
-				config.expiry = input
+			// Generate default GSM resource
+			defaultGSM := fmt.Sprintf("projects/%s/secrets/%s-%s", projectID, shortName, sanitizeGSMName(keyName))
+
+			// GSM Resource
+			fmt.Printf("    GSM resource (Enter for default):\n")
+			fmt.Printf("      Default: %s\n", defaultGSM)
+			fmt.Print("      > ")
+			input, _ = reader.ReadString('\n')
+			input = strings.TrimSpace(input)
+			if input == "" {
+				config.gsmResource = defaultGSM
 			} else {
-				fmt.Printf("    ⚠ Invalid date format, skipping expiry\n")
+				config.gsmResource = input
+			}
+
+			// Rotation mode
+			fmt.Printf("    Rotation mode [manual/generated/external/static/unknown] (Enter for manual): ")
+			input, _ = reader.ReadString('\n')
+			input = strings.TrimSpace(strings.ToLower(input))
+			switch input {
+			case "generated", "g":
+				config.rotationMode = "generated"
+				fmt.Printf("      Generator type [randomBase64/randomHex] (Enter for randomBase64): ")
+				gt, _ := reader.ReadString('\n')
+				gt = strings.TrimSpace(gt)
+				if gt == "" {
+					gt = "randomBase64"
+				}
+				config.genType = gt
+
+				fmt.Printf("      Length (Enter for 32): ")
+				classes, _ := reader.ReadString('\n')
+				classes = strings.TrimSpace(classes)
+				// reusing var names lazily? No, 'genLength'
+				if classes == "" {
+					classes = "32"
+				}
+				config.genLength = classes
+
+			case "external", "e":
+				config.rotationMode = "external"
+			case "static", "s":
+				config.rotationMode = "static"
+			case "unknown", "u":
+				config.rotationMode = "unknown"
+			default:
+				config.rotationMode = "manual"
+			}
+
+			// Expiry (optional)
+			fmt.Printf("    Expiry date (YYYY-MM-DD, Enter to skip): ")
+			input, _ = reader.ReadString('\n')
+			input = strings.TrimSpace(input)
+			if input != "" {
+				if _, err := time.Parse("2006-01-02", input); err == nil {
+					config.expiry = input
+				} else {
+					fmt.Printf("      ⚠ Invalid date format, skipping expiry\n")
+				}
 			}
 		}
 
@@ -290,6 +331,7 @@ func generateMetadataStub(ds discoveredSecret, shortName, projectID string, keyC
 			}
 			keyConfigs = append(keyConfigs, keyConfig{
 				keyName:      keyName,
+				sourceKind:   "gsm",
 				gsmResource:  gsmResource,
 				rotationMode: "unknown",
 			})
@@ -298,7 +340,23 @@ func generateMetadataStub(ds discoveredSecret, shortName, projectID string, keyC
 
 	var keys strings.Builder
 	for _, kc := range keyConfigs {
-		keys.WriteString(fmt.Sprintf(`  - keyName: %s
+		// Default source if empty
+		if kc.sourceKind == "" {
+			kc.sourceKind = "gsm"
+		}
+
+		if kc.sourceKind == "computed" {
+			keys.WriteString(fmt.Sprintf(`  - keyName: %s
+    source:
+      kind: computed
+    computed:
+      kind: template
+      template: "%s"
+      inputs: [] # TODO: map variables here
+`, kc.keyName, kc.template))
+		} else {
+			// GSM
+			keys.WriteString(fmt.Sprintf(`  - keyName: %s
     source:
       kind: gsm
     gsm:
@@ -308,9 +366,28 @@ func generateMetadataStub(ds discoveredSecret, shortName, projectID string, keyC
       mode: %s
 `, kc.keyName, kc.gsmResource, kc.rotationMode))
 
-		if kc.expiry != "" {
-			keys.WriteString(fmt.Sprintf(`    expiry: "%s"
+			// Generator details
+			if kc.rotationMode == "generated" {
+				// Defaults
+				gt := kc.genType
+				if gt == "" {
+					gt = "randomBase64"
+				}
+				gl := kc.genLength
+				if gl == "" {
+					gl = "32"
+				}
+
+				keys.WriteString(fmt.Sprintf(`      generator:
+        kind: %s
+        chars: %s
+`, gt, gl))
+			}
+
+			if kc.expiry != "" {
+				keys.WriteString(fmt.Sprintf(`    expiry: "%s"
 `, kc.expiry))
+			}
 		}
 	}
 
