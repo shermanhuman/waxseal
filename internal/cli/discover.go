@@ -61,10 +61,10 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		// Skip .waxseal, .git, etc.
+		// Skip hidden directories (.waxseal, .git, etc.) but not "." or ".."
 		if info.IsDir() {
 			base := filepath.Base(path)
-			if strings.HasPrefix(base, ".") {
+			if strings.HasPrefix(base, ".") && base != "." && base != ".." {
 				return filepath.SkipDir
 			}
 			return nil
