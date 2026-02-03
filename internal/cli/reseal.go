@@ -9,6 +9,7 @@ import (
 	"github.com/shermanhuman/waxseal/internal/config"
 	"github.com/shermanhuman/waxseal/internal/reseal"
 	"github.com/shermanhuman/waxseal/internal/seal"
+	"github.com/shermanhuman/waxseal/internal/state"
 	"github.com/shermanhuman/waxseal/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -110,6 +111,10 @@ func runResealOne(ctx context.Context, engine *reseal.Engine, shortName string) 
 		fmt.Printf("✓ %s: would reseal %d keys [DRY RUN]\n", result.ShortName, result.KeysResealed)
 	} else {
 		fmt.Printf("✓ %s: resealed %d keys\n", result.ShortName, result.KeysResealed)
+		// Record in state
+		if err := recordResealState(result.ShortName); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to update state: %v\n", err)
+		}
 	}
 
 	return nil
@@ -122,6 +127,7 @@ func runResealAll(ctx context.Context, engine *reseal.Engine) error {
 	}
 
 	var successCount, failCount int
+	var successNames []string
 	for _, r := range results {
 		if r.Error != nil {
 			fmt.Fprintf(os.Stderr, "✗ %s: %v\n", r.ShortName, r.Error)
@@ -132,6 +138,14 @@ func runResealAll(ctx context.Context, engine *reseal.Engine) error {
 		} else {
 			fmt.Printf("✓ %s: resealed %d keys\n", r.ShortName, r.KeysResealed)
 			successCount++
+			successNames = append(successNames, r.ShortName)
+		}
+	}
+
+	// Batch record successful reseals in state
+	if len(successNames) > 0 {
+		if err := recordResealStateAll(successNames); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to update state: %v\n", err)
 		}
 	}
 
@@ -149,4 +163,26 @@ func runResealAll(ctx context.Context, engine *reseal.Engine) error {
 	}
 
 	return nil
+}
+
+// recordResealState adds a reseal record to state.yaml.
+func recordResealState(shortName string) error {
+	s, err := state.Load(repoPath)
+	if err != nil {
+		return err
+	}
+	s.AddRotation(shortName, "", "reseal", "")
+	return s.Save(repoPath)
+}
+
+// recordResealStateAll records multiple reseals in a single state update.
+func recordResealStateAll(shortNames []string) error {
+	s, err := state.Load(repoPath)
+	if err != nil {
+		return err
+	}
+	for _, name := range shortNames {
+		s.AddRotation(name, "", "reseal", "")
+	}
+	return s.Save(repoPath)
 }

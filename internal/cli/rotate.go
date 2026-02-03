@@ -13,6 +13,7 @@ import (
 	"github.com/shermanhuman/waxseal/internal/core"
 	"github.com/shermanhuman/waxseal/internal/reseal"
 	"github.com/shermanhuman/waxseal/internal/seal"
+	"github.com/shermanhuman/waxseal/internal/state"
 	"github.com/shermanhuman/waxseal/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -226,9 +227,23 @@ func runRotate(cmd *cobra.Command, args []string) error {
 		fmt.Printf("✓ Would reseal %d keys [DRY RUN]\n", result.KeysResealed)
 	} else {
 		fmt.Printf("✓ Resealed %d keys\n", result.KeysResealed)
+		// Record rotation in state
+		if err := recordRotateState(shortName, keyName); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to update state: %v\n", err)
+		}
 	}
 
 	return nil
+}
+
+// recordRotateState adds a rotation record to state.yaml.
+func recordRotateState(shortName, keyName string) error {
+	s, err := state.Load(repoPath)
+	if err != nil {
+		return err
+	}
+	s.AddRotation(shortName, keyName, "rotate", "")
+	return s.Save(repoPath)
 }
 
 func generateValue(gen *core.GeneratorConfig) ([]byte, error) {

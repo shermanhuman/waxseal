@@ -8,6 +8,7 @@ import (
 
 	"github.com/shermanhuman/waxseal/internal/core"
 	"github.com/shermanhuman/waxseal/internal/files"
+	"github.com/shermanhuman/waxseal/internal/state"
 	"github.com/spf13/cobra"
 )
 
@@ -113,6 +114,11 @@ func runRetire(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Printf("✓ Marked %q as retired\n", shortName)
 
+	// Record in state
+	if err := recordRetireState(shortName, retireReason, retireReplacedBy); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to update state: %v\n", err)
+	}
+
 	// Delete manifest if requested
 	if retireDeleteManifest {
 		manifestPath := metadata.ManifestPath
@@ -149,4 +155,14 @@ func runRetire(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// recordRetireState adds a retirement record to state.yaml.
+func recordRetireState(shortName, reason, replacedBy string) error {
+	s, err := state.Load(repoPath)
+	if err != nil {
+		return err
+	}
+	s.AddRetirement(shortName, reason, replacedBy)
+	return s.Save(repoPath)
 }
