@@ -230,7 +230,7 @@ func runInteractiveWizard(reader *bufio.Reader, ds discoveredSecret, shortName, 
 
 	fmt.Println("\nConfigure each key:")
 	fmt.Println("  Sources: gsm (default), computed")
-	fmt.Println("  Rotation modes: manual, generated, external, static, unknown")
+	fmt.Println("  Rotation modes: manual, generated, external, unknown")
 	fmt.Println()
 
 	for _, keyName := range keys {
@@ -265,7 +265,7 @@ func runInteractiveWizard(reader *bufio.Reader, ds discoveredSecret, shortName, 
 			}
 
 			// Rotation mode
-			fmt.Printf("    Rotation mode [manual/generated/external/static/unknown] (Enter for manual): ")
+			fmt.Printf("    Rotation mode [manual/generated/external/unknown] (Enter for manual): ")
 			input, _ = reader.ReadString('\n')
 			input = strings.TrimSpace(strings.ToLower(input))
 			switch input {
@@ -290,8 +290,7 @@ func runInteractiveWizard(reader *bufio.Reader, ds discoveredSecret, shortName, 
 
 			case "external", "e":
 				config.rotationMode = "external"
-			case "static", "s":
-				config.rotationMode = "static"
+
 			case "unknown", "u":
 				config.rotationMode = "unknown"
 			default:
