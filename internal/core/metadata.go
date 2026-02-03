@@ -73,22 +73,28 @@ type ExpiryConfig struct {
 	Source    string `json:"source,omitempty"` // "vendor", "certificate", "policy", "unknown"
 }
 
-// OperatorHints provides guidance for manual rotation.
+// OperatorHints references guidance for manual rotation stored in GSM.
+// Per plan: "Keep rotation URLs, runbook notes, and other guidance out of Git."
+// All hint content lives in GSM as JSON; metadata only contains the GSM reference.
 type OperatorHints struct {
-	// RotationURL is where the operator should go to rotate this secret
-	RotationURL string `json:"rotationUrl,omitempty"`
-	// Documentation links for this secret
-	DocURL string `json:"docUrl,omitempty"`
-	// Free-form notes for operators
-	Notes string `json:"notes,omitempty"`
-	// Contact info for questions about this secret
-	Contact string `json:"contact,omitempty"`
-	// Provider is the service that manages this secret (e.g., "stripe", "aws")
-	Provider string `json:"provider,omitempty"`
-	// GSM reference for extended hints stored in GSM (optional)
-	GSM *GSMRef `json:"gsm,omitempty"`
-	// Format of GSM-stored hints (e.g., "json", "markdown")
-	Format string `json:"format,omitempty"`
+	// GSM reference to the hints payload (required)
+	GSM *GSMRef `json:"gsm"`
+	// Format of the GSM payload (required, must be "json")
+	Format string `json:"format"`
+}
+
+// GSMHintsPayload is the schema for operator hints stored in GSM.
+// This is stored as JSON in the GSM secret, not in Git metadata.
+type GSMHintsPayload struct {
+	SchemaVersion int           `json:"schemaVersion"`
+	Links         []GSMHintLink `json:"links,omitempty"`
+	Notes         string        `json:"notes,omitempty"`
+}
+
+// GSMHintLink is a labeled URL in the hints payload.
+type GSMHintLink struct {
+	Label string `json:"label"`
+	URL   string `json:"url"`
 }
 
 // ComputedConfig describes how to compute a key from other values.
