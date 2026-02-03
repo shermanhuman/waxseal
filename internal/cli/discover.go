@@ -125,17 +125,20 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	// ANSI color codes
+	green := "\033[32m"
+	reset := "\033[0m"
+
 	fmt.Printf("\n📦 Found %d SealedSecret manifest(s):\n\n", len(found))
 	for _, ds := range found {
 		shortName := deriveShortName(ds.sealedSecret.Metadata.Namespace, ds.sealedSecret.Metadata.Name)
 		metadataPath := filepath.Join(metadataDir, shortName+".yaml")
-		status := "new"
 		if _, err := os.Stat(metadataPath); err == nil {
-			status = "already registered"
+			fmt.Printf("  %s✓%s %-45s %s[registered]%s\n", green, reset, shortName, green, reset)
+		} else {
+			fmt.Printf("  %s✓%s %-45s %s[new]%s\n", green, reset, shortName, green, reset)
 		}
-		fmt.Printf("  • %-40s [%s]\n", shortName, status)
-		fmt.Printf("    Path: %s\n", ds.path)
-		fmt.Printf("    Keys: %v\n\n", ds.sealedSecret.GetEncryptedKeys())
+		fmt.Printf("      %s\n", ds.path)
 	}
 
 	if len(newSecrets) == 0 {
