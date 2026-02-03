@@ -429,3 +429,24 @@ type GCPProject struct {
 	ProjectID string `json:"projectId"`
 	Name      string `json:"name"`
 }
+
+type GCPOrganization struct {
+	Name        string `json:"name"`        // organizations/123456789
+	DisplayName string `json:"displayName"` // example.com
+}
+
+// GetOrganizations returns a list of available GCP organizations
+func GetOrganizations() ([]GCPOrganization, error) {
+	cmd := exec.Command("gcloud", "organizations", "list", "--format=json")
+	output, err := cmd.Output()
+	if err != nil {
+		// If command fails (e.g. no permissions), just return empty
+		return nil, nil
+	}
+
+	var orgs []GCPOrganization
+	if err := json.Unmarshal(output, &orgs); err != nil {
+		return nil, err
+	}
+	return orgs, nil
+}

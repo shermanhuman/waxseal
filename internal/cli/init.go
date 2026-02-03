@@ -132,6 +132,30 @@ func runInit(cmd *cobra.Command, args []string) error {
 				return err
 			}
 
+			// 0. Resolve Organization (optional)
+			var orgID string
+			orgs, _ := GetOrganizations()
+			if len(orgs) > 0 {
+				var options []huh.Option[string]
+				for _, o := range orgs {
+					// Name is "organizations/12345", we need "12345"
+					id := strings.TrimPrefix(o.Name, "organizations/")
+					label := fmt.Sprintf("%s (%s)", o.DisplayName, id)
+					options = append(options, huh.NewOption(label, id))
+				}
+				options = append(options, huh.NewOption("No Organization (Standalone)", ""))
+
+				err = huh.NewSelect[string]().
+					Title("Organization").
+					Description("Select where to create the project").
+					Options(options...).
+					Value(&orgID).
+					Run()
+				if err != nil {
+					return err
+				}
+			}
+
 			// 1. Get Project ID
 			err = huh.NewInput().
 				Title("Desired Project ID").
@@ -208,6 +232,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 			gcpProjectID = projectID
 			gcpCreateProject = true
 			gcpBillingAccountID = billingID
+			gcpOrgID = orgID
 
 			// Run bootstrap (this now handles Auth and ADC proactively)
 			if err := runGCPBootstrap(cmd, nil); err != nil {
