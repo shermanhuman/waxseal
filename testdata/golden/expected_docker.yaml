@@ -4,7 +4,7 @@ metadata:
   name: docker-registry
   namespace: infra
   annotations:
-    sealedsecrets.bitnami.com/scope: namespace-wide
+    sealedsecrets.bitnami.com/namespace-wide: "true"
 spec:
   encryptedData:
     .dockerconfigjson: SEALED:infra/docker-registry/.dockerconfigjson=docker-config-value
