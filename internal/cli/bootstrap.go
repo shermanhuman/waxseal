@@ -20,32 +20,37 @@ import (
 )
 
 var bootstrapCmd = &cobra.Command{
-	Use:   "bootstrap <shortName>",
+	Use:   "bootstrap [shortName]",
 	Short: "Push cluster secrets to GSM",
-	Long: `Read a Secret from your Kubernetes cluster and push its values to GSM.
+	Long: `Read Secrets from your Kubernetes cluster and push their values to GSM.
 
 This establishes GSM as the source of truth for existing secrets.
-After bootstrap, you can manage the secret entirely through waxseal.
+After bootstrap, you can manage the secrets entirely through waxseal.
+
+If no shortName is provided, bootstraps ALL discovered secrets.
 
 Prerequisites:
   - kubectl configured with cluster access
   - GSM API enabled and IAM permissions to create secrets
-  - SealedSecret already discovered (run 'waxseal discover' first)
+  - SealedSecrets already discovered (run 'waxseal discover' first)
 
 Examples:
-  # Bootstrap a discovered secret
+  # Bootstrap all discovered secrets
+  waxseal bootstrap
+
+  # Bootstrap a specific secret
   waxseal bootstrap my-app-secrets
 
   # Preview what would be pushed
-  waxseal bootstrap my-app-secrets --dry-run
+  waxseal bootstrap --dry-run
 
   # Specify kubeconfig
-  waxseal bootstrap my-app-secrets --kubeconfig ~/.kube/config
+  waxseal bootstrap --kubeconfig ~/.kube/config
 
 Exit codes:
   0 - Success
   1 - Failed to read from cluster or push to GSM`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.MaximumNArgs(1),
 	RunE: runBootstrap,
 }
 
@@ -58,8 +63,57 @@ func init() {
 
 func runBootstrap(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	shortName := args[0]
 
+	// If no arg provided, bootstrap all
+	if len(args) == 0 {
+		return bootstrapAll(ctx)
+	}
+
+	return bootstrapOne(ctx, args[0])
+}
+
+// bootstrapAll iterates over all discovered secrets and bootstraps each one.
+func bootstrapAll(ctx context.Context) error {
+	metadataDir := filepath.Join(repoPath, ".waxseal", "metadata")
+	entries, err := os.ReadDir(metadataDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("no secrets discovered. Run 'waxseal discover' first")
+		}
+		return fmt.Errorf("read metadata directory: %w", err)
+	}
+
+	var secrets []string
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
+			continue
+		}
+		shortName := strings.TrimSuffix(e.Name(), ".yaml")
+		secrets = append(secrets, shortName)
+	}
+
+	if len(secrets) == 0 {
+		return fmt.Errorf("no secrets found. Run 'waxseal discover' first")
+	}
+
+	fmt.Printf("Bootstrapping %d secrets...\n\n", len(secrets))
+
+	successCount := 0
+	for _, shortName := range secrets {
+		fmt.Printf("Bootstrapping %s...\n", shortName)
+		if err := bootstrapOne(ctx, shortName); err != nil {
+			fmt.Printf("⚠️  %s: %v\n", shortName, err)
+		} else {
+			successCount++
+		}
+	}
+
+	fmt.Printf("\n✓ Bootstrap complete: %d/%d secrets\n", successCount, len(secrets))
+	return nil
+}
+
+// bootstrapOne bootstraps a single secret.
+func bootstrapOne(ctx context.Context, shortName string) error {
 	// Load metadata
 	metadataPath := filepath.Join(repoPath, ".waxseal", "metadata", shortName+".yaml")
 	data, err := os.ReadFile(metadataPath)
@@ -96,10 +150,7 @@ func runBootstrap(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("read secret from cluster: %w", err)
 	}
 
-	fmt.Printf("Found secret %s/%s with %d keys\n",
-		metadata.SealedSecret.Namespace,
-		metadata.SealedSecret.Name,
-		len(secretData))
+	fmt.Printf("  Found %d keys in cluster\n", len(secretData))
 
 	// Track which keys to push
 	type keyToPush struct {
@@ -133,23 +184,11 @@ func runBootstrap(cmd *cobra.Command, args []string) error {
 			gsmResource:    gsmResource,
 			existingConfig: existing,
 		})
-
-		fmt.Printf("  %s → %s\n", keyName, gsmResource)
 	}
 
 	if dryRun {
-		fmt.Println("\n[DRY RUN] Would push secrets to GSM and update metadata")
+		fmt.Println("  [DRY RUN] Would push to GSM")
 		return nil
-	}
-
-	if !yes {
-		fmt.Print("\nPush these secrets to GSM? [y/N]: ")
-		var confirm string
-		fmt.Scanln(&confirm)
-		if strings.ToLower(confirm) != "y" && strings.ToLower(confirm) != "yes" {
-			fmt.Println("Aborted.")
-			return nil
-		}
 	}
 
 	// Create GSM store
@@ -208,7 +247,7 @@ func runBootstrap(cmd *cobra.Command, args []string) error {
 				if err != nil {
 					return fmt.Errorf("marshal payload for %s: %w", k.keyName, err)
 				}
-				fmt.Printf("  📦 Created JSON payload with template: %s\n", truncate(templateStr, 50))
+				fmt.Printf("  📦 %s: JSON payload\n", k.keyName)
 			} else {
 				// Computed but not a recognized template - push raw value
 				dataToPush = k.value
@@ -222,11 +261,7 @@ func runBootstrap(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("push %s to GSM: %w", k.keyName, err)
 		}
-		if isComputed {
-			fmt.Printf("✓ Pushed %s (JSON payload, version %s)\n", k.keyName, version)
-		} else {
-			fmt.Printf("✓ Pushed %s (version %s)\n", k.keyName, version)
-		}
+		fmt.Printf("  ✓ %s (v%s)\n", k.keyName, version)
 
 		// Update metadata
 		found := false
@@ -293,11 +328,6 @@ func runBootstrap(cmd *cobra.Command, args []string) error {
 	if err := writer.Write(metadataPath, []byte(updatedYAML)); err != nil {
 		return fmt.Errorf("write metadata: %w", err)
 	}
-
-	fmt.Printf("\n✓ Bootstrap complete for %s\n", shortName)
-	fmt.Println("\nNext steps:")
-	fmt.Printf("  1. Run 'waxseal reseal %s' to refresh the SealedSecret\n", shortName)
-	fmt.Println("  2. Commit the updated metadata")
 
 	return nil
 }
