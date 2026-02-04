@@ -316,6 +316,7 @@ func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) ([]k
 					Description("How is this key rotated? (skip for templated keys)").
 					Options(
 						huh.NewOption("Unknown - I'm not sure yet", "unknown"),
+						huh.NewOption("Static - this key cannot be rotated", "static"),
 						huh.NewOption("Generated - waxseal auto-rotates (tokens, passwords)", "generated"),
 						huh.NewOption("External - managed by you (API portal, vendor)", "external"),
 					).
