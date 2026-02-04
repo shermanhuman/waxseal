@@ -48,6 +48,7 @@ var (
 	updateFromStdin      bool
 	updateGenerateRandom bool
 	updateRandomLength   int
+	updateCreateKey      bool
 )
 
 func init() {
@@ -55,12 +56,23 @@ func init() {
 	updateCmd.Flags().BoolVar(&updateFromStdin, "stdin", false, "Read new value from stdin")
 	updateCmd.Flags().BoolVar(&updateGenerateRandom, "generate-random", false, "Generate a random value")
 	updateCmd.Flags().IntVar(&updateRandomLength, "random-length", 32, "Length of generated random value (bytes)")
+	updateCmd.Flags().BoolVar(&updateCreateKey, "create", false, "Create the key if it doesn't exist")
 }
 
 func runUpdate(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	shortName := args[0]
 	keyName := args[1]
+
+	// Load config first (needed for GSM resource generation)
+	cfgFile := configPath
+	if !filepath.IsAbs(cfgFile) {
+		cfgFile = filepath.Join(repoPath, cfgFile)
+	}
+	cfg, err := config.Load(cfgFile)
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
 
 	// Load metadata
 	metadataPath := filepath.Join(repoPath, ".waxseal", "metadata", shortName+".yaml")
@@ -81,7 +93,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("cannot update retired secret %q", shortName)
 	}
 
-	// Find the key
+	// Find the key (or prepare to create it)
 	var keyIndex = -1
 	for i, k := range metadata.Keys {
 		if k.KeyName == keyName {
@@ -89,23 +101,41 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 			break
 		}
 	}
+
+	// If key not found, require --create flag or prompt
+	createNewKey := false
 	if keyIndex == -1 {
-		return fmt.Errorf("key %q not found in secret %q", keyName, shortName)
+		if !updateCreateKey {
+			// Interactive prompt
+			var shouldCreate bool
+			err := huh.NewConfirm().
+				Title(fmt.Sprintf("Key '%s' not found in secret '%s'", keyName, shortName)).
+				Description("Do you want to create it?").
+				Value(&shouldCreate).
+				Run()
+			if err != nil {
+				return err
+			}
+			if !shouldCreate {
+				return fmt.Errorf("key %q not found in secret %q", keyName, shortName)
+			}
+		}
+		createNewKey = true
 	}
 
-	keyMeta := &metadata.Keys[keyIndex]
-	if keyMeta.GSM == nil {
-		return fmt.Errorf("key %q has no GSM reference", keyName)
-	}
+	var keyMeta *core.KeyMetadata
+	var gsmResource string
 
-	// Load config
-	cfgFile := configPath
-	if !filepath.IsAbs(cfgFile) {
-		cfgFile = filepath.Join(repoPath, cfgFile)
-	}
-	cfg, err := config.Load(cfgFile)
-	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+	if !createNewKey {
+		keyMeta = &metadata.Keys[keyIndex]
+		if keyMeta.GSM == nil {
+			return fmt.Errorf("key %q has no GSM reference", keyName)
+		}
+		gsmResource = keyMeta.GSM.SecretResource
+	} else {
+		// Generate GSM resource for new key
+		gsmResource = fmt.Sprintf("projects/%s/secrets/%s-%s",
+			cfg.Store.ProjectID, shortName, sanitizeGSMName(keyName))
 	}
 
 	// Get new value
@@ -145,10 +175,16 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 
 	// Show summary
 	fmt.Println()
-	fmt.Printf("Updating key: %s/%s\n", shortName, keyName)
+	if createNewKey {
+		fmt.Printf("Creating key: %s/%s\n", shortName, keyName)
+	} else {
+		fmt.Printf("Updating key: %s/%s\n", shortName, keyName)
+	}
 	fmt.Println(strings.Repeat("─", 40))
-	fmt.Printf("  GSM Resource: %s\n", keyMeta.GSM.SecretResource)
-	fmt.Printf("  Old Version:  %s\n", keyMeta.GSM.Version)
+	fmt.Printf("  GSM Resource: %s\n", gsmResource)
+	if !createNewKey {
+		fmt.Printf("  Old Version:  %s\n", keyMeta.GSM.Version)
+	}
 	fmt.Println()
 
 	if dryRun {
@@ -166,20 +202,35 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	}
 	defer gsmStore.Close()
 
-	newVersion, err := gsmStore.CreateSecretVersion(ctx, keyMeta.GSM.SecretResource, newValue)
+	newVersion, err := gsmStore.CreateSecretVersion(ctx, gsmResource, newValue)
 	if err != nil {
 		return fmt.Errorf("create GSM version: %w", err)
 	}
 	fmt.Printf("✓ Created new GSM version: %s\n", newVersion)
 
-	// Update metadata
-	keyMeta.GSM.Version = newVersion
+	// Update or create metadata for this key
+	if createNewKey {
+		// Add new key to metadata
+		newKeyMeta := core.KeyMetadata{
+			KeyName: keyName,
+			Source:  core.SourceConfig{Kind: "gsm"},
+			GSM: &core.GSMRef{
+				SecretResource: gsmResource,
+				Version:        newVersion,
+			},
+			Rotation: &core.RotationConfig{Mode: "manual"},
+		}
+		metadata.Keys = append(metadata.Keys, newKeyMeta)
+		fmt.Printf("✓ Added key %s to metadata\n", keyName)
+	} else {
+		keyMeta.GSM.Version = newVersion
+		fmt.Printf("✓ Updated metadata: version %s\n", newVersion)
+	}
 	metadataYAML := serializeMetadata(metadata)
 	writer := files.NewAtomicWriter()
 	if err := writer.Write(metadataPath, []byte(metadataYAML)); err != nil {
 		return fmt.Errorf("write metadata: %w", err)
 	}
-	fmt.Printf("✓ Updated metadata: version %s\n", newVersion)
 
 	// Reseal the SealedSecret
 	manifestPath := filepath.Join(repoPath, metadata.ManifestPath)
