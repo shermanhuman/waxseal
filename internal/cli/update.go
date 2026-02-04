@@ -166,6 +166,51 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("key %q has no GSM reference", keyName)
 		}
 		gsmResource = keyMeta.GSM.SecretResource
+
+		// If rotation mode is unknown or missing, prompt to configure it
+		if keyMeta.Rotation == nil || keyMeta.Rotation.Mode == "" || keyMeta.Rotation.Mode == "unknown" {
+			fmt.Printf("  Key '%s' has no rotation mode configured.\n", keyName)
+			err = huh.NewSelect[string]().
+				Title("Rotation mode").
+				Description("How should this key be rotated?").
+				Options(
+					huh.NewOption("Manual - rotated manually when needed", "manual"),
+					huh.NewOption("Static - this key cannot be rotated", "static"),
+					huh.NewOption("Generated - waxseal auto-rotates", "generated"),
+					huh.NewOption("External - managed by you (API portal, vendor)", "external"),
+				).
+				Value(&newKeyRotationMode).
+				Run()
+			if err != nil {
+				return err
+			}
+
+			// Update the rotation config
+			if keyMeta.Rotation == nil {
+				keyMeta.Rotation = &core.RotationConfig{}
+			}
+			keyMeta.Rotation.Mode = newKeyRotationMode
+
+			// If generated, ask for generator type
+			if newKeyRotationMode == "generated" {
+				err = huh.NewSelect[string]().
+					Title("Generator type").
+					Description("How should the secret value be generated?").
+					Options(
+						huh.NewOption("Random Base64 (URL-safe, good for tokens/passwords)", "randomBase64"),
+						huh.NewOption("Random Hex (hexadecimal string)", "randomHex"),
+					).
+					Value(&newKeyGenType).
+					Run()
+				if err != nil {
+					return err
+				}
+				keyMeta.Rotation.Generator = &core.GeneratorConfig{
+					Kind:  newKeyGenType,
+					Bytes: 32,
+				}
+			}
+		}
 	} else {
 		// Generate GSM resource for new key
 		gsmResource = fmt.Sprintf("projects/%s/secrets/%s-%s",
