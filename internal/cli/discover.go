@@ -642,12 +642,9 @@ func generateMetadataStub(ds discoveredSecret, shortName, projectID string, keyC
 `, gt, gl))
 			}
 
-			// Rotation URL for external keys
-			if kc.rotationURL != "" {
-				keys.WriteString(fmt.Sprintf(`    operatorHints:
-      rotationURL: "%s"
-`, kc.rotationURL))
-			}
+			// Note: rotationURL is collected for future use but not yet written to metadata
+			// Per plan: operatorHints should be GSM-backed, not stored in Git
+			_ = kc.rotationURL
 
 			// Expiry date
 			if kc.expiry != "" {

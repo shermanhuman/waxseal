@@ -228,9 +228,9 @@ func (g *GSMRef) Validate() error {
 
 // Validate checks the RotationConfig.
 func (r *RotationConfig) Validate() error {
-	validModes := map[string]bool{"generated": true, "external": true, "manual": true, "unknown": true}
+	validModes := map[string]bool{"generated": true, "external": true, "manual": true, "static": true, "unknown": true}
 	if !validModes[r.Mode] {
-		return NewValidationError("rotation.mode", "must be 'generated', 'external', 'manual', or 'unknown'")
+		return NewValidationError("rotation.mode", "must be 'generated', 'external', 'manual', 'static', or 'unknown'")
 	}
 	if r.Mode == "generated" && r.Generator == nil {
 		return NewValidationError("rotation.generator", "required when mode is 'generated'")
