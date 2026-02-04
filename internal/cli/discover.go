@@ -295,74 +295,63 @@ func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) ([]k
 		}
 		fmt.Println()
 
-		// First ask if templated (this changes the whole form)
-		var isTemplated bool
-		err := huh.NewConfirm().
-			Title(fmt.Sprintf("Is '%s' templated?", keyName)).
-			Description("Templated keys are composed from other values (e.g., DATABASE_URL from username + password)").
-			Affirmative("Yes, it's templated").
-			Negative("No, it's a standalone value").
-			Value(&isTemplated).
-			Run()
+		// Generate default GSM resource using manifest filename + secret name
+		manifestBase := strings.TrimSuffix(filepath.Base(ds.path), filepath.Ext(ds.path))
+		defaultGSM := fmt.Sprintf("projects/%s/secrets/%s-%s", projectID, manifestBase, sanitizeGSMName(keyName))
+
+		// All fields on one form
+		var keyType, rotationURL, expiry, template string
+		err := huh.NewForm(
+			huh.NewGroup(
+				huh.NewSelect[string]().
+					Title("Key type").
+					Description("Most keys are standalone values stored in GSM").
+					Options(
+						huh.NewOption("Standalone - a single value stored in GSM", "standalone"),
+						huh.NewOption("Templated - composed from other values (e.g., DATABASE_URL)", "templated"),
+					).
+					Value(&keyType),
+				huh.NewSelect[string]().
+					Title("Rotation mode").
+					Description("How is this key rotated? (skip for templated keys)").
+					Options(
+						huh.NewOption("Unknown - I'm not sure yet", "unknown"),
+						huh.NewOption("Generated - waxseal auto-rotates (tokens, passwords)", "generated"),
+						huh.NewOption("External - managed by you (API portal, vendor)", "external"),
+					).
+					Value(&config.rotationMode),
+				huh.NewInput().
+					Title("Rotation URL (optional)").
+					Description("Link to rotate this key").
+					Placeholder("https://...").
+					Value(&rotationURL),
+				huh.NewInput().
+					Title("Expiry date (optional)").
+					Description("When does this key expire?").
+					Placeholder("YYYY-MM-DD").
+					Value(&expiry),
+				huh.NewInput().
+					Title("Template (if templated)").
+					Description("Use {{varName}} for variables, leave blank if standalone").
+					Placeholder("postgresql://{{user}}:{{pass}}@{{host}}/{{db}}").
+					Value(&template),
+			).Title(fmt.Sprintf("Configure '%s'", keyName)),
+		).Run()
 		if err != nil {
 			return nil, err
 		}
 
-		if isTemplated {
+		// Set config based on form values
+		if keyType == "templated" {
 			config.sourceKind = "templated"
-			var template string
-			err := huh.NewInput().
-				Title(fmt.Sprintf("Template for '%s'", keyName)).
-				Description("Use {{varName}} for variables (e.g., postgresql://{{username}}:{{password}}@{{host}}/{{db}})").
-				Placeholder("postgresql://{{username}}:{{password}}@{{host}}:{{port}}/{{db}}").
-				Value(&template).
-				Run()
-			if err != nil {
-				return nil, err
-			}
 			config.template = template
-			fmt.Println("    ℹ️  Edit the metadata file to map template inputs to other keys")
 		} else {
 			config.sourceKind = "gsm"
-
-			// Generate default GSM resource using manifest filename + secret name
-			manifestBase := strings.TrimSuffix(filepath.Base(ds.path), filepath.Ext(ds.path))
-			defaultGSM := fmt.Sprintf("projects/%s/secrets/%s-%s", projectID, manifestBase, sanitizeGSMName(keyName))
 			config.gsmResource = defaultGSM
-
-			// Form with rotation mode, rotation URL, and expiry all together
-			var rotationURL, expiry string
-			err := huh.NewForm(
-				huh.NewGroup(
-					huh.NewSelect[string]().
-						Title("Rotation mode").
-						Description("Generated = waxseal auto-rotates | External = you manage").
-						Options(
-							huh.NewOption("Unknown - I'm not sure yet", "unknown"),
-							huh.NewOption("Generated - auto-rotate (random bytes, tokens)", "generated"),
-							huh.NewOption("External - managed by you (API portal, vendor)", "external"),
-						).
-						Value(&config.rotationMode),
-					huh.NewInput().
-						Title("Rotation URL (optional)").
-						Description("Link to rotate this key (vendor portal, runbook)").
-						Placeholder("https://...").
-						Value(&rotationURL),
-					huh.NewInput().
-						Title("Expiry date (optional)").
-						Description("When does this key expire?").
-						Placeholder("YYYY-MM-DD").
-						Value(&expiry),
-				).Title(fmt.Sprintf("Configure '%s'", keyName)),
-			).Run()
-			if err != nil {
-				return nil, err
-			}
-
 			config.rotationURL = rotationURL
 			config.expiry = expiry
 
-			// If generated, ask for generator type (follow-up since it's conditional)
+			// If generated, ask for generator type (follow-up)
 			if config.rotationMode == "generated" {
 				err := huh.NewSelect[string]().
 					Title("Generator type").
