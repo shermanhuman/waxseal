@@ -20,6 +20,16 @@ cd waxseal
 go build -o waxseal ./cmd/waxseal
 ```
 
+## Prerequisites
+
+Before using waxseal, ensure you have:
+
+- **gcloud CLI** - Authenticated with `gcloud auth application-default login`
+- **kubeseal CLI** - Available on PATH (used for encryption)
+- **kubectl** - Configured to access your cluster
+- **A Kubernetes cluster** with [SealedSecrets controller](https://github.com/bitnami-labs/sealed-secrets) installed
+- **A GitOps repository** with existing SealedSecret manifests (or starting fresh)
+
 ## Quick Start
 
 ### 1. Initialize in your GitOps repo
@@ -29,28 +39,34 @@ cd my-infra-repo
 waxseal init
 ```
 
-The interactive wizard will prompt for your GCP project and controller settings.
+The interactive wizard will:
+
+- Create/configure your GCP project for secret storage
+- Enable required APIs (Secret Manager)
+- Set up billing if needed
+- Fetch the sealing certificate from your cluster
+- Create configuration files
 
 This creates:
 
 - `.waxseal/config.yaml` - Configuration file
 - `.waxseal/metadata/` - Directory for secret metadata
-- `keys/pub-cert.pem` - Placeholder for controller certificate
+- `keys/pub-cert.pem` - Controller certificate (fetched from cluster)
 
-### 2. Fetch your Sealed Secrets controller certificate
-
-```bash
-kubeseal --controller-name=sealed-secrets --controller-namespace=kube-system \
-  --fetch-cert > keys/pub-cert.pem
-```
-
-### 3. Discover existing SealedSecrets
+### 2. Discover existing SealedSecrets
 
 ```bash
 waxseal discover
 ```
 
 This finds SealedSecret manifests and creates metadata stubs in `.waxseal/metadata/`.
+
+### 3. Bootstrap secrets to GSM
+
+```bash
+# Push existing cluster secret values to GSM
+waxseal bootstrap my-app-secrets
+```
 
 ### 4. Reseal secrets
 
@@ -387,6 +403,7 @@ Exit codes:
 3. **Numeric GSM versions only** - Aliases like `latest` are rejected to ensure reproducibility
 4. **Atomic writes** - Files are written to temp then renamed, preventing corruption
 5. **Validation before write** - Output is validated before replacing files
+6. **Controller-compatible encryption** - Uses `kubeseal` binary for encryption to guarantee compatibility
 
 ## Authentication
 

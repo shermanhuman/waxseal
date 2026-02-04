@@ -40,9 +40,17 @@ Provisioning (opinionated):
 ## Sealed Secrets correctness
 
 - Scope must match existing scope (`strict`, `namespace-wide`, `cluster-wide`).
+- Annotation format: `sealedsecrets.bitnami.com/namespace-wide: "true"` (not `scope: namespace-wide`)
 - Cert correctness:
   - default: verify repo cert fingerprint vs live controller cert
   - mismatch: fail closed unless explicitly overridden
+
+## Encryption Approach
+
+- **Use `kubeseal` binary** for all encryption operations (via `KubesealSealer`)
+- Rationale: Guarantees controller compatibility; native Go crypto implementation had format mismatches
+- The `kubeseal` binary must be available on PATH
+- Certificate is passed via `--cert` flag pointing to repo cert file
 
 ## Logging/auditing
 

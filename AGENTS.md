@@ -69,18 +69,18 @@ testdata/
 
 ## Package Responsibilities
 
-| Package      | Responsibility                                             |
-| ------------ | ---------------------------------------------------------- |
-| `cli/`       | Cobra commands, user interaction, output formatting        |
-| `core/`      | Domain types (SecretMetadata, errors), **no I/O**          |
-| `config/`    | Config loading, validation, defaults                       |
-| `files/`     | Atomic writes, YAML validators                             |
-| `seal/`      | Sealer interface, hybrid encryption, SealedSecret parsing  |
-| `store/`     | Store interface, FakeStore for testing, GSM implementation |
-| `template/`  | Computed key templates, cycle detection                    |
-| `reminders/` | Calendar provider interface, Google Calendar               |
-| `reseal/`    | Orchestration (fetch → compute → seal → write)             |
-| `logging/`   | Redacted type, safe structured logging                     |
+| Package      | Responsibility                                                          |
+| ------------ | ----------------------------------------------------------------------- |
+| `cli/`       | Cobra commands, user interaction, output formatting                     |
+| `core/`      | Domain types (SecretMetadata, errors), **no I/O**                       |
+| `config/`    | Config loading, validation, defaults                                    |
+| `files/`     | Atomic writes, YAML validators                                          |
+| `seal/`      | KubesealSealer (uses kubeseal binary), CertSealer, SealedSecret parsing |
+| `store/`     | Store interface, FakeStore for testing, GSM implementation              |
+| `template/`  | Computed key templates, cycle detection                                 |
+| `reminders/` | Calendar provider interface, Google Calendar                            |
+| `reseal/`    | Orchestration (fetch → compute → seal → write)                          |
+| `logging/`   | Redacted type, safe structured logging                                  |
 
 ## CLI Architecture
 
@@ -139,7 +139,6 @@ if st, ok := status.FromError(err); ok {
 - Write plaintext secrets to disk
 - Log secrets (including debug, errors, stack traces)
 - Use GSM aliases (`latest`) - always pin numeric versions
-- Depend on external `kubeseal` binary on PATH
 
 ### Always Do
 
@@ -147,6 +146,7 @@ if st, ok := status.FromError(err); ok {
 - Atomic file writes (temp → rename)
 - Validate output before replacing files
 - Return errors with context: `fmt.Errorf("context: %w", err)`
+- Use `kubeseal` binary for encryption (via `KubesealSealer`) - guarantees controller compatibility
 
 ## Error Handling
 
