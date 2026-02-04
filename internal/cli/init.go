@@ -362,6 +362,20 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("--project-id is required in non-interactive mode")
 	}
 
+	// Enable Secret Manager API
+	if projectID != "" && !initNonInteractive {
+		fmt.Printf("\nEnabling Secret Manager API for project %s...\n", projectID)
+		enableCmd := exec.CommandContext(cmd.Context(), "gcloud", "services", "enable",
+			"secretmanager.googleapis.com", "--project", projectID)
+		if output, err := enableCmd.CombinedOutput(); err != nil {
+			fmt.Printf("⚠️  Could not enable Secret Manager API: %v\n", string(output))
+			fmt.Println("   You may need to enable it manually at:")
+			fmt.Printf("   https://console.cloud.google.com/apis/library/secretmanager.googleapis.com?project=%s\n", projectID)
+		} else {
+			fmt.Println("✓ Secret Manager API enabled")
+		}
+	}
+
 	controllerNS := initControllerNS
 	controllerName := initControllerName
 
