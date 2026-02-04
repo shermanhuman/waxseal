@@ -233,11 +233,84 @@ func runRotate(cmd *cobra.Command, args []string) error {
 			if key.OperatorHints != nil {
 				displayOperatorHints(key.OperatorHints, key.KeyName)
 			}
+
+			// For computed keys with external rotation, prompt for the new secret value
+			if key.Source.Kind == "computed" {
+				gsmResource := ""
+				if key.Computed != nil && key.Computed.GSM != nil {
+					gsmResource = key.Computed.GSM.SecretResource
+				}
+				if gsmResource == "" {
+					fmt.Printf("  Skipping: no GSM resource for computed key\n")
+					continue
+				}
+
+				// Read existing payload
+				existingData, err := secretStore.AccessVersion(ctx, gsmResource, "latest")
+				if err != nil {
+					return fmt.Errorf("read existing payload for %s: %w", key.KeyName, err)
+				}
+
+				payload, err := template.ParsePayload(existingData)
+				if err != nil {
+					return fmt.Errorf("parse payload for %s: %w", key.KeyName, err)
+				}
+
+				// Prompt for new secret value
+				fmt.Println("  After updating externally, enter the new secret value:")
+				fmt.Print("  New {{secret}}: ")
+				var newSecret string
+				if !dryRun && !yes {
+					fmt.Scanln(&newSecret)
+				}
+
+				if newSecret == "" {
+					fmt.Println("  Skipping: no new value entered")
+					continue
+				}
+
+				// Update payload with new secret
+				if err := payload.UpdateSecret(newSecret); err != nil {
+					return fmt.Errorf("update payload for %s: %w", key.KeyName, err)
+				}
+				fmt.Printf("  Updated secret value\n")
+				fmt.Printf("  Recomputed: %s...\n", truncateStr(payload.Computed, 50))
+
+				// Store new version
+				newValue, err = payload.Marshal()
+				if err != nil {
+					return fmt.Errorf("marshal payload for %s: %w", key.KeyName, err)
+				}
+
+				if !dryRun {
+					newVersion, err := secretStore.AddVersion(ctx, gsmResource, newValue)
+					if err != nil {
+						return fmt.Errorf("add GSM version for %s: %w", key.KeyName, err)
+					}
+					fmt.Printf("  Added GSM version: %s\n", newVersion)
+
+					// Update metadata
+					for j := range metadata.Keys {
+						if metadata.Keys[j].KeyName == key.KeyName {
+							if metadata.Keys[j].Computed != nil && metadata.Keys[j].Computed.GSM != nil {
+								metadata.Keys[j].Computed.GSM.Version = newVersion
+							}
+							break
+						}
+					}
+					metadataUpdated = true
+				} else {
+					fmt.Printf("  [DRY RUN] Would add new version to GSM\n")
+				}
+				continue
+			}
+
+			// Regular GSM key - just wait for user to update externally
 			fmt.Println("  Please update the value externally, then press Enter to continue...")
 			if !dryRun && !yes {
 				fmt.Scanln()
 			}
-			// For external/manual, we don't generate - we expect GSM to have been updated
+			// For external/manual non-templated, we don't generate - we expect GSM to have been updated
 			// Just increment version reference
 			continue
 
