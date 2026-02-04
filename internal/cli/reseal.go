@@ -74,18 +74,15 @@ func runReseal(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("unsupported store kind: %s", cfg.Store.Kind)
 	}
 
-	// Create sealer
+	// Create sealer using kubeseal binary for guaranteed controller compatibility
 	certPath := cfg.Cert.RepoCertPath
 	if !filepath.IsAbs(certPath) {
 		certPath = filepath.Join(repoPath, certPath)
 	}
 
-	sealer, err := seal.NewCertSealerFromFile(certPath)
-	if err != nil {
-		return fmt.Errorf("load certificate: %w", err)
-	}
+	sealer := seal.NewKubesealSealer(certPath)
 
-	fmt.Printf("Using certificate: %s (fingerprint: %s...)\n", cfg.Cert.RepoCertPath, sealer.GetCertFingerprint()[:16])
+	fmt.Printf("Using certificate: %s (kubeseal binary)\n", cfg.Cert.RepoCertPath)
 
 	// Create engine
 	engine := reseal.NewEngine(secretStore, sealer, repoPath, dryRun)

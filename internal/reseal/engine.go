@@ -284,10 +284,13 @@ func (e *Engine) buildManifest(metadata *core.SecretMetadata, encryptedData map[
 	sb.WriteString(fmt.Sprintf("  name: %s\n", metadata.SealedSecret.Name))
 	sb.WriteString(fmt.Sprintf("  namespace: %s\n", metadata.SealedSecret.Namespace))
 
-	// Add scope annotation if not strict
-	if metadata.SealedSecret.Scope != "" && metadata.SealedSecret.Scope != "strict" {
+	// Add scope annotation if not strict (using controller's annotation format)
+	if metadata.SealedSecret.Scope == "namespace-wide" {
 		sb.WriteString("  annotations:\n")
-		sb.WriteString(fmt.Sprintf("    sealedsecrets.bitnami.com/scope: %s\n", metadata.SealedSecret.Scope))
+		sb.WriteString("    sealedsecrets.bitnami.com/namespace-wide: \"true\"\n")
+	} else if metadata.SealedSecret.Scope == "cluster-wide" {
+		sb.WriteString("  annotations:\n")
+		sb.WriteString("    sealedsecrets.bitnami.com/cluster-wide: \"true\"\n")
 	}
 
 	sb.WriteString("spec:\n")
