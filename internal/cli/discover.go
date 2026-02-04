@@ -277,16 +277,17 @@ func fetchSecretFromCluster(namespace, name string) (map[string]string, error) {
 	return result, nil
 }
 
-// detectConnectionStringTemplate analyzes a value and suggests a template if it looks like a connection string
-func detectConnectionStringTemplate(value string, allKeys []string) (isTemplate bool, template string) {
+// detectConnectionStringTemplate analyzes a value and suggests a template if it looks like a connection string.
+// Returns: isTemplate, template string, extracted values map
+func detectConnectionStringTemplate(value string, allKeys []string) (isTemplate bool, template string, values map[string]string) {
 	// Check if it looks like a URL-based connection string
 	if !strings.Contains(value, "://") {
-		return false, ""
+		return false, "", nil
 	}
 
 	parsed, err := url.Parse(value)
 	if err != nil {
-		return false, ""
+		return false, "", nil
 	}
 
 	// Common database/service connection string schemes
@@ -312,31 +313,56 @@ func detectConnectionStringTemplate(value string, allKeys []string) (isTemplate 
 		}
 	}
 	if !isDBConnection {
-		return false, ""
+		return false, "", nil
 	}
 
-	// Build template by replacing user/pass with variables
+	// Extract values and build template
+	values = make(map[string]string)
 	template = value
+
+	// Extract username and password (password becomes {{secret}})
 	if parsed.User != nil {
 		if username := parsed.User.Username(); username != "" {
+			values["username"] = username
 			template = strings.Replace(template, username, "{{username}}", 1)
 		}
 		if password, ok := parsed.User.Password(); ok && password != "" {
-			template = strings.Replace(template, password, "{{password}}", 1)
+			// Password is the secret - use {{secret}} as standard variable
+			template = strings.Replace(template, password, "{{secret}}", 1)
 		}
 	}
 
-	// Also replace host/port if they match other key names
-	hostPort := parsed.Host
-	if hostPort != "" {
-		// Check if any key contains this host (don't replace - it's likely config, not secret)
+	// Extract host and port
+	if parsed.Host != "" {
+		host := parsed.Hostname()
+		port := parsed.Port()
+
+		if host != "" {
+			values["host"] = host
+			// Replace host in template carefully (it may appear after @)
+			template = strings.Replace(template, host, "{{host}}", 1)
+		}
+		if port != "" {
+			values["port"] = port
+			template = strings.Replace(template, ":"+port, ":{{port}}", 1)
+		}
 	}
 
-	return true, template
+	// Extract database name from path
+	if parsed.Path != "" && parsed.Path != "/" {
+		database := strings.TrimPrefix(parsed.Path, "/")
+		if database != "" {
+			values["database"] = database
+			template = strings.Replace(template, "/"+database, "/{{database}}", 1)
+		}
+	}
+
+	return true, template, values
 }
 
-// suggestKeyType analyzes a key's value and suggests if it should be templated
-func suggestKeyType(keyName string, value string, allKeys []string) (suggestedType string, suggestedTemplate string) {
+// suggestKeyType analyzes a key's value and suggests if it should be templated.
+// Returns: suggestedType, suggestedTemplate, extractedValues
+func suggestKeyType(keyName string, value string, allKeys []string) (suggestedType string, suggestedTemplate string, extractedValues map[string]string) {
 	// Check for common templated key names
 	templateKeyPatterns := []string{"url", "uri", "connection", "dsn"}
 	keyLower := strings.ToLower(keyName)
@@ -349,16 +375,16 @@ func suggestKeyType(keyName string, value string, allKeys []string) (suggestedTy
 	}
 
 	if !mightBeTemplated {
-		return "standalone", ""
+		return "standalone", "", nil
 	}
 
 	// Try to detect if it's a connection string
-	isTemplate, template := detectConnectionStringTemplate(value, allKeys)
+	isTemplate, template, values := detectConnectionStringTemplate(value, allKeys)
 	if isTemplate {
-		return "templated", template
+		return "templated", template, values
 	}
 
-	return "standalone", ""
+	return "standalone", "", nil
 }
 
 func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) ([]keyConfig, error) {
@@ -434,18 +460,30 @@ func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) ([]k
 
 		// Auto-detect if this looks like a templated key
 		var keyType, rotationURL, expiry, template string
+		var extractedValues map[string]string
 		keyType = "standalone" // default
 		if secretData != nil {
 			if value, ok := secretData[keyName]; ok {
-				suggestedType, suggestedTemplate := suggestKeyType(keyName, value, keys)
+				suggestedType, suggestedTemplate, values := suggestKeyType(keyName, value, keys)
 				keyType = suggestedType
 				template = suggestedTemplate
+				extractedValues = values
 				if suggestedType == "templated" && suggestedTemplate != "" {
 					fmt.Printf("💡 Auto-detected: this looks like a connection string\n")
-					fmt.Printf("   Suggested template: %s\n\n", suggestedTemplate)
+					fmt.Printf("   Template: %s\n", suggestedTemplate)
+					if len(values) > 0 {
+						fmt.Printf("   Extracted values: ")
+						for k, v := range values {
+							fmt.Printf("%s=%s ", k, v)
+						}
+						fmt.Println()
+					}
+					fmt.Println()
 				}
 			}
 		}
+		// Use extractedValues later for JSON payload
+		_ = extractedValues
 
 		// All fields on one form
 		err := huh.NewForm(
