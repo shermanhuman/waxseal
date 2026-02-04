@@ -169,14 +169,14 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 
 		var stub string
 		if discoverNonInteractive {
-			stub = generateMetadataStub(ds, shortName, projectID, nil, "", "", "")
+			stub = generateMetadataStub(ds, shortName, projectID, nil)
 		} else {
 			// Interactive mode
-			description, documentation, owner, keyConfigs, err := runInteractiveWizard(ds, shortName, projectID)
+			keyConfigs, err := runInteractiveWizard(ds, shortName, projectID)
 			if err != nil {
 				return err
 			}
-			stub = generateMetadataStub(ds, shortName, projectID, keyConfigs, description, documentation, owner)
+			stub = generateMetadataStub(ds, shortName, projectID, keyConfigs)
 		}
 
 		if dryRun {
@@ -238,11 +238,9 @@ func deriveShortName(namespace, name string) string {
 	return short
 }
 
-func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) (string, string, string, []keyConfig, error) {
+func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) ([]keyConfig, error) {
 	keys := ds.sealedSecret.GetEncryptedKeys()
 	configs := make([]keyConfig, 0, len(keys))
-
-	var description, documentation, owner string
 
 	// Ask for project if not configured
 	if projectID == "" {
@@ -253,32 +251,11 @@ func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) (str
 			Value(&projectID).
 			Run()
 		if err != nil {
-			return "", "", "", nil, err
+			return nil, err
 		}
 		if projectID == "" {
 			projectID = "<PROJECT>"
 		}
-	}
-
-	// Secret-level metadata (optional)
-	err := huh.NewForm(
-		huh.NewGroup(
-			huh.NewInput().
-				Title("Description").
-				Description("Brief description of this secret (optional)").
-				Value(&description),
-			huh.NewInput().
-				Title("Documentation URL").
-				Description("Link to runbook or docs (optional)").
-				Value(&documentation),
-			huh.NewInput().
-				Title("Owner").
-				Description("Team or person responsible (optional)").
-				Value(&owner),
-		).Title(fmt.Sprintf("Metadata for %s", shortName)),
-	).Run()
-	if err != nil {
-		return "", "", "", nil, err
 	}
 
 	// Configure each key
@@ -299,7 +276,7 @@ func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) (str
 			Value(&isTemplated).
 			Run()
 		if err != nil {
-			return "", "", "", nil, err
+			return nil, err
 		}
 
 		if isTemplated {
@@ -312,7 +289,7 @@ func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) (str
 				Value(&template).
 				Run()
 			if err != nil {
-				return "", "", "", nil, err
+				return nil, err
 			}
 			config.template = template
 			fmt.Println("    ℹ️  Edit the metadata file to map template inputs to other keys")
@@ -336,7 +313,7 @@ func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) (str
 				Value(&config.rotationMode).
 				Run()
 			if err != nil {
-				return "", "", "", nil, err
+				return nil, err
 			}
 
 			// If generated, ask for generator config
@@ -350,7 +327,7 @@ func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) (str
 					Value(&config.genType).
 					Run()
 				if err != nil {
-					return "", "", "", nil, err
+					return nil, err
 				}
 				config.genLength = "32" // Default length
 			}
@@ -359,10 +336,10 @@ func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) (str
 		configs = append(configs, config)
 	}
 
-	return description, documentation, owner, configs, nil
+	return configs, nil
 }
 
-func generateMetadataStub(ds discoveredSecret, shortName, projectID string, keyConfigs []keyConfig, description, documentation, owner string) string {
+func generateMetadataStub(ds discoveredSecret, shortName, projectID string, keyConfigs []keyConfig) string {
 	ss := ds.sealedSecret
 
 	// If no key configs provided, use defaults (non-interactive mode)
@@ -435,25 +412,14 @@ func generateMetadataStub(ds discoveredSecret, shortName, projectID string, keyC
 		}
 	}
 
-	var meta strings.Builder
-	if description != "" {
-		meta.WriteString(fmt.Sprintf("description: \"%s\"\n", description))
-	}
-	if documentation != "" {
-		meta.WriteString(fmt.Sprintf("documentation: \"%s\"\n", documentation))
-	}
-	if owner != "" {
-		meta.WriteString(fmt.Sprintf("owner: \"%s\"\n", owner))
-	}
-
 	return fmt.Sprintf(`shortName: %s
 manifestPath: %s
-%ssealedSecret:
+sealedSecret:
   name: %s
   namespace: %s
   scope: %s
   type: %s
 status: active
 keys:
-%s`, shortName, ds.path, meta.String(), ss.Metadata.Name, ss.Metadata.Namespace, ss.GetScope(), ss.GetSecretType(), keys.String())
+%s`, shortName, ds.path, ss.Metadata.Name, ss.Metadata.Namespace, ss.GetScope(), ss.GetSecretType(), keys.String())
 }
