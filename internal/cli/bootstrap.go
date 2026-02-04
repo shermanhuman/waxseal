@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"github.com/shermanhuman/waxseal/internal/core"
 	"github.com/shermanhuman/waxseal/internal/files"
 	"github.com/shermanhuman/waxseal/internal/store"
+	"github.com/shermanhuman/waxseal/internal/template"
 	"github.com/spf13/cobra"
 	"sigs.k8s.io/yaml"
 )
@@ -159,22 +161,98 @@ func runBootstrap(cmd *cobra.Command, args []string) error {
 
 	// Push each key to GSM
 	for _, k := range keysToPush {
-		version, err := gsmStore.CreateSecretVersion(ctx, k.gsmResource, k.value)
+		var dataToPush []byte
+		isComputed := false
+
+		// Check if this is a computed key (templated)
+		if k.existingConfig != nil && k.existingConfig.Source.Kind == "computed" {
+			isComputed = true
+			// For computed keys, detect connection string and create JSON payload
+			valueStr := string(k.value)
+			allKeys := make([]string, 0, len(secretData))
+			for kn := range secretData {
+				allKeys = append(allKeys, kn)
+			}
+
+			// Detect template and extract values
+			isTemplate, templateStr, extractedValues := detectConnectionStringTemplate(valueStr, allKeys)
+			if isTemplate {
+				// Get generator config if available
+				var genConfig *template.GeneratorConfig
+				if k.existingConfig.Rotation != nil && k.existingConfig.Rotation.Generator != nil {
+					genConfig = &template.GeneratorConfig{
+						Kind:  k.existingConfig.Rotation.Generator.Kind,
+						Bytes: k.existingConfig.Rotation.Generator.Bytes,
+					}
+					if genConfig.Bytes == 0 {
+						genConfig.Bytes = 32 // default
+					}
+				}
+
+				// Extract the secret value (password from the connection string)
+				secretValue := ""
+				parsed, _ := url.Parse(valueStr)
+				if parsed != nil && parsed.User != nil {
+					if pw, ok := parsed.User.Password(); ok {
+						secretValue = pw
+					}
+				}
+
+				// Create the JSON payload
+				payload, err := template.NewPayload(templateStr, extractedValues, secretValue, genConfig)
+				if err != nil {
+					return fmt.Errorf("create payload for %s: %w", k.keyName, err)
+				}
+
+				dataToPush, err = payload.Marshal()
+				if err != nil {
+					return fmt.Errorf("marshal payload for %s: %w", k.keyName, err)
+				}
+				fmt.Printf("  📦 Created JSON payload with template: %s\n", truncate(templateStr, 50))
+			} else {
+				// Computed but not a recognized template - push raw value
+				dataToPush = k.value
+			}
+		} else {
+			// Regular GSM key - push raw value
+			dataToPush = k.value
+		}
+
+		version, err := gsmStore.CreateSecretVersion(ctx, k.gsmResource, dataToPush)
 		if err != nil {
 			return fmt.Errorf("push %s to GSM: %w", k.keyName, err)
 		}
-		fmt.Printf("✓ Pushed %s (version %s)\n", k.keyName, version)
+		if isComputed {
+			fmt.Printf("✓ Pushed %s (JSON payload, version %s)\n", k.keyName, version)
+		} else {
+			fmt.Printf("✓ Pushed %s (version %s)\n", k.keyName, version)
+		}
 
 		// Update metadata
 		found := false
 		for i := range metadata.Keys {
 			if metadata.Keys[i].KeyName == k.keyName {
-				metadata.Keys[i].GSM = &core.GSMRef{
-					SecretResource: k.gsmResource,
-					Version:        version,
+				if isComputed {
+					// For computed keys, update Computed.GSM instead of top-level GSM
+					if metadata.Keys[i].Computed == nil {
+						metadata.Keys[i].Computed = &core.ComputedConfig{}
+					}
+					metadata.Keys[i].Computed.GSM = &core.GSMRef{
+						SecretResource: k.gsmResource,
+						Version:        version,
+					}
+				} else {
+					metadata.Keys[i].GSM = &core.GSMRef{
+						SecretResource: k.gsmResource,
+						Version:        version,
+					}
 				}
 				if metadata.Keys[i].Source.Kind == "" {
-					metadata.Keys[i].Source.Kind = "gsm"
+					if isComputed {
+						metadata.Keys[i].Source.Kind = "computed"
+					} else {
+						metadata.Keys[i].Source.Kind = "gsm"
+					}
 				}
 				found = true
 				break
@@ -183,15 +261,29 @@ func runBootstrap(cmd *cobra.Command, args []string) error {
 
 		if !found {
 			// Add new key to metadata
-			metadata.Keys = append(metadata.Keys, core.KeyMetadata{
-				KeyName: k.keyName,
-				Source:  core.SourceConfig{Kind: "gsm"},
-				GSM: &core.GSMRef{
+			sourceKind := "gsm"
+			if isComputed {
+				sourceKind = "computed"
+			}
+			newKey := core.KeyMetadata{
+				KeyName:  k.keyName,
+				Source:   core.SourceConfig{Kind: sourceKind},
+				Rotation: &core.RotationConfig{Mode: "manual"},
+			}
+			if isComputed {
+				newKey.Computed = &core.ComputedConfig{
+					GSM: &core.GSMRef{
+						SecretResource: k.gsmResource,
+						Version:        version,
+					},
+				}
+			} else {
+				newKey.GSM = &core.GSMRef{
 					SecretResource: k.gsmResource,
 					Version:        version,
-				},
-				Rotation: &core.RotationConfig{Mode: "manual"},
-			})
+				}
+			}
+			metadata.Keys = append(metadata.Keys, newKey)
 		}
 	}
 
