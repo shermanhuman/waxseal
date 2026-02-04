@@ -498,22 +498,24 @@ func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) ([]k
 			config.gsmResource = defaultGSM
 			config.rotationURL = rotationURL
 			config.expiry = expiry
+		}
 
-			// If generated, ask for generator type (follow-up)
-			if config.rotationMode == "generated" {
-				err := huh.NewSelect[string]().
-					Title("Generator type").
-					Options(
-						huh.NewOption("Random Base64 (URL-safe, good for tokens)", "randomBase64"),
-						huh.NewOption("Random Hex (hexadecimal string)", "randomHex"),
-					).
-					Value(&config.genType).
-					Run()
-				if err != nil {
-					return nil, err
-				}
-				config.genLength = "32"
+		// If generated (for any key type), ask for generator type
+		// For templated keys, this configures how the template's input variable is generated
+		if config.rotationMode == "generated" {
+			err := huh.NewSelect[string]().
+				Title("Generator type").
+				Description("How should the secret value be generated?").
+				Options(
+					huh.NewOption("Random Base64 (URL-safe, good for tokens/passwords)", "randomBase64"),
+					huh.NewOption("Random Hex (hexadecimal string)", "randomHex"),
+				).
+				Value(&config.genType).
+				Run()
+			if err != nil {
+				return nil, err
 			}
+			config.genLength = "32"
 		}
 
 		configs = append(configs, config)
