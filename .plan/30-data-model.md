@@ -61,19 +61,46 @@ Keys:
 
   - `computed` (required if `source.kind: computed`)
     - `kind`: `template`
-    - `template`: string (e.g., `postgresql://{{username}}:{{password}}@{{host}}:{{port}}/{{db}}?sslmode={{sslmode}}`)
-    - `inputs[]`: list of value references providing template variables
-      - `var`: template variable name (e.g., `username`)
-      - `ref`:
-        - `shortName` (optional; default current secret)
-        - `keyName`
-    - `params` (optional): map of non-secret constants (e.g., `host`, `port`, `db`, `sslmode`)
-      - Note: these may still be sensitive if they include internal hostnames.
-    - `paramsRef` (optional): GSM-backed params for public repos
-      - `gsm`:
-        - `secretResource`: `projects/<project>/secrets/<secretId>`
-        - `version`: string (pinned)
-      - `format`: `json` | `yaml` (default: `yaml`)
+    - `gsm`:
+      - `secretResource`: `projects/<project>/secrets/<secretId>`
+      - `version`: string (pinned)
+    - `rotation`:
+      - `mode`: `generated` (the `{{secret}}` variable is auto-generated)
+      - `generator`:
+        - `kind`: `randomBase64` | `randomHex`
+        - `bytes`: integer (default 32)
+
+GSM payload schema (JSON stored in the GSM secret):
+
+```json
+{
+  "schemaVersion": 1,
+  "type": "templated",
+  "template": "postgresql://{{username}}:{{secret}}@{{host}}:{{port}}/{{database}}",
+  "values": {
+    "username": "myapp_user",
+    "host": "shared-postgres-rw",
+    "port": "5432",
+    "database": "breakdown_admin_prod"
+  },
+  "secret": "aGVsbG8td29ybGQtdGhpcy1pcy1hLXNlY3JldA==",
+  "generator": {
+    "kind": "randomBase64",
+    "bytes": 32
+  },
+  "computed": "postgresql://myapp_user:aGVsbG8t...@host:5432/db"
+}
+```
+
+Standard variable: `{{secret}}` is always the rotatable credential.
+Other variables (`{{username}}`, `{{host}}`, etc.) are stored in `values`.
+
+Password length limits by database (32 bytes base64 = 44 chars is safe for all):
+
+- PostgreSQL: up to 1024 chars (scram-sha-256)
+- MySQL: ~255 recommended
+- MongoDB: no explicit limit
+- Redis: no limit
 
 Computed semantics:
 
