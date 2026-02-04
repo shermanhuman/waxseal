@@ -152,6 +152,40 @@ func bootstrapOne(ctx context.Context, shortName string) error {
 
 	fmt.Printf("  Found %d keys in cluster\n", len(secretData))
 
+	// Check for key mismatches between metadata and cluster
+	clusterKeys := make(map[string]bool)
+	for k := range secretData {
+		clusterKeys[k] = true
+	}
+
+	var missingInCluster []string
+	var extraInCluster []string
+
+	for _, km := range metadata.Keys {
+		if !clusterKeys[km.KeyName] {
+			missingInCluster = append(missingInCluster, km.KeyName)
+		}
+	}
+
+	metadataKeys := make(map[string]bool)
+	for _, km := range metadata.Keys {
+		metadataKeys[km.KeyName] = true
+	}
+	for k := range secretData {
+		if !metadataKeys[k] {
+			extraInCluster = append(extraInCluster, k)
+		}
+	}
+
+	if len(missingInCluster) > 0 {
+		fmt.Printf("  ⚠️  Keys in metadata but NOT in cluster: %v\n", missingInCluster)
+		fmt.Println("     These keys will be skipped. Remove them from metadata or add to cluster.")
+	}
+	if len(extraInCluster) > 0 {
+		fmt.Printf("  ℹ️  Keys in cluster but NOT in metadata: %v\n", extraInCluster)
+		fmt.Println("     These will be added with default config.")
+	}
+
 	// Track which keys to push
 	type keyToPush struct {
 		keyName        string
