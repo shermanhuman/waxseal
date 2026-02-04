@@ -304,11 +304,11 @@ func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) ([]k
 			// Rotation mode
 			err := huh.NewSelect[string]().
 				Title("How is this key rotated?").
-				Description("This helps waxseal guide you through rotation").
+				Description("Generated keys can be auto-rotated by waxseal.\nExternal keys can link to rotation URLs to guide you through the process.").
 				Options(
 					huh.NewOption("Unknown - I'm not sure yet (safe default)", "unknown"),
-					huh.NewOption("Generated - waxseal can auto-generate (random bytes, tokens)", "generated"),
-					huh.NewOption("External - rotated by an external system (API portal, vendor)", "external"),
+					huh.NewOption("Generated - waxseal can auto-rotate (random bytes, tokens, passwords)", "generated"),
+					huh.NewOption("External - managed outside waxseal (API portal, vendor, user/operator)", "external"),
 				).
 				Value(&config.rotationMode).
 				Run()
