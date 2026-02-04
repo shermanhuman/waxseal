@@ -104,6 +104,8 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 
 	// If key not found, require --create flag or prompt
 	createNewKey := false
+	var newKeyRotationMode string = "manual"
+	var newKeyGenType string
 	if keyIndex == -1 {
 		if !updateCreateKey {
 			// Interactive prompt
@@ -121,6 +123,38 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 			}
 		}
 		createNewKey = true
+
+		// Collect key configuration (same prompts as discover wizard)
+		err = huh.NewSelect[string]().
+			Title("Rotation mode").
+			Description("How should this key be rotated?").
+			Options(
+				huh.NewOption("Manual - rotated manually when needed", "manual"),
+				huh.NewOption("Static - this key cannot be rotated", "static"),
+				huh.NewOption("Generated - waxseal auto-rotates", "generated"),
+				huh.NewOption("External - managed by you (API portal, vendor)", "external"),
+			).
+			Value(&newKeyRotationMode).
+			Run()
+		if err != nil {
+			return err
+		}
+
+		// If generated, ask for generator type
+		if newKeyRotationMode == "generated" {
+			err = huh.NewSelect[string]().
+				Title("Generator type").
+				Description("How should the secret value be generated?").
+				Options(
+					huh.NewOption("Random Base64 (URL-safe, good for tokens/passwords)", "randomBase64"),
+					huh.NewOption("Random Hex (hexadecimal string)", "randomHex"),
+				).
+				Value(&newKeyGenType).
+				Run()
+			if err != nil {
+				return err
+			}
+		}
 	}
 
 	var keyMeta *core.KeyMetadata
@@ -218,7 +252,14 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 				SecretResource: gsmResource,
 				Version:        newVersion,
 			},
-			Rotation: &core.RotationConfig{Mode: "manual"},
+			Rotation: &core.RotationConfig{Mode: newKeyRotationMode},
+		}
+		// Add generator config if rotation mode is generated
+		if newKeyRotationMode == "generated" && newKeyGenType != "" {
+			newKeyMeta.Rotation.Generator = &core.GeneratorConfig{
+				Kind:  newKeyGenType,
+				Bytes: 32,
+			}
 		}
 		metadata.Keys = append(metadata.Keys, newKeyMeta)
 		fmt.Printf("✓ Added key %s to metadata\n", keyName)
