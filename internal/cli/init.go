@@ -606,22 +606,155 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// Offer reminders setup
 	if !initNonInteractive && !initSkipReminders {
 		fmt.Println()
-		var setupReminders bool
-		err := huh.NewConfirm().
-			Title("Set up expiration reminders?").
-			Description("Create Google Calendar events for secret rotation reminders.\nRequires Calendar API enabled in your GCP project.").
-			Value(&setupReminders).
+		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		fmt.Println("Step 7/7: Expiration Reminders (Optional)")
+		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		fmt.Println()
+		fmt.Println("WaxSeal can create automatic reminders for secrets with expiry dates.")
+		fmt.Println()
+		fmt.Println("╔═══════════════════════════════════════════════════════════════╗")
+		fmt.Println("║                    REMINDER PROVIDERS                         ║")
+		fmt.Println("╠═══════════════════════════════════════════════════════════════╣")
+		fmt.Println("║  📋 GOOGLE TASKS (Recommended)                                ║")
+		fmt.Println("║     • Creates tasks in your Google Tasks list                 ║")
+		fmt.Println("║     • Tasks with due dates auto-appear in Google Calendar     ║")
+		fmt.Println("║     • Simpler setup, no extra calendar clutter                ║")
+		fmt.Println("║                                                               ║")
+		fmt.Println("║  📅 GOOGLE CALENDAR                                           ║")
+		fmt.Println("║     • Creates calendar events directly                        ║")
+		fmt.Println("║     • More visible, with email notifications                  ║")
+		fmt.Println("║     • Requires Calendar API and calendar selection            ║")
+		fmt.Println("║                                                               ║")
+		fmt.Println("║  Both require Application Default Credentials (gcloud auth)  ║")
+		fmt.Println("╚═══════════════════════════════════════════════════════════════╝")
+		fmt.Println()
+
+		// Provider selection
+		var reminderChoice string
+		err := huh.NewSelect[string]().
+			Title("Which reminder provider(s) would you like to use?").
+			Options(
+				huh.NewOption("📋 Google Tasks only (recommended)", "tasks"),
+				huh.NewOption("📅 Google Calendar only", "calendar"),
+				huh.NewOption("🔔 Both Tasks and Calendar", "both"),
+				huh.NewOption("⏭️  Skip reminders for now", "none"),
+			).
+			Value(&reminderChoice).
 			Run()
-		if err == nil && setupReminders {
+		if err != nil {
+			return err
+		}
+
+		if reminderChoice == "none" {
+			fmt.Println("Skipping reminders setup. You can configure later with 'waxseal reminders setup'.")
+		} else {
+			// Collect lead time days (common to all providers)
+			leadTimeStr := "30, 7, 1"
+			err = huh.NewInput().
+				Title("Lead Time Days").
+				Description("Comma-separated days before expiry to create reminders (e.g., '30, 7, 1')").
+				Value(&leadTimeStr).
+				Validate(func(s string) error {
+					if len(parseReminderIntList(s)) == 0 {
+						return fmt.Errorf("must provide at least one day")
+					}
+					return nil
+				}).
+				Run()
+			if err != nil {
+				return err
+			}
+
+			// Tasks configuration
+			tasklistID := "@default"
+			if reminderChoice == "tasks" || reminderChoice == "both" {
+				fmt.Println()
+				fmt.Println("📋 Google Tasks Configuration")
+				fmt.Println("   Using the default task list (@default) means tasks appear in your")
+				fmt.Println("   primary Google Tasks list and auto-show in Calendar.")
+				fmt.Println()
+
+				var customTasklist bool
+				err = huh.NewConfirm().
+					Title("Use a custom task list?").
+					Description("Default (@default) is recommended for most users").
+					Value(&customTasklist).
+					Affirmative("Yes, specify custom").
+					Negative("No, use default").
+					Run()
+				if err != nil {
+					return err
+				}
+
+				if customTasklist {
+					err = huh.NewInput().
+						Title("Task List ID").
+						Description("Enter your task list ID (find via Tasks API or Google Tasks settings)").
+						Value(&tasklistID).
+						Run()
+					if err != nil {
+						return err
+					}
+				}
+			}
+
+			// Calendar configuration
+			calendarID := "primary"
+			if reminderChoice == "calendar" || reminderChoice == "both" {
+				fmt.Println()
+				fmt.Println("📅 Google Calendar Configuration")
+				fmt.Println("   'primary' uses the calendar of the authenticated Google account.")
+				fmt.Println("   You can also specify a shared calendar's email address.")
+				fmt.Println()
+
+				err = huh.NewInput().
+					Title("Calendar ID").
+					Description("Use 'primary' or a calendar email (e.g., team@group.calendar.google.com)").
+					Value(&calendarID).
+					Run()
+				if err != nil {
+					return err
+				}
+			}
+
+			// Build and display config snippet
+			reminderConfig := buildReminderConfig(reminderChoice, tasklistID, calendarID, leadTimeStr)
 			fmt.Println()
-			fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-			fmt.Println("Step 7/7: Reminders Setup")
-			fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+			fmt.Println("Generated reminders configuration:")
+			fmt.Println("┌─────────────────────────────────────────────────────")
+			for _, line := range strings.Split(reminderConfig, "\n") {
+				fmt.Printf("│ %s\n", line)
+			}
+			fmt.Println("└─────────────────────────────────────────────────────")
 			fmt.Println()
-			fmt.Println("Running reminders setup...")
-			if err := runRemindersSetup(cmd, []string{}); err != nil {
-				fmt.Printf("⚠️  Reminders setup failed: %v\n", err)
-				fmt.Println("   You can run 'waxseal reminders setup' later.")
+
+			// Update config
+			var updateConfig bool
+			err = huh.NewConfirm().
+				Title("Add this to your config?").
+				Value(&updateConfig).
+				Run()
+			if err != nil {
+				return err
+			}
+
+			if updateConfig {
+				configFile := filepath.Join(repoPath, ".waxseal", "config.yaml")
+				existingConfig, err := os.ReadFile(configFile)
+				if err != nil {
+					fmt.Printf("⚠️  Could not read config: %v\n", err)
+				} else if strings.Contains(string(existingConfig), "reminders:") {
+					fmt.Println("⚠️  Config already contains reminders section. Update manually.")
+				} else {
+					newConfig := string(existingConfig) + "\n" + reminderConfig
+					if err := os.WriteFile(configFile, []byte(newConfig), 0o644); err != nil {
+						fmt.Printf("⚠️  Could not update config: %v\n", err)
+					} else {
+						fmt.Println("✓ Reminders configuration added to config")
+					}
+				}
+			} else {
+				fmt.Println("Config not updated. Add the snippet to .waxseal/config.yaml manually.")
 			}
 		}
 	}
@@ -723,4 +856,61 @@ func getNamespaces() ([]string, error) {
 		return nil, err
 	}
 	return strings.Split(string(output), " "), nil
+}
+
+// parseReminderIntList parses a comma-separated list of integers.
+func parseReminderIntList(s string) []int {
+	s = strings.Trim(s, "[]")
+	parts := strings.Split(s, ",")
+	var result []int
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		n := 0
+		for _, c := range p {
+			if c >= '0' && c <= '9' {
+				n = n*10 + int(c-'0')
+			} else {
+				n = -1
+				break
+			}
+		}
+		if n >= 0 {
+			result = append(result, n)
+		}
+	}
+	return result
+}
+
+// buildReminderConfig generates the reminders config section.
+func buildReminderConfig(provider, tasklistID, calendarID, leadTimeStr string) string {
+	var sb strings.Builder
+	sb.WriteString("reminders:\n")
+	sb.WriteString("  enabled: true\n")
+	sb.WriteString(fmt.Sprintf("  provider: %s\n", provider))
+
+	if provider == "tasks" || provider == "both" {
+		if tasklistID != "@default" {
+			sb.WriteString(fmt.Sprintf("  tasklistId: \"%s\"\n", tasklistID))
+		}
+		// @default is the default, so no need to write it
+	}
+
+	if provider == "calendar" || provider == "both" {
+		sb.WriteString(fmt.Sprintf("  calendarId: %s\n", calendarID))
+	}
+
+	// Format lead time days
+	days := parseReminderIntList(leadTimeStr)
+	var dayStrs []string
+	for _, d := range days {
+		dayStrs = append(dayStrs, fmt.Sprintf("%d", d))
+	}
+	sb.WriteString(fmt.Sprintf("  leadTimeDays: [%s]\n", strings.Join(dayStrs, ", ")))
+	sb.WriteString("  auth:\n")
+	sb.WriteString("    kind: adc\n")
+
+	return sb.String()
 }

@@ -427,8 +427,11 @@ func runRemindersList(cmd *cobra.Command, args []string) error {
 }
 
 func runRemindersSetup(cmd *cobra.Command, args []string) error {
-	fmt.Println("WaxSeal Reminders Setup")
-	fmt.Println("=======================")
+	fmt.Println()
+	fmt.Println("╔══════════════════════════════════════════════════════════════╗")
+	fmt.Println("║              WaxSeal Reminders Setup                         ║")
+	fmt.Println("╚══════════════════════════════════════════════════════════════╝")
+	fmt.Println()
 
 	// Check for existing config
 	configFile := configPath
@@ -436,74 +439,149 @@ func runRemindersSetup(cmd *cobra.Command, args []string) error {
 		configFile = filepath.Join(repoPath, configFile)
 	}
 
-	_, err := os.Stat(configFile)
-	if os.IsNotExist(err) {
+	if _, err := os.Stat(configFile); os.IsNotExist(err) {
 		fmt.Println("No config file found. Run 'waxseal init' first.")
 		return nil
 	}
 
-	// 1. Proactive Auth Check with required scopes
-	// Note: Calendar API requires specific scopes not covered by default ADC
-	fmt.Println("\nChecking authentication...")
-	scopes := []string{
-		"https://www.googleapis.com/auth/cloud-platform",
-		"https://www.googleapis.com/auth/calendar.events",
-	}
-	if err := EnsureGcloudAuth(); err != nil {
-		return err
-	}
-	if err := EnsureGcloudADC(scopes...); err != nil {
-		return err
-	}
+	fmt.Println("WaxSeal can create automatic reminders for secrets with expiry dates.")
+	fmt.Println()
+	fmt.Println("╔═══════════════════════════════════════════════════════════════╗")
+	fmt.Println("║                    REMINDER PROVIDERS                         ║")
+	fmt.Println("╠═══════════════════════════════════════════════════════════════╣")
+	fmt.Println("║  📋 GOOGLE TASKS (Recommended)                                ║")
+	fmt.Println("║     • Creates tasks in your Google Tasks list                 ║")
+	fmt.Println("║     • Tasks with due dates auto-appear in Google Calendar     ║")
+	fmt.Println("║     • Simpler setup, no extra calendar clutter                ║")
+	fmt.Println("║                                                               ║")
+	fmt.Println("║  📅 GOOGLE CALENDAR                                           ║")
+	fmt.Println("║     • Creates calendar events directly                        ║")
+	fmt.Println("║     • More visible, with email notifications                  ║")
+	fmt.Println("║     • Requires Calendar API and calendar selection            ║")
+	fmt.Println("║                                                               ║")
+	fmt.Println("║  Both require Application Default Credentials (gcloud auth)  ║")
+	fmt.Println("╚═══════════════════════════════════════════════════════════════╝")
+	fmt.Println()
 
-	// 2. Interactive Configuration
-	calendarID := "primary"
-	leadTimeStr := "30, 7, 1"
-
-	err = huh.NewForm(
-		huh.NewGroup(
-			huh.NewInput().
-				Title("Calendar ID").
-				Description("Calendar to create events in.\nUse 'primary' for the account you just logged into.\nOr enter a specific ID (email) if sharing a calendar.").
-				Value(&calendarID),
-			huh.NewInput().
-				Title("Lead Time Days").
-				Description("Comma-separated list of days before expiry to create reminders.").
-				Value(&leadTimeStr).
-				Validate(func(s string) error {
-					if len(parseIntList(s)) == 0 {
-						return fmt.Errorf("must provide at least one day")
-					}
-					return nil
-				}),
-		),
-	).Run()
+	// Provider selection
+	var provider string
+	err := huh.NewSelect[string]().
+		Title("Which reminder provider(s) would you like to use?").
+		Options(
+			huh.NewOption("📋 Google Tasks only (recommended)", "tasks"),
+			huh.NewOption("📅 Google Calendar only", "calendar"),
+			huh.NewOption("🔔 Both Tasks and Calendar", "both"),
+			huh.NewOption("❌ Disable reminders", "none"),
+		).
+		Value(&provider).
+		Run()
 	if err != nil {
 		return err
 	}
 
+	if provider == "none" {
+		fmt.Println("Reminders disabled. You can run 'waxseal reminders setup' again to enable.")
+		return nil
+	}
+
+	// Lead time days
+	leadTimeStr := "30, 7, 1"
+	err = huh.NewInput().
+		Title("Lead Time Days").
+		Description("Comma-separated days before expiry to create reminders (e.g., '30, 7, 1')").
+		Value(&leadTimeStr).
+		Validate(func(s string) error {
+			if len(parseIntList(s)) == 0 {
+				return fmt.Errorf("must provide at least one day")
+			}
+			return nil
+		}).
+		Run()
+	if err != nil {
+		return err
+	}
+
+	// Tasks configuration
+	tasklistID := "@default"
+	if provider == "tasks" || provider == "both" {
+		fmt.Println()
+		fmt.Println("📋 Google Tasks Configuration")
+		fmt.Println("   Using the default task list (@default) means tasks appear in your")
+		fmt.Println("   primary Google Tasks list and auto-show in Calendar.")
+		fmt.Println()
+
+		var customTasklist bool
+		err = huh.NewConfirm().
+			Title("Use a custom task list?").
+			Description("Default (@default) is recommended for most users").
+			Value(&customTasklist).
+			Affirmative("Yes, specify").
+			Negative("No, use default").
+			Run()
+		if err != nil {
+			return err
+		}
+
+		if customTasklist {
+			err = huh.NewInput().
+				Title("Task List ID").
+				Description("Enter your task list ID").
+				Value(&tasklistID).
+				Run()
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	// Calendar configuration
+	calendarID := "primary"
+	if provider == "calendar" || provider == "both" {
+		fmt.Println()
+		fmt.Println("📅 Google Calendar Configuration")
+		fmt.Println("   'primary' uses the calendar of the authenticated Google account.")
+		fmt.Println()
+
+		err = huh.NewInput().
+			Title("Calendar ID").
+			Description("Use 'primary' or a calendar email").
+			Value(&calendarID).
+			Run()
+		if err != nil {
+			return err
+		}
+	}
+
+	// Build config snippet
 	leadTimeDays := parseIntList(leadTimeStr)
+	var configSnippet strings.Builder
+	configSnippet.WriteString("\nreminders:\n")
+	configSnippet.WriteString("  enabled: true\n")
+	configSnippet.WriteString(fmt.Sprintf("  provider: %s\n", provider))
+	if (provider == "tasks" || provider == "both") && tasklistID != "@default" {
+		configSnippet.WriteString(fmt.Sprintf("  tasklistId: \"%s\"\n", tasklistID))
+	}
+	if provider == "calendar" || provider == "both" {
+		configSnippet.WriteString(fmt.Sprintf("  calendarId: %s\n", calendarID))
+	}
+	configSnippet.WriteString(fmt.Sprintf("  leadTimeDays: [%s]\n", formatIntList(leadTimeDays)))
+	configSnippet.WriteString("  auth:\n")
+	configSnippet.WriteString("    kind: adc\n")
 
-	// 3. Build config snippet
-	configSnippet := fmt.Sprintf(`
-reminders:
-  enabled: true
-  provider: google-calendar
-  calendarId: %s
-  leadTimeDays: [%s]
-  auth:
-    kind: adc
-`, calendarID, formatIntList(leadTimeDays))
-
-	fmt.Println("\nGenerated Configuration:")
-	fmt.Println(configSnippet)
+	fmt.Println()
+	fmt.Println("Generated Configuration:")
+	fmt.Println("┌─────────────────────────────────────────────────────")
+	for _, line := range strings.Split(configSnippet.String(), "\n") {
+		fmt.Printf("│ %s\n", line)
+	}
+	fmt.Println("└─────────────────────────────────────────────────────")
 
 	if dryRun {
 		fmt.Println("[DRY RUN] Would update config file")
 		return nil
 	}
 
-	// 4. Update Config
+	// Update Config
 	var update bool
 	err = huh.NewConfirm().
 		Title("Update config file automatically?").
@@ -526,22 +604,12 @@ reminders:
 
 	// Check if reminders already exists
 	if strings.Contains(string(existingConfig), "reminders:") {
-		fmt.Println("Config already contains reminders section. Update manually.")
+		fmt.Println("Config already contains reminders section. Please update manually.")
 		return nil
 	}
 
 	// Append reminders config
-	remindersConfig := fmt.Sprintf(`
-reminders:
-  enabled: true
-  provider: google-calendar
-  calendarId: %s
-  leadTimeDays: [%s]
-  auth:
-    kind: adc
-`, calendarID, formatIntList(leadTimeDays))
-
-	newConfig := string(existingConfig) + remindersConfig
+	newConfig := string(existingConfig) + configSnippet.String()
 	if err := os.WriteFile(configFile, []byte(newConfig), 0o644); err != nil {
 		return fmt.Errorf("write config: %w", err)
 	}
@@ -549,8 +617,8 @@ reminders:
 	fmt.Println("✓ Config updated successfully")
 	fmt.Println()
 	fmt.Println("Next steps:")
-	fmt.Println("  1. Run 'waxseal reminders sync' to create calendar events")
-	fmt.Println("  2. Check your calendar to verify events were created")
+	fmt.Println("  1. Run 'waxseal reminders sync' to create reminders")
+	fmt.Println("  2. Check your calendar/tasks to verify they were created")
 
 	return nil
 }
