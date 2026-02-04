@@ -362,13 +362,64 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("--project-id is required in non-interactive mode")
 	}
 
-	// Enable Secret Manager API
+	// Check billing and enable APIs (for existing project path)
 	if projectID != "" && !initNonInteractive {
-		fmt.Printf("\nEnabling Secret Manager API for project %s...\n", projectID)
+		// Check if billing is enabled
+		fmt.Printf("\nChecking billing for project %s...\n", projectID)
+		checkCmd := exec.CommandContext(cmd.Context(), "gcloud", "billing", "projects", "describe", projectID, "--format=value(billingAccountName)")
+		output, _ := checkCmd.Output()
+		billingAccount := strings.TrimSpace(string(output))
+
+		if billingAccount == "" {
+			fmt.Println("⚠️  No billing account linked to this project.")
+			fmt.Println("   Billing is required to enable Secret Manager API.")
+
+			// Get available billing accounts
+			accounts, _ := GetBillingAccounts()
+			if len(accounts) > 0 {
+				var options []huh.Option[string]
+				for _, acc := range accounts {
+					id := strings.TrimPrefix(acc.Name, "billingAccounts/")
+					label := fmt.Sprintf("%s (%s)", acc.DisplayName, id)
+					options = append(options, huh.NewOption(label, id))
+				}
+				options = append(options, huh.NewOption("Skip (link billing manually later)", "skip"))
+
+				var billingID string
+				err := huh.NewSelect[string]().
+					Title("Select a billing account").
+					Options(options...).
+					Value(&billingID).
+					Run()
+				if err != nil {
+					return err
+				}
+
+				if billingID != "skip" {
+					fmt.Printf("Linking billing account %s...\n", billingID)
+					linkCmd := exec.CommandContext(cmd.Context(), "gcloud", "billing", "projects", "link",
+						projectID, "--billing-account="+billingID)
+					if output, err := linkCmd.CombinedOutput(); err != nil {
+						fmt.Printf("⚠️  Could not link billing: %s\n", string(output))
+						fmt.Println("   You may need to link billing manually.")
+					} else {
+						fmt.Println("✓ Billing account linked")
+					}
+				}
+			} else {
+				fmt.Println("   No billing accounts found. Please link billing manually at:")
+				fmt.Printf("   https://console.cloud.google.com/billing/linkedaccount?project=%s\n", projectID)
+			}
+		} else {
+			fmt.Printf("✓ Billing enabled (%s)\n", billingAccount)
+		}
+
+		// Enable Secret Manager API
+		fmt.Printf("Enabling Secret Manager API for project %s...\n", projectID)
 		enableCmd := exec.CommandContext(cmd.Context(), "gcloud", "services", "enable",
 			"secretmanager.googleapis.com", "--project", projectID)
 		if output, err := enableCmd.CombinedOutput(); err != nil {
-			fmt.Printf("⚠️  Could not enable Secret Manager API: %v\n", string(output))
+			fmt.Printf("⚠️  Could not enable Secret Manager API: %s\n", string(output))
 			fmt.Println("   You may need to enable it manually at:")
 			fmt.Printf("   https://console.cloud.google.com/apis/library/secretmanager.googleapis.com?project=%s\n", projectID)
 		} else {
