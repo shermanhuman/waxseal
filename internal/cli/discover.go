@@ -224,9 +224,13 @@ type keyConfig struct {
 	genType   string // randomBase64, randomHex
 	genLength string // keep as string for simple input handling
 
+	// External rotation fields (if rotationMode == external)
+	rotationURL string // URL for rotation portal/docs
+
 	// Templated fields
 	template string
 
+	// Expiry
 	expiry string
 }
 
@@ -258,18 +262,41 @@ func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) ([]k
 		}
 	}
 
+	// ANSI codes for formatting
+	bold := "\033[1m"
+	green := "\033[32m"
+	reset := "\033[0m"
+
 	// Configure each key
 	fmt.Printf("\n🔑 Configuring %d key(s):\n", len(keys))
 
-	for _, keyName := range keys {
+	for i, keyName := range keys {
 		config := keyConfig{keyName: keyName}
 
-		fmt.Printf("\n  Key: %s\n", keyName)
+		// Show progress: completed keys with checkmarks
+		fmt.Println()
+		for j, k := range keys {
+			if j < i {
+				// Completed - show with checkmark and selected mode
+				mode := configs[j].rotationMode
+				if configs[j].sourceKind == "templated" {
+					mode = "templated"
+				}
+				fmt.Printf("  %s✓%s %s [%s]\n", green, reset, k, mode)
+			} else if j == i {
+				// Current - bold white
+				fmt.Printf("  %s▶ %s%s\n", bold, k, reset)
+			} else {
+				// Pending
+				fmt.Printf("    %s\n", k)
+			}
+		}
+		fmt.Println()
 
 		// Is this key templated (composed from other values)?
 		var isTemplated bool
 		err := huh.NewConfirm().
-			Title("Is this key templated?").
+			Title(fmt.Sprintf("Is '%s' templated?", keyName)).
 			Description("Templated keys are composed from other values using a template\n(e.g., a DATABASE_URL built from username, password, host, port)").
 			Affirmative("Yes, it's templated").
 			Negative("No, it's a standalone value").
@@ -283,7 +310,7 @@ func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) ([]k
 			config.sourceKind = "templated"
 			var template string
 			err := huh.NewInput().
-				Title("Template").
+				Title(fmt.Sprintf("Template for '%s'", keyName)).
 				Description("Use {{varName}} for variables (e.g., postgresql://{{username}}:{{password}}@{{host}}/{{db}})").
 				Placeholder("postgresql://{{username}}:{{password}}@{{host}}:{{port}}/{{db}}").
 				Value(&template).
@@ -303,7 +330,7 @@ func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) ([]k
 
 			// Rotation mode
 			err := huh.NewSelect[string]().
-				Title("How is this key rotated?").
+				Title(fmt.Sprintf("How is '%s' rotated?", keyName)).
 				Description("Generated keys can be auto-rotated by waxseal.\nExternal keys can link to rotation URLs to guide you through the process.").
 				Options(
 					huh.NewOption("Unknown - I'm not sure yet (safe default)", "unknown"),
@@ -319,7 +346,7 @@ func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) ([]k
 			// If generated, ask for generator config
 			if config.rotationMode == "generated" {
 				err := huh.NewSelect[string]().
-					Title("Generator type").
+					Title(fmt.Sprintf("Generator type for '%s'", keyName)).
 					Options(
 						huh.NewOption("Random Base64 (URL-safe, good for tokens)", "randomBase64"),
 						huh.NewOption("Random Hex (hexadecimal string)", "randomHex"),
@@ -330,6 +357,34 @@ func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) ([]k
 					return nil, err
 				}
 				config.genLength = "32" // Default length
+			}
+
+			// If external, ask for rotation URL and expiry
+			if config.rotationMode == "external" {
+				var rotationURL string
+				err := huh.NewInput().
+					Title(fmt.Sprintf("Rotation URL for '%s' (optional)", keyName)).
+					Description("Where do you go to rotate this key? (e.g., vendor portal, internal runbook)").
+					Placeholder("https://console.cloud.google.com/...").
+					Value(&rotationURL).
+					Run()
+				if err != nil {
+					return nil, err
+				}
+				config.rotationURL = rotationURL
+
+				// Expiry date
+				var expiry string
+				err = huh.NewInput().
+					Title(fmt.Sprintf("Expiry date for '%s' (optional)", keyName)).
+					Description("When does this key expire? Leave blank if it doesn't expire.").
+					Placeholder("YYYY-MM-DD").
+					Value(&expiry).
+					Run()
+				if err != nil {
+					return nil, err
+				}
+				config.expiry = expiry
 			}
 		}
 
@@ -405,8 +460,17 @@ func generateMetadataStub(ds discoveredSecret, shortName, projectID string, keyC
 `, gt, gl))
 			}
 
+			// Rotation URL for external keys
+			if kc.rotationURL != "" {
+				keys.WriteString(fmt.Sprintf(`    operatorHints:
+      rotationURL: "%s"
+`, kc.rotationURL))
+			}
+
+			// Expiry date
 			if kc.expiry != "" {
-				keys.WriteString(fmt.Sprintf(`    expiry: "%s"
+				keys.WriteString(fmt.Sprintf(`    expiry:
+      expiresAt: "%sT00:00:00Z"
 `, kc.expiry))
 			}
 		}
