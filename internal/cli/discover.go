@@ -151,18 +151,21 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 	}
 
 	// Explain next steps
+	fmt.Println()
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Printf("\n🔧 Next: Configure metadata for %d new secret(s)\n\n", len(newSecrets))
+	fmt.Println("Step 5/7: Key Configuration")
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Println()
+	fmt.Printf("Configure metadata for %d new secret(s)\n\n", len(newSecrets))
 	fmt.Println("For each secret, waxseal needs to know:")
 	fmt.Println("  • How each key value is rotated (generated, external, or unknown)")
 	fmt.Println("  • Whether any keys are templated (composed from other values)")
-	fmt.Println("")
+	fmt.Println()
 	fmt.Println("This metadata enables waxseal to:")
 	fmt.Println("  • Automatically re-seal secrets when certificates change")
 	fmt.Println("  • Guide you through rotation with the correct steps")
 	fmt.Println("  • Track expiration dates and send reminders")
-	fmt.Println("")
-	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Println()
 
 	// Process each new secret
 	for i, ds := range newSecrets {

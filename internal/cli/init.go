@@ -102,13 +102,22 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println("WaxSeal syncs your Kubernetes SealedSecrets with Google Secret Manager.")
 		fmt.Println("Secret values are stored in GCP - only encrypted ciphertext goes in Git.")
 		fmt.Println()
+		fmt.Println("This wizard will walk you through 7 steps:")
+		fmt.Println("  1. GCP Project Setup     - Configure or create a GCP project")
+		fmt.Println("  2. Controller Discovery  - Find your SealedSecrets controller")
+		fmt.Println("  3. Certificate Fetch     - Download the controller's public cert")
+		fmt.Println("  4. Secret Discovery      - Find existing SealedSecret manifests")
+		fmt.Println("  5. Key Configuration     - Configure rotation for each secret key")
+		fmt.Println("  6. Bootstrap to GSM      - Push secret values to Google Secret Manager")
+		fmt.Println("  7. Reminders Setup       - Set up expiration reminders (optional)")
+		fmt.Println()
 	}
 
 	// Handle GCP setup
 	projectID := initProjectID
 	if projectID == "" && !initNonInteractive {
 		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		fmt.Println("Step 1/4: GCP Project Setup")
+		fmt.Println("Step 1/7: GCP Project Setup")
 		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		fmt.Println()
 
@@ -360,7 +369,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if !initNonInteractive {
 		fmt.Println()
 		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		fmt.Println("Step 2/4: Controller Discovery")
+		fmt.Println("Step 2/7: Controller Discovery")
 		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		fmt.Println()
 
@@ -446,7 +455,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	certPath := filepath.Join(keysDir, "pub-cert.pem")
 	fmt.Println()
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Println("Step 3/4: Certificate Fetch")
+	fmt.Println("Step 3/7: Certificate Fetch")
 	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	fmt.Println()
 	fmt.Println("Fetching certificate from Sealed Secrets controller...")
@@ -483,7 +492,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if !initNonInteractive && certErr == nil {
 		fmt.Println()
 		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		fmt.Println("Step 4/4: Secret Discovery")
+		fmt.Println("Step 4/7: Secret Discovery")
 		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		fmt.Println()
 		fmt.Println("Looking for existing SealedSecrets...")
@@ -507,6 +516,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 					Value(&doBootstrap).
 					Run()
 				if err == nil && doBootstrap {
+					fmt.Println()
+					fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+					fmt.Println("Step 6/7: Bootstrap to GSM")
+					fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 					fmt.Println()
 					fmt.Println("Syncing secrets to GSM...")
 					for _, mf := range metadataFiles {
@@ -535,6 +548,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 			Value(&setupReminders).
 			Run()
 		if err == nil && setupReminders {
+			fmt.Println()
+			fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+			fmt.Println("Step 7/7: Reminders Setup")
+			fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			fmt.Println()
 			fmt.Println("Running reminders setup...")
 			if err := runRemindersSetup(cmd, []string{}); err != nil {
