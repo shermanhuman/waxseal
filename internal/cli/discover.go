@@ -261,12 +261,39 @@ func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) ([]k
 			projectID = "<PROJECT>"
 		}
 	}
+	// ANSI codes for formatting
+	green := "\033[32m"
+	bold := "\033[1m"
+	dim := "\033[2m"
+	reset := "\033[0m"
+	clearScreen := "\033[H\033[2J" // Move to top-left and clear screen
 
 	// Configure each key
-	for _, keyName := range keys {
+	for i, keyName := range keys {
 		config := keyConfig{keyName: keyName}
 
-		// Simple progress indicator (huh forms handle their own rendering)
+		// Clear screen and show progress header for this key
+		fmt.Print(clearScreen)
+		fmt.Printf("🔑 Configuring keys for this secret (%d/%d):\n\n", i+1, len(keys))
+
+		// Show all keys with status
+		for j, k := range keys {
+			if j < i {
+				// Completed
+				mode := configs[j].rotationMode
+				if configs[j].sourceKind == "templated" {
+					mode = "templated"
+				}
+				fmt.Printf("  %s✓%s %s %s[%s]%s\n", green, reset, k, dim, mode, reset)
+			} else if j == i {
+				// Current - highlighted
+				fmt.Printf("  %s▶ %s%s\n", bold, k, reset)
+			} else {
+				// Pending
+				fmt.Printf("  %s  %s%s\n", dim, k, reset)
+			}
+		}
+		fmt.Println()
 
 		// First ask if templated (this changes the whole form)
 		var isTemplated bool
