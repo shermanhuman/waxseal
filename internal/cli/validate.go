@@ -1,13 +1,16 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/shermanhuman/waxseal/internal/config"
 	"github.com/shermanhuman/waxseal/internal/core"
+	"github.com/shermanhuman/waxseal/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -31,10 +34,14 @@ Exit codes:
 }
 
 var validateSoonDays int
+var validateCluster bool
+var validateGSM bool
 
 func init() {
 	rootCmd.AddCommand(validateCmd)
 	validateCmd.Flags().IntVar(&validateSoonDays, "soon-days", 30, "Days threshold for 'expiring soon' warnings")
+	validateCmd.Flags().BoolVar(&validateCluster, "cluster", false, "Compare against live cluster state")
+	validateCmd.Flags().BoolVar(&validateGSM, "gsm", false, "Verify GSM secrets exist")
 }
 
 func runValidate(cmd *cobra.Command, args []string) error {
@@ -154,6 +161,128 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("✓ Validated %d secrets\n", secretCount)
+
+	// Cluster validation (if --cluster flag set)
+	if validateCluster || validateGSM {
+		// Load config for GSM
+		cfgFile := configPath
+		if !filepath.IsAbs(cfgFile) {
+			cfgFile = filepath.Join(repoPath, cfgFile)
+		}
+		cfg, err := config.Load(cfgFile)
+		if err != nil {
+			return fmt.Errorf("load config: %w", err)
+		}
+
+		ctx := context.Background()
+		var gsmStore *store.GSMStore
+		if validateGSM {
+			gsmStore, err = store.NewGSMStore(ctx, cfg.Store.ProjectID)
+			if err != nil {
+				return fmt.Errorf("create GSM store: %w", err)
+			}
+			defer gsmStore.Close()
+		}
+
+		fmt.Println()
+		if validateCluster {
+			fmt.Println("Checking cluster state...")
+		}
+		if validateGSM {
+			fmt.Println("Checking GSM secrets...")
+		}
+		fmt.Println()
+
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
+				continue
+			}
+
+			path := filepath.Join(metadataDir, entry.Name())
+			data, _ := os.ReadFile(path)
+			m, err := core.ParseMetadata(data)
+			if err != nil {
+				continue
+			}
+
+			if m.IsRetired() {
+				continue
+			}
+
+			// Cluster check
+			if validateCluster {
+				clusterData, err := readSecretFromCluster(ctx, m.SealedSecret.Namespace, m.SealedSecret.Name)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "WARNING: %s: cannot read from cluster: %v\n", m.ShortName, err)
+					hasWarnings = true
+				} else {
+					clusterKeys := make(map[string]bool)
+					for k := range clusterData {
+						clusterKeys[k] = true
+					}
+
+					var missingInCluster []string
+					var extraInCluster []string
+
+					for _, km := range m.Keys {
+						if !clusterKeys[km.KeyName] {
+							missingInCluster = append(missingInCluster, km.KeyName)
+						}
+					}
+
+					metadataKeys := make(map[string]bool)
+					for _, km := range m.Keys {
+						metadataKeys[km.KeyName] = true
+					}
+					for k := range clusterData {
+						if !metadataKeys[k] {
+							extraInCluster = append(extraInCluster, k)
+						}
+					}
+
+					if len(missingInCluster) > 0 {
+						fmt.Fprintf(os.Stderr, "ERROR: %s: keys in metadata but NOT in cluster: %v\n", m.ShortName, missingInCluster)
+						hasErrors = true
+					}
+					if len(extraInCluster) > 0 {
+						fmt.Fprintf(os.Stderr, "WARNING: %s: keys in cluster but NOT in metadata: %v\n", m.ShortName, extraInCluster)
+						hasWarnings = true
+					}
+					if len(missingInCluster) == 0 && len(extraInCluster) == 0 {
+						fmt.Printf("  ✓ %s: cluster matches metadata (%d keys)\n", m.ShortName, len(clusterData))
+					}
+				}
+			}
+
+			// GSM check
+			if validateGSM {
+				for _, km := range m.Keys {
+					if km.GSM != nil {
+						exists, _, err := gsmStore.SecretVersionExists(ctx, km.GSM.SecretResource, km.GSM.Version)
+						if err != nil {
+							fmt.Fprintf(os.Stderr, "WARNING: %s/%s: cannot check GSM: %v\n", m.ShortName, km.KeyName, err)
+							hasWarnings = true
+						} else if !exists {
+							fmt.Fprintf(os.Stderr, "ERROR: %s/%s: GSM secret not found: %s (v%s)\n",
+								m.ShortName, km.KeyName, km.GSM.SecretResource, km.GSM.Version)
+							hasErrors = true
+						}
+					}
+					if km.Computed != nil && km.Computed.GSM != nil {
+						exists, _, err := gsmStore.SecretVersionExists(ctx, km.Computed.GSM.SecretResource, km.Computed.GSM.Version)
+						if err != nil {
+							fmt.Fprintf(os.Stderr, "WARNING: %s/%s: cannot check computed GSM: %v\n", m.ShortName, km.KeyName, err)
+							hasWarnings = true
+						} else if !exists {
+							fmt.Fprintf(os.Stderr, "ERROR: %s/%s: computed GSM secret not found: %s (v%s)\n",
+								m.ShortName, km.KeyName, km.Computed.GSM.SecretResource, km.Computed.GSM.Version)
+							hasErrors = true
+						}
+					}
+				}
+			}
+		}
+	}
 
 	if hasWarnings && !hasErrors {
 		fmt.Println("\nValidation passed with warnings")

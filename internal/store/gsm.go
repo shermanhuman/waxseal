@@ -148,6 +148,26 @@ func (g *GSMStore) SecretExists(ctx context.Context, secretResource string) (boo
 	return true, nil
 }
 
+// SecretVersionExists checks if a specific version of a secret exists.
+// Returns (exists, stateEnabled, error).
+func (g *GSMStore) SecretVersionExists(ctx context.Context, secretResource string, version string) (bool, bool, error) {
+	req := &secretmanagerpb.GetSecretVersionRequest{
+		Name: secretResource + "/versions/" + version,
+	}
+
+	result, err := g.client.GetSecretVersion(ctx, req)
+	if err != nil {
+		if st, ok := status.FromError(err); ok && st.Code() == codes.NotFound {
+			return false, false, nil
+		}
+		return false, false, fmt.Errorf("get secret version: %w", err)
+	}
+
+	// Check if the version is enabled (not destroyed/disabled)
+	enabled := result.State == secretmanagerpb.SecretVersion_ENABLED
+	return true, enabled, nil
+}
+
 // extractVersionFromName extracts the version number from a full version resource name.
 func extractVersionFromName(name string) string {
 	// name format: projects/.../secrets/.../versions/<version>
