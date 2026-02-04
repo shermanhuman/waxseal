@@ -101,6 +101,7 @@ type GSMHintLink struct {
 type ComputedConfig struct {
 	Kind      string            `json:"kind"` // "template"
 	Template  string            `json:"template"`
+	GSM       *GSMRef           `json:"gsm,omitempty"` // GSM reference for JSON payload (new architecture)
 	Inputs    []InputRef        `json:"inputs,omitempty"`
 	Params    map[string]string `json:"params,omitempty"`
 	ParamsRef *GSMRef           `json:"paramsRef,omitempty"`

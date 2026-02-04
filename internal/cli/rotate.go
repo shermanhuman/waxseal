@@ -15,6 +15,7 @@ import (
 	"github.com/shermanhuman/waxseal/internal/seal"
 	"github.com/shermanhuman/waxseal/internal/state"
 	"github.com/shermanhuman/waxseal/internal/store"
+	"github.com/shermanhuman/waxseal/internal/template"
 	"github.com/spf13/cobra"
 )
 
@@ -109,8 +110,16 @@ func runRotate(cmd *cobra.Command, args []string) error {
 	// Find keys to rotate
 	var keysToRotate []core.KeyMetadata
 	for _, k := range metadata.Keys {
-		if k.Source.Kind != "gsm" {
-			continue // Skip computed keys
+		// Include both GSM keys AND computed keys with generated rotation
+		if k.Source.Kind != "gsm" && k.Source.Kind != "computed" {
+			continue
+		}
+
+		// For computed keys, must have generated rotation mode
+		if k.Source.Kind == "computed" {
+			if k.Rotation == nil || k.Rotation.Mode != "generated" {
+				continue
+			}
 		}
 
 		if keyName != "" && k.KeyName == keyName {
@@ -133,7 +142,7 @@ func runRotate(cmd *cobra.Command, args []string) error {
 
 	// Rotate each key
 	metadataUpdated := false
-	for i, key := range keysToRotate {
+	for _, key := range keysToRotate {
 		fmt.Printf("\nRotating %s/%s...\n", shortName, key.KeyName)
 
 		if key.Rotation == nil {
@@ -146,6 +155,73 @@ func runRotate(cmd *cobra.Command, args []string) error {
 
 		switch key.Rotation.Mode {
 		case "generated":
+			// For computed keys, we need to handle JSON payloads
+			if key.Source.Kind == "computed" {
+				// Get GSM resource from computed config
+				gsmResource := ""
+				if key.Computed != nil && key.Computed.GSM != nil {
+					gsmResource = key.Computed.GSM.SecretResource
+				}
+				if gsmResource == "" {
+					fmt.Printf("  Skipping: no GSM resource for computed key\n")
+					continue
+				}
+
+				// Read existing payload from GSM
+				existingData, err := secretStore.AccessVersion(ctx, gsmResource, "latest")
+				if err != nil {
+					return fmt.Errorf("read existing payload for %s: %w", key.KeyName, err)
+				}
+
+				payload, err := template.ParsePayload(existingData)
+				if err != nil {
+					return fmt.Errorf("parse payload for %s: %w", key.KeyName, err)
+				}
+
+				// Generate new secret value
+				secretBytes, err := generateValue(key.Rotation.Generator)
+				if err != nil {
+					return fmt.Errorf("generate value for %s: %w", key.KeyName, err)
+				}
+				newSecret := string(secretBytes)
+
+				// Update payload with new secret
+				if err := payload.UpdateSecret(newSecret); err != nil {
+					return fmt.Errorf("update payload for %s: %w", key.KeyName, err)
+				}
+				fmt.Printf("  Generated new secret (%d chars)\n", len(newSecret))
+				fmt.Printf("  Recomputed: %s...\n", truncateStr(payload.Computed, 50))
+
+				// Marshal and store as newValue
+				newValue, err = payload.Marshal()
+				if err != nil {
+					return fmt.Errorf("marshal payload for %s: %w", key.KeyName, err)
+				}
+
+				if !dryRun {
+					newVersion, err := secretStore.AddVersion(ctx, gsmResource, newValue)
+					if err != nil {
+						return fmt.Errorf("add GSM version for %s: %w", key.KeyName, err)
+					}
+					fmt.Printf("  Added GSM version: %s\n", newVersion)
+
+					// Find and update metadata
+					for j := range metadata.Keys {
+						if metadata.Keys[j].KeyName == key.KeyName {
+							if metadata.Keys[j].Computed != nil && metadata.Keys[j].Computed.GSM != nil {
+								metadata.Keys[j].Computed.GSM.Version = newVersion
+							}
+							break
+						}
+					}
+					metadataUpdated = true
+				} else {
+					fmt.Printf("  [DRY RUN] Would add new version to GSM\n")
+				}
+				continue
+			}
+
+			// Regular GSM key generation
 			newValue, err = generateValue(key.Rotation.Generator)
 			if err != nil {
 				return fmt.Errorf("generate value for %s: %w", key.KeyName, err)
@@ -179,7 +255,7 @@ func runRotate(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		// Add new version to GSM
+		// Add new version to GSM (for regular GSM keys)
 		newVersion, err := secretStore.AddVersion(ctx, key.GSM.SecretResource, newValue)
 		if err != nil {
 			return fmt.Errorf("add GSM version for %s: %w", key.KeyName, err)
@@ -187,7 +263,12 @@ func runRotate(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  Added GSM version: %s\n", newVersion)
 
 		// Update metadata with new version
-		metadata.Keys[i].GSM.Version = newVersion
+		for j := range metadata.Keys {
+			if metadata.Keys[j].KeyName == key.KeyName {
+				metadata.Keys[j].GSM.Version = newVersion
+				break
+			}
+		}
 		metadataUpdated = true
 	}
 
@@ -281,6 +362,17 @@ func generateValue(gen *core.GeneratorConfig) ([]byte, error) {
 	default:
 		return nil, fmt.Errorf("unsupported generator kind: %s", gen.Kind)
 	}
+}
+
+// truncateStr shortens a string to maxLen characters, adding "..." if truncated.
+func truncateStr(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	if maxLen <= 3 {
+		return s[:maxLen]
+	}
+	return s[:maxLen-3] + "..."
 }
 
 // displayOperatorHints prints operator hints for manual rotation.
