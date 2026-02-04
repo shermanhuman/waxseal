@@ -151,12 +151,33 @@ func (e *Engine) resealFromMetadata(ctx context.Context, metadata *core.SecretMe
 	// Evaluate computed keys
 	for _, key := range metadata.Keys {
 		if key.Source.Kind == "computed" && key.Computed != nil {
-			value, err := e.evaluateComputed(key.Computed, keyValues, metadata.Keys)
-			if err != nil {
-				return nil, fmt.Errorf("compute %s/%s: %w", metadata.ShortName, key.KeyName, err)
+			// Check if we have a GSM-backed JSON payload
+			if key.Computed.GSM != nil {
+				// Fetch the JSON payload from GSM
+				payloadData, err := e.store.AccessVersion(ctx, key.Computed.GSM.SecretResource, key.Computed.GSM.Version)
+				if err != nil {
+					return nil, fmt.Errorf("fetch computed payload %s/%s: %w", metadata.ShortName, key.KeyName, err)
+				}
+				// Parse as a Payload and get the computed value
+				payload, err := template.ParsePayload(payloadData)
+				if err != nil {
+					return nil, fmt.Errorf("parse computed payload %s/%s: %w", metadata.ShortName, key.KeyName, err)
+				}
+				computed, err := payload.Compute()
+				if err != nil {
+					return nil, fmt.Errorf("render computed payload %s/%s: %w", metadata.ShortName, key.KeyName, err)
+				}
+				keyValues[key.KeyName] = computed
+				logging.Debug("fetched computed key from GSM", "key", key.KeyName, "version", key.Computed.GSM.Version)
+			} else {
+				// Fallback: evaluate template using other keys as inputs
+				value, err := e.evaluateComputed(key.Computed, keyValues, metadata.Keys)
+				if err != nil {
+					return nil, fmt.Errorf("compute %s/%s: %w", metadata.ShortName, key.KeyName, err)
+				}
+				keyValues[key.KeyName] = value
+				logging.Debug("computed key", "key", key.KeyName)
 			}
-			keyValues[key.KeyName] = value
-			logging.Debug("computed key", "key", key.KeyName)
 		}
 	}
 
