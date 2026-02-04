@@ -1,8 +1,12 @@
 package cli
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -242,9 +246,117 @@ func deriveShortName(namespace, name string) string {
 	return short
 }
 
+// fetchSecretFromCluster retrieves a secret's data from the Kubernetes cluster
+func fetchSecretFromCluster(namespace, name string) (map[string]string, error) {
+	cmd := exec.Command("kubectl", "get", "secret", name,
+		"-n", namespace, "-o", "json")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+
+	var secret struct {
+		Data map[string]string `json:"data"`
+	}
+	if err := json.Unmarshal(output, &secret); err != nil {
+		return nil, err
+	}
+
+	// Decode base64 values
+	result := make(map[string]string)
+	for k, v := range secret.Data {
+		decoded, err := base64.StdEncoding.DecodeString(v)
+		if err != nil {
+			continue
+		}
+		result[k] = string(decoded)
+	}
+	return result, nil
+}
+
+// detectConnectionStringTemplate analyzes a value and suggests a template if it looks like a connection string
+func detectConnectionStringTemplate(value string, allKeys []string) (isTemplate bool, template string) {
+	// Check if it looks like a URL-based connection string
+	if !strings.Contains(value, "://") {
+		return false, ""
+	}
+
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return false, ""
+	}
+
+	// Common database connection string schemes
+	schemes := []string{"postgresql", "postgres", "mysql", "mongodb", "redis", "amqp", "amqps"}
+	isDBConnection := false
+	for _, s := range schemes {
+		if strings.EqualFold(parsed.Scheme, s) {
+			isDBConnection = true
+			break
+		}
+	}
+	if !isDBConnection {
+		return false, ""
+	}
+
+	// Build template by replacing user/pass with variables
+	template = value
+	if parsed.User != nil {
+		if username := parsed.User.Username(); username != "" {
+			template = strings.Replace(template, username, "{{username}}", 1)
+		}
+		if password, ok := parsed.User.Password(); ok && password != "" {
+			template = strings.Replace(template, password, "{{password}}", 1)
+		}
+	}
+
+	// Also replace host/port if they match other key names
+	hostPort := parsed.Host
+	if hostPort != "" {
+		// Check if any key contains this host (don't replace - it's likely config, not secret)
+	}
+
+	return true, template
+}
+
+// suggestKeyType analyzes a key's value and suggests if it should be templated
+func suggestKeyType(keyName string, value string, allKeys []string) (suggestedType string, suggestedTemplate string) {
+	// Check for common templated key names
+	templateKeyPatterns := []string{"url", "uri", "connection", "dsn"}
+	keyLower := strings.ToLower(keyName)
+	mightBeTemplated := false
+	for _, pattern := range templateKeyPatterns {
+		if strings.Contains(keyLower, pattern) {
+			mightBeTemplated = true
+			break
+		}
+	}
+
+	if !mightBeTemplated {
+		return "standalone", ""
+	}
+
+	// Try to detect if it's a connection string
+	isTemplate, template := detectConnectionStringTemplate(value, allKeys)
+	if isTemplate {
+		return "templated", template
+	}
+
+	return "standalone", ""
+}
+
 func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) ([]keyConfig, error) {
 	keys := ds.sealedSecret.GetEncryptedKeys()
 	configs := make([]keyConfig, 0, len(keys))
+
+	// Try to fetch actual secret values from cluster for template detection
+	namespace := ds.sealedSecret.Metadata.Namespace
+	name := ds.sealedSecret.Metadata.Name
+	secretData, fetchErr := fetchSecretFromCluster(namespace, name)
+	if fetchErr != nil {
+		// Not a fatal error - just won't have auto-detection
+		secretData = nil
+	}
 
 	// Ask for project if not configured
 	if projectID == "" {
@@ -299,8 +411,22 @@ func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) ([]k
 		manifestBase := strings.TrimSuffix(filepath.Base(ds.path), filepath.Ext(ds.path))
 		defaultGSM := fmt.Sprintf("projects/%s/secrets/%s-%s", projectID, manifestBase, sanitizeGSMName(keyName))
 
-		// All fields on one form
+		// Auto-detect if this looks like a templated key
 		var keyType, rotationURL, expiry, template string
+		keyType = "standalone" // default
+		if secretData != nil {
+			if value, ok := secretData[keyName]; ok {
+				suggestedType, suggestedTemplate := suggestKeyType(keyName, value, keys)
+				keyType = suggestedType
+				template = suggestedTemplate
+				if suggestedType == "templated" && suggestedTemplate != "" {
+					fmt.Printf("💡 Auto-detected: this looks like a connection string\n")
+					fmt.Printf("   Suggested template: %s\n\n", suggestedTemplate)
+				}
+			}
+		}
+
+		// All fields on one form
 		err := huh.NewForm(
 			huh.NewGroup(
 				huh.NewSelect[string]().
