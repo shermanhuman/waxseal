@@ -293,11 +293,11 @@ func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) ([]k
 		}
 		fmt.Println()
 
-		// Is this key templated (composed from other values)?
+		// First ask if templated (this changes the whole form)
 		var isTemplated bool
 		err := huh.NewConfirm().
 			Title(fmt.Sprintf("Is '%s' templated?", keyName)).
-			Description("Templated keys are composed from other values using a template\n(e.g., a DATABASE_URL built from username, password, host, port)").
+			Description("Templated keys are composed from other values (e.g., DATABASE_URL from username + password)").
 			Affirmative("Yes, it's templated").
 			Negative("No, it's a standalone value").
 			Value(&isTemplated).
@@ -328,25 +328,42 @@ func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) ([]k
 			defaultGSM := fmt.Sprintf("projects/%s/secrets/%s-%s", projectID, manifestBase, sanitizeGSMName(keyName))
 			config.gsmResource = defaultGSM
 
-			// Rotation mode
-			err := huh.NewSelect[string]().
-				Title(fmt.Sprintf("How is '%s' rotated?", keyName)).
-				Description("Generated keys can be auto-rotated by waxseal.\nExternal keys can link to rotation URLs to guide you through the process.").
-				Options(
-					huh.NewOption("Unknown - I'm not sure yet (safe default)", "unknown"),
-					huh.NewOption("Generated - waxseal can auto-rotate (random bytes, tokens, passwords)", "generated"),
-					huh.NewOption("External - managed outside waxseal (API portal, vendor, user/operator)", "external"),
-				).
-				Value(&config.rotationMode).
-				Run()
+			// Form with rotation mode, rotation URL, and expiry all together
+			var rotationURL, expiry string
+			err := huh.NewForm(
+				huh.NewGroup(
+					huh.NewSelect[string]().
+						Title("Rotation mode").
+						Description("Generated = waxseal auto-rotates | External = you manage").
+						Options(
+							huh.NewOption("Unknown - I'm not sure yet", "unknown"),
+							huh.NewOption("Generated - auto-rotate (random bytes, tokens)", "generated"),
+							huh.NewOption("External - managed by you (API portal, vendor)", "external"),
+						).
+						Value(&config.rotationMode),
+					huh.NewInput().
+						Title("Rotation URL (optional)").
+						Description("Link to rotate this key (vendor portal, runbook)").
+						Placeholder("https://...").
+						Value(&rotationURL),
+					huh.NewInput().
+						Title("Expiry date (optional)").
+						Description("When does this key expire?").
+						Placeholder("YYYY-MM-DD").
+						Value(&expiry),
+				).Title(fmt.Sprintf("Configure '%s'", keyName)),
+			).Run()
 			if err != nil {
 				return nil, err
 			}
 
-			// If generated, ask for generator config
+			config.rotationURL = rotationURL
+			config.expiry = expiry
+
+			// If generated, ask for generator type (follow-up since it's conditional)
 			if config.rotationMode == "generated" {
 				err := huh.NewSelect[string]().
-					Title(fmt.Sprintf("Generator type for '%s'", keyName)).
+					Title("Generator type").
 					Options(
 						huh.NewOption("Random Base64 (URL-safe, good for tokens)", "randomBase64"),
 						huh.NewOption("Random Hex (hexadecimal string)", "randomHex"),
@@ -356,35 +373,7 @@ func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) ([]k
 				if err != nil {
 					return nil, err
 				}
-				config.genLength = "32" // Default length
-			}
-
-			// If external, ask for rotation URL and expiry
-			if config.rotationMode == "external" {
-				var rotationURL string
-				err := huh.NewInput().
-					Title(fmt.Sprintf("Rotation URL for '%s' (optional)", keyName)).
-					Description("Where do you go to rotate this key? (e.g., vendor portal, internal runbook)").
-					Placeholder("https://console.cloud.google.com/...").
-					Value(&rotationURL).
-					Run()
-				if err != nil {
-					return nil, err
-				}
-				config.rotationURL = rotationURL
-
-				// Expiry date
-				var expiry string
-				err = huh.NewInput().
-					Title(fmt.Sprintf("Expiry date for '%s' (optional)", keyName)).
-					Description("When does this key expire? Leave blank if it doesn't expire.").
-					Placeholder("YYYY-MM-DD").
-					Value(&expiry).
-					Run()
-				if err != nil {
-					return nil, err
-				}
-				config.expiry = expiry
+				config.genLength = "32"
 			}
 		}
 
