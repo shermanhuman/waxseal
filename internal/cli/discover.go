@@ -262,36 +262,11 @@ func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) ([]k
 		}
 	}
 
-	// ANSI codes for formatting
-	bold := "\033[1m"
-	green := "\033[32m"
-	reset := "\033[0m"
-
 	// Configure each key
-	fmt.Printf("\n🔑 Configuring %d key(s):\n", len(keys))
-
-	for i, keyName := range keys {
+	for _, keyName := range keys {
 		config := keyConfig{keyName: keyName}
 
-		// Show progress: completed keys with checkmarks
-		fmt.Println()
-		for j, k := range keys {
-			if j < i {
-				// Completed - show with checkmark and selected mode
-				mode := configs[j].rotationMode
-				if configs[j].sourceKind == "templated" {
-					mode = "templated"
-				}
-				fmt.Printf("  %s✓%s %s [%s]\n", green, reset, k, mode)
-			} else if j == i {
-				// Current - bold white
-				fmt.Printf("  %s▶ %s%s\n", bold, k, reset)
-			} else {
-				// Pending
-				fmt.Printf("    %s\n", k)
-			}
-		}
-		fmt.Println()
+		// Simple progress indicator (huh forms handle their own rendering)
 
 		// First ask if templated (this changes the whole form)
 		var isTemplated bool
