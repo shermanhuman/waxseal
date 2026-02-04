@@ -107,6 +107,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// Handle GCP setup
 	projectID := initProjectID
 	if projectID == "" && !initNonInteractive {
+		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		fmt.Println("Step 1/4: GCP Project Setup")
+		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		fmt.Println()
+
 		// Project setup choice
 		var setupChoice string
 		err := huh.NewSelect[string]().
@@ -353,6 +358,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Interactive prompts for controller
 	if !initNonInteractive {
+		fmt.Println()
+		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		fmt.Println("Step 2/4: Controller Discovery")
+		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		fmt.Println()
+
 		// Attempt to discover controller
 		fmt.Println("Scanning cluster for SealedSecrets controller...")
 		discoveredNS, discoveredName, err := discoverController()
@@ -434,6 +445,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// Fetch certificate from cluster
 	certPath := filepath.Join(keysDir, "pub-cert.pem")
 	fmt.Println()
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Println("Step 3/4: Certificate Fetch")
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Println()
 	fmt.Println("Fetching certificate from Sealed Secrets controller...")
 
 	certCmd := exec.Command("kubeseal",
@@ -466,6 +481,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Run discover if interactive
 	if !initNonInteractive && certErr == nil {
+		fmt.Println()
+		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		fmt.Println("Step 4/4: Secret Discovery")
+		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		fmt.Println()
 		fmt.Println("Looking for existing SealedSecrets...")
 		fmt.Println()
