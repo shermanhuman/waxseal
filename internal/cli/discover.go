@@ -433,7 +433,8 @@ func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) ([]k
 
 		// Clear screen and show progress header for this key
 		fmt.Print(clearScreen)
-		fmt.Printf("🔑 Configuring keys for this secret (%d/%d):\n\n", i+1, len(keys))
+		fmt.Printf("� Configuring: %s\n", ds.sealedSecret.Metadata.Name)
+		fmt.Printf("🔑 Keys (%d/%d):\n\n", i+1, len(keys))
 
 		// Show all keys with status
 		for j, k := range keys {
@@ -558,6 +559,19 @@ func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) ([]k
 
 		configs = append(configs, config)
 	}
+
+	// Show final status with all keys complete
+	fmt.Print(clearScreen)
+	fmt.Printf("📋 Configured: %s\n", ds.sealedSecret.Metadata.Name)
+	fmt.Printf("🔑 Keys (%d/%d):\n\n", len(keys), len(keys))
+	for i, k := range keys {
+		mode := configs[i].rotationMode
+		if configs[i].sourceKind == "templated" {
+			mode = "templated"
+		}
+		fmt.Printf("  %s✓%s %s %s[%s]%s\n", green, reset, k, dim, mode, reset)
+	}
+	fmt.Println()
 
 	return configs, nil
 }
