@@ -286,8 +286,21 @@ func detectConnectionStringTemplate(value string, allKeys []string) (isTemplate 
 		return false, ""
 	}
 
-	// Common database connection string schemes
-	schemes := []string{"postgresql", "postgres", "mysql", "mongodb", "redis", "amqp", "amqps"}
+	// Common database/service connection string schemes
+	schemes := []string{
+		// SQL Databases
+		"postgresql", "postgres", "mysql", "mariadb", "sqlserver", "mssql",
+		// NoSQL Databases
+		"mongodb", "mongodb+srv", "couchbase", "couchdb", "cockroachdb",
+		// Key-Value / Cache
+		"redis", "rediss", "memcached",
+		// Message Queues
+		"amqp", "amqps", "nats", "tls", "kafka",
+		// Search
+		"elasticsearch", "opensearch",
+		// Other
+		"clickhouse", "cassandra", "scylla", "neo4j", "bolt",
+	}
 	isDBConnection := false
 	for _, s := range schemes {
 		if strings.EqualFold(parsed.Scheme, s) {
@@ -379,6 +392,11 @@ func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) ([]k
 	dim := "\033[2m"
 	reset := "\033[0m"
 	clearScreen := "\033[H\033[2J" // Move to top-left and clear screen
+
+	// Pause to let user read the info before clearing screen for forms
+	fmt.Println()
+	fmt.Print("Press Enter to start configuring secrets...")
+	fmt.Scanln()
 
 	// Configure each key
 	for i, keyName := range keys {
