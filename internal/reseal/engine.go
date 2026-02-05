@@ -171,6 +171,30 @@ func (e *Engine) resealFromMetadata(ctx context.Context, metadata *core.SecretMe
 				logging.Debug("fetched computed key from GSM", "key", key.KeyName, "version", key.Computed.GSM.Version)
 			} else {
 				// Fallback: evaluate template using other keys as inputs
+				// First, validate that templates with variables have a way to resolve them
+				if key.Computed.Kind == "template" && key.Computed.Template != "" {
+					// Check if the template has variables that need resolving
+					hasVariables := strings.Contains(key.Computed.Template, "{{")
+					hasInputs := len(key.Computed.Inputs) > 0
+					hasParams := len(key.Computed.Params) > 0
+
+					if hasVariables && !hasInputs && !hasParams {
+						// Template has variables but no inputs or params - this is a configuration error
+						// The user likely needs to add computed.gsm to point to a JSON payload
+						return nil, fmt.Errorf(
+							"computed key %s/%s: template has variables but no GSM reference, inputs, or params configured.\n"+
+								"For templated database URLs, add a 'gsm' section under 'computed' pointing to the JSON payload in GSM.\n"+
+								"Example:\n"+
+								"  computed:\n"+
+								"    kind: template\n"+
+								"    template: \"...\"\n"+
+								"    gsm:\n"+
+								"      secretResource: projects/PROJECT/secrets/SECRET_NAME\n"+
+								"      version: \"1\"",
+							metadata.ShortName, key.KeyName,
+						)
+					}
+				}
 				value, err := e.evaluateComputed(key.Computed, keyValues, metadata.Keys)
 				if err != nil {
 					return nil, fmt.Errorf("compute %s/%s: %w", metadata.ShortName, key.KeyName, err)

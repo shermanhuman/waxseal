@@ -56,9 +56,23 @@ Built:  ` + BuildDate + `
 `)
 }
 
+// ANSI color codes
+const (
+	colorRed   = "\033[31m"
+	colorReset = "\033[0m"
+)
+
 // Execute runs the root command.
 func Execute() error {
-	return rootCmd.Execute()
+	// Disable Cobra's default error printing
+	rootCmd.SilenceErrors = true
+
+	err := rootCmd.Execute()
+	if err != nil {
+		// Print error with red color and proper spacing
+		fmt.Fprintf(os.Stderr, "\n%sError: %s%s\n\n", colorRed, err.Error(), colorReset)
+	}
+	return err
 }
 
 // requiresMetadata returns true if the command needs .waxseal/metadata to exist.
