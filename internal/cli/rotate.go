@@ -36,12 +36,21 @@ For keys with rotation.mode=external or manual:
   - Updates metadata with new version number
   - Reseals the manifest
 
+For keys with rotation.mode=static:
+  - Only rotated when explicitly specified by keyName (skipped in batch operations)
+  - Prompts for the new value
+  - Adds a new version to GSM
+  - Reseals the manifest
+
 Examples:
   # Rotate a specific key
   waxseal rotate my-app-secrets password
 
   # Rotate all generated keys in a secret
   waxseal rotate my-app-secrets --generated
+
+  # Manually update a static key (e.g., one-time password change)
+  waxseal rotate my-app-secrets admin_password
 
 Exit codes:
   0 - Success
@@ -313,6 +322,35 @@ func runRotate(cmd *cobra.Command, args []string) error {
 			// For external/manual non-templated, we don't generate - we expect GSM to have been updated
 			// Just increment version reference
 			continue
+
+		case "static":
+			// Static mode: only allow when explicitly specified by keyName,
+			// skip in batch operations (--generated flag)
+			if keyName == "" {
+				fmt.Printf("  Skipping: static mode keys are not included in batch rotation\n")
+				continue
+			}
+
+			fmt.Printf("  Mode: static (manual update requested)\n")
+			if key.OperatorHints != nil {
+				displayOperatorHints(key.OperatorHints, key.KeyName)
+			}
+
+			// Prompt for new value
+			fmt.Println("  Enter the new value for this static secret:")
+			fmt.Print("  New value: ")
+			var inputValue string
+			if !dryRun && !yes {
+				fmt.Scanln(&inputValue)
+			}
+
+			if inputValue == "" {
+				fmt.Println("  Skipping: no new value entered")
+				continue
+			}
+
+			newValue = []byte(inputValue)
+			fmt.Printf("  New value set (%d characters)\n", len(inputValue))
 
 		case "unknown":
 			fmt.Printf("  Skipping: rotation mode is 'unknown' - update metadata first\n")
