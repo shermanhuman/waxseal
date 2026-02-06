@@ -35,6 +35,7 @@
   - Non-destructive (does not change manifests).
   - Interactive by default: prompts the operator to connect keys to GSM (recommended) and fill in intent gaps.
   - `--non-interactive` keeps the stub-only behavior (CI/automation): write metadata stubs with unknown rotation for raw keys and exit successfully.
+  - Non-interactive stubs must be self-documenting: include inline YAML comments explaining each field, valid values for `rotation.mode`, and a commented-out computed key example. Include a `# See: https://github.com/shermanhuman/waxseal/docs/metadata-reference` link at the top.
   - Naming note: this is intentionally more explicit than `setup`/`import`.
 
   Interactive prompts (initial scope):
@@ -79,26 +80,30 @@
   - Default output includes an “expiry” column when present.
 
 - `waxseal validate`
-  - Validate repo + metadata consistency.
+  - Structural validation of repo + metadata consistency.
   - Intended for CI.
-  - Expiration policy:
-    - If a key is expired (`expiresAt` < now) and the secret is not retired: validation fails (exit code 2).
-    - If a key expires soon (<= soon threshold; default 30d): validation warns.
+  - Checks: config validity, metadata schema, manifest path existence, GSM version format (no aliases).
+  - Scope filters: `--cluster` (compare against live cluster), `--metadata` (metadata schema only), `--gsm` (verify GSM secrets exist). All run by default.
+  - Does NOT check expiration (that's `check`).
+
+- `waxseal check`
+  - Operational health check — "is anything about to go wrong?"
+  - Checks: cert validity, cert expiration, secret expiration / rotation due dates.
+  - Default `--warn-days 30`.
+  - Individual filters: `--cert`, `--expiry`.
+  - Expired secrets = error. Expiring soon = warning.
 
 - `waxseal reseal`
   - Explicit: produce new ciphertext under the current sealing cert/key.
   - Non-interactive by default.
   - Reads plaintext from GSM using the versions pinned in metadata.
   - Never changes underlying values and never mutates GSM.
-
-- `waxseal reencrypt`
-  - Explicit: re-encrypt existing SealedSecrets using the *latest controller sealing key* without requiring plaintext.
-  - This is cluster-driven and requires Kubernetes API access (kubeconfig).
-  - Does not read from or write to GSM.
-  - Intended use: periodic refresh after controller key renewal.
-  - Notes:
-    - This is not a substitute for rotating real secret values.
-    - This should be a separate command, not a mode of `reseal`.
+  - Cert-rotation detection (merged from former `reencrypt`):
+    - On `--all` invocations: fetch cluster cert fingerprint, compare to repo cert.
+    - If cert rotated: prompt user, write new cert, force full reseal.
+    - `--new-cert <path>`: use a specific cert file instead of fetching from cluster.
+    - `--skip-cert-check`: bypass cluster cert comparison (for offline/CI use).
+    - Records all operations in state (including cert rotation events).
 
 - `waxseal rotate`
   - Rotate underlying secret values where possible, then seal.
@@ -118,32 +123,25 @@
 
 - `waxseal gcp bootstrap`
   - Opinionated, deterministic provisioning for the GCP project that backs GSM.
+  - Always interactive — no flags (inherits `--dry-run` from global).
   - Cross-platform (built into the Go binary); no standalone scripts.
   - Depends on `gcloud` being installed and already authenticated.
     - waxseal shells out to `gcloud` for project/IAM/API setup (avoid re-implementing billing/IAM edge cases).
     - If `gcloud` is missing or not authenticated, fail closed with actionable instructions.
-  - Responsibilities (v1):
-    - optionally create the project and link billing
-    - enable required APIs (Secret Manager, IAM, STS, etc)
-    - create service accounts for separate trust boundaries (CI vs operator)
-    - create/update custom roles (least privilege)
-    - bind IAM roles with IAM Conditions scoped by secret-name prefix
-    - optionally configure Workload Identity Federation for GitHub Actions OIDC
-  - Suggested flags (v1):
-    - `--project-id` (required)
-    - `--create-project` (optional)
-    - `--billing-account-id`, `--folder-id` or `--org-id` (required if creating project)
-    - `--github-repo <owner/repo>` + `--default-branch-ref refs/heads/main` (optional)
-    - `--enable-reminders-api` (optional, enables Calendar API)
-    - `--secrets-prefix waxseal-` (optional, default `waxseal-`)
-    - `--dry-run` (optional)
+  - Responsibilities (v1) — each step is an interactive prompt:
+    - Create or select existing GCP project
+    - Link billing (if creating)
+    - Enable required APIs (Secret Manager, IAM, STS, optionally Calendar)
+    - Create service account
+    - Grant required IAM roles
+    - Optionally configure Workload Identity Federation for GitHub Actions OIDC
 
 - `waxseal reminders`
   - Surface and synchronize expiration reminders.
   - Subcommands:
     - `waxseal reminders list` (shows upcoming expirations; default window 90d)
     - `waxseal reminders sync` (create/update Google Calendar entries for all keys with `expiry.expiresAt`)
-    - `waxseal reminders clean` (remove calendar entries for retired secrets or removed expirations)
+    - `waxseal reminders clear` (remove calendar entries for retired secrets or removed expirations)
     - `waxseal reminders setup` (interactive; same wizard as `setup` without running discovery/bootstrap/reseal)
 
 ## Targeting rules
@@ -199,7 +197,13 @@ Discover-specific:
 
 - `waxseal discover --non-interactive`
   - Never prompts.
-  - Writes metadata stubs with `rotation.mode: unknown` for raw keys and no `computed` blocks.
+  - Writes self-documenting metadata stubs with inline YAML comments, `rotation.mode: unknown` for raw keys, and no `computed` blocks.
+
+Interactivity policy:
+
+- `setup`, `gcp bootstrap`, and `discover` (default mode) are always interactive.
+- These commands have no flags beyond global flags — all configuration is prompt-driven.
+- This eliminates flag maintenance burden and user confusion from redundant inputs.
 
 Auto-bootstrap behavior:
 

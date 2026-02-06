@@ -1,16 +1,12 @@
 package cli
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/huh/spinner"
+	"github.com/shermanhuman/waxseal/internal/gcp"
 	"github.com/spf13/cobra"
 )
 
@@ -84,7 +80,7 @@ func init() {
 
 func runGCPBootstrap(cmd *cobra.Command, args []string) error {
 	// Check for gcloud
-	if err := CheckGcloudInstalled(); err != nil {
+	if err := gcp.CheckGcloudInstalled(); err != nil {
 		return err
 	}
 
@@ -227,7 +223,7 @@ func runGCPBootstrap(cmd *cobra.Command, args []string) error {
 				Title(fmt.Sprintf("%s...", c.desc)).
 				Type(spinner.Dots).
 				Action(func() {
-					runErr = runGcloud(c.args...)
+					runErr = gcp.RunGcloud(c.args...)
 				}).
 				Run()
 
@@ -270,18 +266,6 @@ type gcloudCommand struct {
 	args []string
 }
 
-func CheckGcloudInstalled() error {
-	_, err := exec.LookPath("gcloud")
-	if err != nil {
-		return fmt.Errorf(`gcloud CLI not found in PATH
-
-WaxSeal uses gcloud to manage GCP infrastructure. 
-Please install the Google Cloud SDK:
-  https://cloud.google.com/sdk/docs/install`)
-	}
-	return nil
-}
-
 func CheckKubesealInstalled() error {
 	_, err := exec.LookPath("kubeseal")
 	if err != nil {
@@ -294,173 +278,75 @@ func CheckKubesealInstalled() error {
 }
 
 func EnsureGcloudADC(scopes ...string) error {
-	// Simple check for ADC credentials file.
-	// This isn't perfect but covers the 90% case for local dev.
-	home, _ := os.UserHomeDir()
-	adcPath := filepath.Join(home, "AppData", "Roaming", "gcloud", "application_default_credentials.json")
-	if os.Getenv("OS") != "Windows_NT" {
-		adcPath = filepath.Join(home, ".config", "gcloud", "application_default_credentials.json")
-	}
+if gcp.ADCExists() {
+return nil
+}
 
-	if _, err := os.Stat(adcPath); os.IsNotExist(err) {
-		fmt.Println("Application Default Credentials (ADC) missing.")
-		fmt.Println("  (Note: This is separate from 'gcloud auth login'. ADC is required for WaxSeal to call APIs.)")
+fmt.Println("Application Default Credentials (ADC) missing.")
+fmt.Println("  (Note: This is separate from 'gcloud auth login'. ADC is required for WaxSeal to call APIs.)")
 
-		if len(scopes) > 0 {
-			fmt.Println("Additional access scopes required: " + strings.Join(scopes, ", "))
-		} else {
-			fmt.Println("WaxSeal needs these credentials to talk to Secret Manager.")
-		}
+if len(scopes) > 0 {
+fmt.Println("Additional access scopes required: " + strings.Join(scopes, ", "))
+} else {
+fmt.Println("WaxSeal needs these credentials to talk to Secret Manager.")
+}
 
-		ok, err := confirm("Run 'gcloud auth application-default login' now?")
-		if err != nil {
-			return err
-		}
-		if !ok {
-			printWarning("Without ADC, 'reseal' and 'rotate' will fail unless GOOGLE_APPLICATION_CREDENTIALS is set.")
-			return nil
-		}
+ok, err := confirm("Run 'gcloud auth application-default login' now?")
+if err != nil {
+return err
+}
+if !ok {
+printWarning("Without ADC, 'reseal' and 'rotate' will fail unless GOOGLE_APPLICATION_CREDENTIALS is set.")
+return nil
+}
 
-		fmt.Println("Launching browser for authentication...")
-		// Show calendar-specific guidance only when calendar scopes are requested
-		hasCalendarScope := false
-		for _, s := range scopes {
-			if strings.Contains(s, "calendar") {
-				hasCalendarScope = true
-				break
-			}
-		}
-		if hasCalendarScope {
-			fmt.Println("👉 Please sign in with the Google Account that owns the calendar you want to use.")
-		}
-		fmt.Println()
-		fmt.Println("Running 'gcloud auth application-default login'...")
+fmt.Println("Launching browser for authentication...")
+hasCalendarScope := false
+for _, s := range scopes {
+if strings.Contains(s, "calendar") {
+hasCalendarScope = true
+break
+}
+}
+if hasCalendarScope {
+fmt.Println("Please sign in with the Google Account that owns the calendar you want to use.")
+}
+fmt.Println()
+fmt.Println("Running 'gcloud auth application-default login'...")
 
-		args := []string{"auth", "application-default", "login"}
-		if len(scopes) > 0 {
-			args = append(args, "--scopes="+strings.Join(scopes, ","))
-		}
+args := []string{"auth", "application-default", "login"}
+if len(scopes) > 0 {
+args = append(args, "--scopes="+strings.Join(scopes, ","))
+}
 
-		if err := runGcloud(args...); err != nil {
-			printWarning("ADC login failed: %v", err)
-		}
-	}
-	return nil
+if err := gcp.RunGcloud(args...); err != nil {
+printWarning("ADC login failed: %v", err)
+}
+return nil
 }
 
 func EnsureGcloudAuth() error {
-	for {
-		// Check if already authenticated by checking for an active account
-		cmd := exec.Command("gcloud", "config", "get-value", "account")
-		output, _ := cmd.Output()
-		account := strings.TrimSpace(string(output))
-
-		if account != "" && account != "(unset)" {
-			return nil
-		}
-
-		fmt.Println("GCP credentials not found. WaxSeal requires an active gcloud account.")
-		ok, err := confirm("Run 'gcloud auth login' now?")
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return fmt.Errorf("gcloud authentication required to continue")
-		}
-
-		fmt.Println("Running 'gcloud auth login'...")
-		if err := runGcloud("auth", "login"); err != nil {
-			printWarning("gcloud login failed: %v", err)
-			fmt.Println("Please try again or authenticate manually.")
-			continue
-		}
-
-		// Verify again after login
-		fmt.Println("Verifying authentication...")
-	}
+for {
+if account := gcp.ActiveAccount(); account != "" {
+return nil
 }
 
-func runGcloud(args ...string) error {
-	return runGcloudWithTimeout(5*time.Minute, args...)
+fmt.Println("GCP credentials not found. WaxSeal requires an active gcloud account.")
+ok, err := confirm("Run 'gcloud auth login' now?")
+if err != nil {
+return err
+}
+if !ok {
+return fmt.Errorf("gcloud authentication required to continue")
 }
 
-func runGcloudWithTimeout(timeout time.Duration, args ...string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "gcloud", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-
-	err := cmd.Run()
-	if ctx.Err() == context.DeadlineExceeded {
-		return fmt.Errorf("command timed out after %v - browser may not have opened correctly", timeout)
-	}
-	return err
+fmt.Println("Running 'gcloud auth login'...")
+if err := gcp.RunGcloud("auth", "login"); err != nil {
+printWarning("gcloud login failed: %v", err)
+fmt.Println("Please try again or authenticate manually.")
+continue
 }
 
-type GCPBillingAccount struct {
-	Name        string `json:"name"`        // e.g. billingAccounts/01XXXX-XXXXXX-XXXXXX
-	DisplayName string `json:"displayName"` // e.g. My Billing Account
-	Open        bool   `json:"open"`
+fmt.Println("Verifying authentication...")
 }
-
-// GetBillingAccounts returns a list of available billing accounts for the current user
-func GetBillingAccounts() ([]GCPBillingAccount, error) {
-	// Ensure we have JSON output
-	cmd := exec.Command("gcloud", "billing", "accounts", "list", "--format=json")
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("failed to list billing accounts: %w", err)
-	}
-
-	var accounts []GCPBillingAccount
-	if err := json.Unmarshal(output, &accounts); err != nil {
-		return nil, fmt.Errorf("failed to parse billing accounts: %w", err)
-	}
-
-	return accounts, nil
-}
-
-// GetProjects returns a list of available GCP projects
-func GetProjects() ([]GCPProject, error) {
-	cmd := exec.Command("gcloud", "projects", "list", "--format=json", "--limit=50")
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("failed to list projects: %w", err)
-	}
-
-	var projects []GCPProject
-	if err := json.Unmarshal(output, &projects); err != nil {
-		return nil, fmt.Errorf("failed to parse projects: %w", err)
-	}
-
-	return projects, nil
-}
-
-type GCPProject struct {
-	ProjectID string `json:"projectId"`
-	Name      string `json:"name"`
-}
-
-type GCPOrganization struct {
-	Name        string `json:"name"`        // organizations/123456789
-	DisplayName string `json:"displayName"` // example.com
-}
-
-// GetOrganizations returns a list of available GCP organizations
-func GetOrganizations() ([]GCPOrganization, error) {
-	cmd := exec.Command("gcloud", "organizations", "list", "--format=json")
-	output, err := cmd.Output()
-	if err != nil {
-		// If command fails (e.g. no permissions), just return empty
-		return nil, nil
-	}
-
-	var orgs []GCPOrganization
-	if err := json.Unmarshal(output, &orgs); err != nil {
-		return nil, err
-	}
-	return orgs, nil
 }

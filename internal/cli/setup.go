@@ -10,6 +10,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"github.com/shermanhuman/waxseal/internal/files"
+	"github.com/shermanhuman/waxseal/internal/gcp"
 	"github.com/spf13/cobra"
 )
 
@@ -140,7 +141,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 
 		if setupChoice == "create" {
 			// Check for gcloud before proceeding
-			if err := CheckGcloudInstalled(); err != nil {
+			if err := gcp.CheckGcloudInstalled(); err != nil {
 				return err
 			}
 
@@ -151,7 +152,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 
 			// 0. Resolve Organization (optional)
 			var orgID string
-			orgs, _ := GetOrganizations()
+			orgs, _ := gcp.GetOrganizations()
 			if len(orgs) > 0 {
 				fmt.Printf("Found %d organizations.\n", len(orgs))
 				var options []huh.Option[string]
@@ -184,7 +185,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 			var billingID string
 
 			// Try to fetch available accounts
-			accounts, _ := GetBillingAccounts()
+			accounts, _ := gcp.GetBillingAccounts()
 			var billingOptions []huh.Option[string]
 			for _, acc := range accounts {
 				if acc.Open {
@@ -318,7 +319,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 
 			// Try to list projects only if we need one
 			if projectID == "" {
-				projects, _ := GetProjects()
+				projects, _ := gcp.GetProjects()
 				var options []huh.Option[string]
 				for _, p := range projects {
 					label := fmt.Sprintf("%s (%s)", p.Name, p.ProjectID)
@@ -387,7 +388,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 			fmt.Println("   Billing is required to enable Secret Manager API.")
 
 			// Get available billing accounts
-			accounts, _ := GetBillingAccounts()
+			accounts, _ := gcp.GetBillingAccounts()
 			if len(accounts) > 0 {
 				var options []huh.Option[string]
 				for _, acc := range accounts {

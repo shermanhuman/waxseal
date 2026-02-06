@@ -51,8 +51,9 @@ Primary UX goals:
 Cloud setup (opinionated):
 
 - Use a dedicated GCP project for waxseal secrets.
-- Provision GCP resources via a `waxseal` subcommand (no click-ops) so IAM and APIs are predictable.
-  - v1: `waxseal gcp bootstrap` is implemented in Go and is cross-platform (Windows/macOS/Linux).
+- Provision GCP resources via `waxseal gcp bootstrap` (interactive wizard, no click-ops).
+  - v1: implemented in Go, cross-platform (Windows/macOS/Linux).
+  - Always interactive — no flags beyond global `--dry-run`.
   - No repo scripts for core workflows.
 
 ## Metadata sensitivity

@@ -72,42 +72,36 @@ Notes:
 
 - We avoid a “skip” concept: the safe fallback is reseal-without-change.
 - Rotate should never depend on reading plaintext from the cluster.
- - “computed-external” is not a separate mode: computed keys may depend on external/manual inputs.
+ - "computed-external" is not a separate mode: computed keys may depend on external/manual inputs.
 
-## Reencrypt (ciphertext refresh, cluster-driven)
+## Cert Rotation (merged into `reseal`)
 
-Command: `waxseal reencrypt [--all | <shortName...>]`
+> **Decision (2026-02-06):** The former standalone `reencrypt` command is merged
+> into `reseal`. The implementation reads from GSM (same path as normal reseal)
+> rather than using `kubeseal --re-encrypt`. This keeps the architecture simpler
+> and avoids a separate code path that would need its own testing.
 
-Definition:
+When `reseal --all` is invoked, waxseal performs a cert-rotation check:
 
-- Reencrypt updates ciphertext only, like reseal.
-- Unlike reseal, it does not require plaintext (and does not read from GSM).
-- This relies on the cluster/controller to perform re-encryption with the latest sealing key.
+1. Fetch the cluster's current sealing certificate (via `kubeseal --fetch-cert`).
+2. Compare the fingerprint to the repo certificate at `cert.repoCertPath`.
+3. If fingerprints differ:
+   - Prompt the user: "Cluster certificate has rotated. Update and reseal all?"
+   - Write the new certificate to `cert.repoCertPath`.
+   - Reseal all active secrets using the new certificate.
+   - Record a cert-rotation event in state.
+4. If fingerprints match: proceed with normal reseal.
 
-Use cases:
+Flags:
 
-- Periodic refresh after controller key renewal.
-- Reducing reliance on older sealing keys (still not a substitute for rotating underlying secret values).
+- `--new-cert <path>`: use a specific cert file instead of fetching from cluster.
+- `--skip-cert-check`: bypass cluster cert comparison (for offline/CI use).
+
+Cert check only runs on `--all` invocations (skip for single-secret targeting).
 
 User stories:
 
-- As a GitOps operator, I want to refresh ciphertext across the repo after a controller key renewal so new commits are encrypted with the latest key, without changing secret values.
-- As a team that keeps plaintext in GSM, I want a cluster-only path that never touches plaintext (and works even if GSM access is temporarily restricted).
-- As a security-conscious maintainer, I want a safe “ciphertext refresh” tool that is explicitly not marketed as value-rotation.
-
-Algorithm (per secret):
-
-1. Resolve target manifest + expected namespace/name/scope from metadata.
-  - If secret `status: retired`, refuse by default (require an explicit override).
-2. Ensure we can reach the target cluster and Sealed Secrets controller (kubeconfig).
-3. Re-encrypt the existing SealedSecret manifest without materializing plaintext.
-  - This operates on the local manifest file; the SealedSecret does not need to already exist in the cluster.
-  - Cluster access is still required because the controller performs the re-encryption with its private keys.
-  - Implementation note (opinionated): use the upstream `kubeseal --re-encrypt` mechanism.
-  - We should not depend on an arbitrary `kubeseal` on PATH; pin/bundle a known-good implementation.
-4. Validate output is a `SealedSecret` (and name/namespace match expected).
-5. Atomically replace the manifest on disk.
-
-Idempotency:
-
-- Running reencrypt repeatedly should be safe; ciphertext may change, but unsealed Secret must remain identical.
+- As a GitOps operator, I want `reseal --all` to automatically detect cert rotation
+  so I don't need to remember a separate command.
+- As a CI pipeline, I want `reseal --all --skip-cert-check` to re-seal without
+  requiring cluster access.
