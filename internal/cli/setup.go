@@ -33,23 +33,12 @@ Files created:
   - .waxseal/metadata/   - Directory for secret metadata
   - keys/pub-cert.pem    - Controller certificate
 
-Flags like --project-id pre-fill wizard values, skipping those prompts.`,
+The setup wizard is fully interactive — it walks you through all configuration.`,
 	RunE: runSetup,
 }
 
-var (
-	setupProjectID      string
-	setupControllerNS   string
-	setupControllerName string
-	setupSkipReminders  bool
-)
-
 func init() {
 	rootCmd.AddCommand(setupCmd)
-	setupCmd.Flags().StringVar(&setupProjectID, "project-id", "", "GCP Project ID (pre-fills wizard, skips project prompt)")
-	setupCmd.Flags().StringVar(&setupControllerNS, "controller-namespace", "kube-system", "Sealed Secrets controller namespace")
-	setupCmd.Flags().StringVar(&setupControllerName, "controller-name", "sealed-secrets", "Sealed Secrets controller service name")
-	setupCmd.Flags().BoolVar(&setupSkipReminders, "skip-reminders", false, "Skip the calendar reminders setup prompt")
 }
 
 func runSetup(cmd *cobra.Command, args []string) error {
@@ -58,11 +47,8 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	keysDir := filepath.Join(repoPath, "keys")
 	configFile := filepath.Join(waxsealDir, "config.yaml")
 
-	// When --project-id is given via flag, skip interactive GCP prompts
-	hasProjectFlag := cmd.Flags().Changed("project-id")
-
 	// Check if this looks like a project root
-	if !hasProjectFlag {
+	{
 		gitDir := filepath.Join(repoPath, ".git")
 		if _, err := os.Stat(gitDir); os.IsNotExist(err) {
 			fmt.Println()
@@ -98,8 +84,8 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Welcome message (interactive only)
-	if !hasProjectFlag {
+	// Welcome message
+	{
 		fmt.Println()
 		fmt.Println("╔══════════════════════════════════════════════════════════════╗")
 		fmt.Println("║                    Welcome to WaxSeal                        ║")
@@ -120,8 +106,8 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	}
 
 	// Handle GCP setup
-	projectID := setupProjectID
-	if projectID == "" && !hasProjectFlag {
+	var projectID string
+	{
 		printStep(1, 7, "GCP Project Setup")
 		fmt.Println()
 
@@ -362,15 +348,12 @@ func runSetup(cmd *cobra.Command, args []string) error {
 			}
 		}
 	}
-	if projectID == "" && hasProjectFlag {
-		return fmt.Errorf("--project-id value cannot be empty")
-	}
 	if projectID == "" {
-		return fmt.Errorf("GCP project ID is required; re-run the setup wizard or pass --project-id")
+		return fmt.Errorf("GCP project ID is required; re-run the setup wizard")
 	}
 
 	// Check billing and enable APIs (for existing project path)
-	if projectID != "" && !hasProjectFlag {
+	if projectID != "" {
 		// Check if billing is enabled
 		var billingAccount string
 		err := withSpinner(fmt.Sprintf("Checking billing for project %s...", projectID), func() error {
@@ -448,11 +431,11 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	controllerNS := setupControllerNS
-	controllerName := setupControllerName
+	controllerNS := "kube-system"
+	controllerName := "sealed-secrets"
 
 	// Interactive prompts for controller
-	if !hasProjectFlag {
+	{
 		fmt.Println()
 		printStep(2, 7, "Controller Discovery")
 		fmt.Println()
@@ -583,8 +566,8 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		printSuccess("Saved certificate to %s", certPath)
 	}
 
-	// Run discover if interactive
-	if !hasProjectFlag && certErr == nil {
+	// Run discover
+	if certErr == nil {
 		fmt.Println()
 		printStep(4, 7, "Secret Discovery")
 		fmt.Println()
@@ -592,7 +575,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		fmt.Println()
 
 		// Call discover command (call run directly to avoid re-parsing root args)
-		discoverNonInteractive = hasProjectFlag
+		discoverNonInteractive = false
 		if err := runDiscover(cmd, []string{}); err != nil {
 			// Don't fail init if discover has issues
 			fmt.Printf("Note: discover encountered an issue: %v\n", err)
@@ -630,7 +613,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	}
 
 	// Offer reminders setup
-	if !hasProjectFlag && !setupSkipReminders {
+	{
 		fmt.Println()
 		printStep(7, 7, "Expiration Reminders (Optional)")
 		fmt.Println()
