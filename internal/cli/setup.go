@@ -242,14 +242,15 @@ func runSetup(cmd *cobra.Command, args []string) error {
 					}
 				}
 
-				// Setup bootstrap flags
-				gcpProjectID = projectID
-				gcpCreateProject = true
-				gcpBillingAccountID = billingID
-				gcpOrgID = orgID
-
 				// Run bootstrap
-				err := runGCPBootstrap(cmd, nil)
+				err := executeGCPBootstrap(bootstrapParams{
+					projectID:        projectID,
+					createProject:    true,
+					billingAccountID: billingID,
+					orgID:            orgID,
+					saID:             "waxseal-sa",
+					prefix:           "waxseal",
+				})
 				if err == nil {
 					// Success
 					fmt.Println()
