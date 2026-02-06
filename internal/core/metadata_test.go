@@ -222,7 +222,6 @@ keys:
       version: "5"
     expiry:
       expiresAt: "2025-12-31T23:59:59Z"
-      source: vendor
 `
 	m, err := ParseMetadata([]byte(yaml))
 	if err != nil {

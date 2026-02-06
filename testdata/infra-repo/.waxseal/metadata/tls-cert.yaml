@@ -17,7 +17,6 @@ keys:
       mode: external
     expiry:
       expiresAt: "2026-03-01T00:00:00Z"
-      source: certificate
   - keyName: tls.key
     source:
       kind: gsm
@@ -28,4 +27,3 @@ keys:
       mode: external
     expiry:
       expiresAt: "2026-03-01T00:00:00Z"
-      source: certificate

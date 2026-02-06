@@ -85,24 +85,6 @@ func TestGenerateValue_DefaultBytes(t *testing.T) {
 	}
 }
 
-func TestGenerateValue_CharsToBytes(t *testing.T) {
-	gen := &core.GeneratorConfig{
-		Kind:  "randomBase64",
-		Chars: 44, // 44 base64 chars = ~33 bytes
-	}
-
-	value, err := generateValue(gen)
-	if err != nil {
-		t.Fatalf("generateValue failed: %v", err)
-	}
-
-	// Should produce a valid base64 string
-	_, err = base64.StdEncoding.DecodeString(string(value))
-	if err != nil {
-		t.Fatalf("invalid base64: %v", err)
-	}
-}
-
 func TestGenerateValue_Randomness(t *testing.T) {
 	gen := &core.GeneratorConfig{
 		Kind:  "randomBase64",

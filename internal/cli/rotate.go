@@ -443,15 +443,7 @@ func generateValue(gen *core.GeneratorConfig) ([]byte, error) {
 		return nil, fmt.Errorf("no generator config")
 	}
 
-	// Determine byte count
 	byteCount := gen.Bytes
-	if byteCount == 0 && gen.Chars > 0 {
-		// For base64, each 3 bytes = 4 chars
-		byteCount = (gen.Chars * 3) / 4
-		if byteCount < 1 {
-			byteCount = 1
-		}
-	}
 	if byteCount == 0 {
 		byteCount = 32 // Default to 32 bytes
 	}
@@ -552,18 +544,12 @@ func serializeMetadata(m *core.SecretMetadata) string {
 				if k.Rotation.Generator.Bytes > 0 {
 					sb.WriteString(fmt.Sprintf("        bytes: %d\n", k.Rotation.Generator.Bytes))
 				}
-				if k.Rotation.Generator.Chars > 0 {
-					sb.WriteString(fmt.Sprintf("        chars: %d\n", k.Rotation.Generator.Chars))
-				}
 			}
 		}
 
 		if k.Expiry != nil {
 			sb.WriteString("    expiry:\n")
 			sb.WriteString(fmt.Sprintf("      expiresAt: \"%s\"\n", k.Expiry.ExpiresAt))
-			if k.Expiry.Source != "" {
-				sb.WriteString(fmt.Sprintf("      source: %s\n", k.Expiry.Source))
-			}
 		}
 
 		if k.OperatorHints != nil && k.OperatorHints.GSM != nil {

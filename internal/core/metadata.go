@@ -4,7 +4,6 @@ package core
 import (
 	"fmt"
 	"regexp"
-	"strconv"
 	"time"
 
 	"sigs.k8s.io/yaml"
@@ -51,7 +50,6 @@ type SourceConfig struct {
 type GSMRef struct {
 	SecretResource string `json:"secretResource"` // "projects/<project>/secrets/<secretId>"
 	Version        string `json:"version"`        // Must be numeric
-	ETag           string `json:"etag,omitempty"`
 }
 
 // RotationConfig describes how a key is rotated.
@@ -63,14 +61,12 @@ type RotationConfig struct {
 // GeneratorConfig describes how to generate a key value.
 type GeneratorConfig struct {
 	Kind  string `json:"kind"`            // "randomBase64", "randomHex", "randomBytes"
-	Bytes int    `json:"bytes,omitempty"` // Number of bytes
-	Chars int    `json:"chars,omitempty"` // Number of characters
+	Bytes int    `json:"bytes,omitempty"` // Number of random bytes to generate
 }
 
 // ExpiryConfig tracks key expiration.
 type ExpiryConfig struct {
-	ExpiresAt string `json:"expiresAt"`        // RFC3339
-	Source    string `json:"source,omitempty"` // "vendor", "certificate", "policy", "unknown"
+	ExpiresAt string `json:"expiresAt"` // RFC3339
 }
 
 // OperatorHints references guidance for manual rotation stored in GSM.
@@ -104,7 +100,6 @@ type ComputedConfig struct {
 	GSM       *GSMRef           `json:"gsm,omitempty"` // GSM reference for JSON payload (new architecture)
 	Inputs    []InputRef        `json:"inputs,omitempty"`
 	Params    map[string]string `json:"params,omitempty"`
-	ParamsRef *GSMRef           `json:"paramsRef,omitempty"`
 }
 
 // InputRef references a value from another key.
@@ -252,12 +247,6 @@ func (e *ExpiryConfig) Validate() error {
 	if _, err := time.Parse(time.RFC3339, e.ExpiresAt); err != nil {
 		return NewValidationError("expiry.expiresAt", "must be RFC3339 format")
 	}
-	if e.Source != "" {
-		validSources := map[string]bool{"vendor": true, "certificate": true, "policy": true, "unknown": true}
-		if !validSources[e.Source] {
-			return NewValidationError("expiry.source", "must be 'vendor', 'certificate', 'policy', or 'unknown'")
-		}
-	}
 	return nil
 }
 
@@ -307,7 +296,4 @@ func (m *SecretMetadata) ExpiresWithinDays(days int) bool {
 	return false
 }
 
-// GetVersion returns the GSM version as an integer.
-func (g *GSMRef) GetVersion() (int, error) {
-	return strconv.Atoi(g.Version)
-}
+

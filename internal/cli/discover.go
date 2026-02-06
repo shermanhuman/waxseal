@@ -638,7 +638,7 @@ func generateMetadataStub(ds discoveredSecret, shortName, projectID string, keyC
 
 				keys.WriteString(fmt.Sprintf(`      generator:
         kind: %s
-        chars: %s
+        bytes: %s
 `, gt, gl))
 			}
 
