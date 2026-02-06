@@ -11,7 +11,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/shermanhuman/waxseal/internal/config"
 	"github.com/shermanhuman/waxseal/internal/core"
-	"github.com/shermanhuman/waxseal/internal/reminders"
+	"github.com/shermanhuman/waxseal/internal/reminder"
 	"github.com/spf13/cobra"
 )
 
@@ -152,11 +152,11 @@ reminders:
 	}
 
 	// Create providers based on config
-	var providers []reminders.Provider
+	var providers []reminder.Provider
 
 	switch cfg.Reminders.Provider {
 	case "tasks", "": // Tasks is default
-		p, err := reminders.NewGoogleTasksProvider(ctx, cfg.Reminders.TasklistID, cfg.Reminders.LeadTimeDays)
+		p, err := reminder.NewGoogleTasksProvider(ctx, cfg.Reminders.TasklistID, cfg.Reminders.LeadTimeDays)
 		if err != nil {
 			return fmt.Errorf("create tasks provider: %w", err)
 		}
@@ -164,7 +164,7 @@ reminders:
 		providers = append(providers, p)
 
 	case "calendar":
-		p, err := reminders.NewGoogleCalendarProvider(ctx, cfg.Reminders.CalendarID, cfg.Reminders.LeadTimeDays)
+		p, err := reminder.NewGoogleCalendarProvider(ctx, cfg.Reminders.CalendarID, cfg.Reminders.LeadTimeDays)
 		if err != nil {
 			return fmt.Errorf("create calendar provider: %w", err)
 		}
@@ -172,11 +172,11 @@ reminders:
 		providers = append(providers, p)
 
 	case "both":
-		tp, err := reminders.NewGoogleTasksProvider(ctx, cfg.Reminders.TasklistID, cfg.Reminders.LeadTimeDays)
+		tp, err := reminder.NewGoogleTasksProvider(ctx, cfg.Reminders.TasklistID, cfg.Reminders.LeadTimeDays)
 		if err != nil {
 			return fmt.Errorf("create tasks provider: %w", err)
 		}
-		cp, err := reminders.NewGoogleCalendarProvider(ctx, cfg.Reminders.CalendarID, cfg.Reminders.LeadTimeDays)
+		cp, err := reminder.NewGoogleCalendarProvider(ctx, cfg.Reminders.CalendarID, cfg.Reminders.LeadTimeDays)
 		if err != nil {
 			return fmt.Errorf("create calendar provider: %w", err)
 		}
@@ -240,29 +240,29 @@ func runRemindersClear(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create providers based on config
-	var providers []reminders.Provider
+	var providers []reminder.Provider
 
 	switch cfg.Reminders.Provider {
 	case "tasks", "": // Tasks is default
-		p, err := reminders.NewGoogleTasksProvider(ctx, cfg.Reminders.TasklistID, cfg.Reminders.LeadTimeDays)
+		p, err := reminder.NewGoogleTasksProvider(ctx, cfg.Reminders.TasklistID, cfg.Reminders.LeadTimeDays)
 		if err != nil {
 			return fmt.Errorf("create tasks provider: %w", err)
 		}
 		providers = append(providers, p)
 
 	case "calendar":
-		p, err := reminders.NewGoogleCalendarProvider(ctx, cfg.Reminders.CalendarID, cfg.Reminders.LeadTimeDays)
+		p, err := reminder.NewGoogleCalendarProvider(ctx, cfg.Reminders.CalendarID, cfg.Reminders.LeadTimeDays)
 		if err != nil {
 			return fmt.Errorf("create calendar provider: %w", err)
 		}
 		providers = append(providers, p)
 
 	case "both":
-		tp, err := reminders.NewGoogleTasksProvider(ctx, cfg.Reminders.TasklistID, cfg.Reminders.LeadTimeDays)
+		tp, err := reminder.NewGoogleTasksProvider(ctx, cfg.Reminders.TasklistID, cfg.Reminders.LeadTimeDays)
 		if err != nil {
 			return fmt.Errorf("create tasks provider: %w", err)
 		}
-		cp, err := reminders.NewGoogleCalendarProvider(ctx, cfg.Reminders.CalendarID, cfg.Reminders.LeadTimeDays)
+		cp, err := reminder.NewGoogleCalendarProvider(ctx, cfg.Reminders.CalendarID, cfg.Reminders.LeadTimeDays)
 		if err != nil {
 			return fmt.Errorf("create calendar provider: %w", err)
 		}
