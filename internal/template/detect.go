@@ -116,3 +116,77 @@ func SuggestKeyType(keyName string, value string, allKeys []string) (suggestedTy
 
 	return "standalone", "", nil
 }
+
+// SuggestRotationMode infers a rotation mode from a key name using heuristics.
+// Returns one of: "generated", "external", "static", "computed", or "unknown".
+//
+// This is used by the discover wizard to pre-select keys for batch auto-generation,
+// saving operators from configuring each key individually.
+func SuggestRotationMode(keyName string) string {
+	// Check well-known keys catalog first (catches camelCase / non-standard names)
+	if mode, _, ok := LookupWellKnown(keyName); ok {
+		return mode
+	}
+
+	lower := strings.ToLower(keyName)
+
+	// Computed / templated keys (connection strings, URLs)
+	for _, p := range []string{"_url", "_uri", "_dsn", "database_url", "redis_url"} {
+		if strings.HasSuffix(lower, p) || lower == strings.TrimPrefix(p, "_") {
+			return "computed"
+		}
+	}
+
+	// Generated keys — passwords and secret material
+	generatedPatterns := []string{
+		"password", "passwd", "secret_key_base", "secret_key",
+		"encryption_key", "signing_key", "master_key",
+		"webhook_secret", "hmac_secret",
+	}
+	for _, p := range generatedPatterns {
+		if lower == p || strings.HasSuffix(lower, "_"+p) || strings.HasPrefix(lower, p+"_") {
+			return "generated"
+		}
+	}
+	// Suffix-based: ends with _password, _token, _secret (but not client_secret / oauth)
+	for _, suffix := range []string{"_password", "_token", "_secret"} {
+		if strings.HasSuffix(lower, suffix) {
+			// Exclude vendor-managed secrets that are typically external
+			if strings.Contains(lower, "client") || strings.Contains(lower, "oauth") || strings.Contains(lower, "api_key") {
+				return "external"
+			}
+			return "generated"
+		}
+	}
+	// Exact matches for common generated names
+	for _, exact := range []string{"rootpassword", "rootpass"} {
+		if strings.ReplaceAll(lower, "_", "") == exact {
+			return "generated"
+		}
+	}
+
+	// External keys — vendor-managed credentials
+	externalPatterns := []string{
+		"client_id", "client_secret", "api_key", "api_secret",
+		"oauth", "access_key", "secret_access_key",
+		".dockerconfigjson",
+	}
+	for _, p := range externalPatterns {
+		if lower == p || strings.Contains(lower, p) {
+			return "external"
+		}
+	}
+
+	// Static keys — identifiers and config that rarely change
+	staticPatterns := []string{
+		"username", "user", "email", "host", "port", "database", "dbname",
+		"region", "bucket", "endpoint",
+	}
+	for _, p := range staticPatterns {
+		if lower == p || strings.HasSuffix(lower, "_"+p) {
+			return "static"
+		}
+	}
+
+	return "unknown"
+}

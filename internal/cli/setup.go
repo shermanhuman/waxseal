@@ -52,7 +52,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		gitDir := filepath.Join(repoPath, ".git")
 		if _, err := os.Stat(gitDir); os.IsNotExist(err) {
 			fmt.Println()
-		printWarning("No .git folder found in this directory.")
+			printWarning("No .git folder found in this directory.")
 			fmt.Println()
 
 			var continueAnyway bool
@@ -254,7 +254,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 				if err == nil {
 					// Success
 					fmt.Println()
-				printSuccess("GCP Project created and bootstrapped.")
+					printSuccess("GCP Project created and bootstrapped.")
 					fmt.Println("Proceeding with WaxSeal initialization...")
 					fmt.Println()
 					break

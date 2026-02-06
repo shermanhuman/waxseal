@@ -441,75 +441,75 @@ func CheckKubesealInstalled() error {
 }
 
 func EnsureGcloudADC(scopes ...string) error {
-if gcp.ADCExists() {
-return nil
-}
+	if gcp.ADCExists() {
+		return nil
+	}
 
-fmt.Println("Application Default Credentials (ADC) missing.")
-fmt.Println("  (Note: This is separate from 'gcloud auth login'. ADC is required for WaxSeal to call APIs.)")
+	fmt.Println("Application Default Credentials (ADC) missing.")
+	fmt.Println("  (Note: This is separate from 'gcloud auth login'. ADC is required for WaxSeal to call APIs.)")
 
-if len(scopes) > 0 {
-fmt.Println("Additional access scopes required: " + strings.Join(scopes, ", "))
-} else {
-fmt.Println("WaxSeal needs these credentials to talk to Secret Manager.")
-}
+	if len(scopes) > 0 {
+		fmt.Println("Additional access scopes required: " + strings.Join(scopes, ", "))
+	} else {
+		fmt.Println("WaxSeal needs these credentials to talk to Secret Manager.")
+	}
 
-ok, err := confirm("Run 'gcloud auth application-default login' now?")
-if err != nil {
-return err
-}
-if !ok {
-printWarning("Without ADC, 'reseal' and 'rotate' will fail unless GOOGLE_APPLICATION_CREDENTIALS is set.")
-return nil
-}
+	ok, err := confirm("Run 'gcloud auth application-default login' now?")
+	if err != nil {
+		return err
+	}
+	if !ok {
+		printWarning("Without ADC, 'reseal' and 'rotate' will fail unless GOOGLE_APPLICATION_CREDENTIALS is set.")
+		return nil
+	}
 
-fmt.Println("Launching browser for authentication...")
-hasCalendarScope := false
-for _, s := range scopes {
-if strings.Contains(s, "calendar") {
-hasCalendarScope = true
-break
-}
-}
-if hasCalendarScope {
-fmt.Println("Please sign in with the Google Account that owns the calendar you want to use.")
-}
-fmt.Println()
-fmt.Println("Running 'gcloud auth application-default login'...")
+	fmt.Println("Launching browser for authentication...")
+	hasCalendarScope := false
+	for _, s := range scopes {
+		if strings.Contains(s, "calendar") {
+			hasCalendarScope = true
+			break
+		}
+	}
+	if hasCalendarScope {
+		fmt.Println("Please sign in with the Google Account that owns the calendar you want to use.")
+	}
+	fmt.Println()
+	fmt.Println("Running 'gcloud auth application-default login'...")
 
-args := []string{"auth", "application-default", "login"}
-if len(scopes) > 0 {
-args = append(args, "--scopes="+strings.Join(scopes, ","))
-}
+	args := []string{"auth", "application-default", "login"}
+	if len(scopes) > 0 {
+		args = append(args, "--scopes="+strings.Join(scopes, ","))
+	}
 
-if err := gcp.RunGcloud(args...); err != nil {
-printWarning("ADC login failed: %v", err)
-}
-return nil
+	if err := gcp.RunGcloud(args...); err != nil {
+		printWarning("ADC login failed: %v", err)
+	}
+	return nil
 }
 
 func EnsureGcloudAuth() error {
-for {
-if account := gcp.ActiveAccount(); account != "" {
-return nil
-}
+	for {
+		if account := gcp.ActiveAccount(); account != "" {
+			return nil
+		}
 
-fmt.Println("GCP credentials not found. WaxSeal requires an active gcloud account.")
-ok, err := confirm("Run 'gcloud auth login' now?")
-if err != nil {
-return err
-}
-if !ok {
-return fmt.Errorf("gcloud authentication required to continue")
-}
+		fmt.Println("GCP credentials not found. WaxSeal requires an active gcloud account.")
+		ok, err := confirm("Run 'gcloud auth login' now?")
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return fmt.Errorf("gcloud authentication required to continue")
+		}
 
-fmt.Println("Running 'gcloud auth login'...")
-if err := gcp.RunGcloud("auth", "login"); err != nil {
-printWarning("gcloud login failed: %v", err)
-fmt.Println("Please try again or authenticate manually.")
-continue
-}
+		fmt.Println("Running 'gcloud auth login'...")
+		if err := gcp.RunGcloud("auth", "login"); err != nil {
+			printWarning("gcloud login failed: %v", err)
+			fmt.Println("Please try again or authenticate manually.")
+			continue
+		}
 
-fmt.Println("Verifying authentication...")
-}
+		fmt.Println("Verifying authentication...")
+	}
 }

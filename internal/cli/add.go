@@ -434,5 +434,3 @@ func runAddInteractive(shortName, projectID string) (namespace, manifestPath, sc
 
 	return
 }
-
-

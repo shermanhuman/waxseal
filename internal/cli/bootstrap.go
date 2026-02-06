@@ -378,5 +378,3 @@ func defaultReadSecretFromCluster(ctx context.Context, namespace, name string) (
 
 	return result, nil
 }
-
-

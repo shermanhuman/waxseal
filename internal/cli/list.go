@@ -117,5 +117,3 @@ func printListJSON(secrets []*core.SecretMetadata) error {
 	fmt.Println("]")
 	return nil
 }
-
-

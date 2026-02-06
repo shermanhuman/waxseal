@@ -419,7 +419,6 @@ func recordRotateState(shortName, keyName string) error {
 	})
 }
 
-
 // truncateStr shortens a string to maxLen characters, adding "..." if truncated.
 // displayOperatorHints prints operator hints for manual rotation.
 // Per plan: hints content is stored in GSM, metadata only has the reference.
