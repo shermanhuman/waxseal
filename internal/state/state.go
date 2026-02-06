@@ -18,7 +18,7 @@ import (
 // Stored in .waxseal/state.yaml.
 type State struct {
 	// LastCertFingerprint is the SHA256 fingerprint of the last used controller cert.
-	// Used to detect cert rotations and warn/prompt for reencrypt.
+	// Used to detect cert rotations during reseal --all.
 	LastCertFingerprint string `json:"lastCertFingerprintSha256,omitempty"`
 
 	// Rotations is an audit trail of secret rotations.
