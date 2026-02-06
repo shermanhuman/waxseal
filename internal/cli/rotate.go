@@ -417,10 +417,8 @@ func runRotate(cmd *cobra.Command, args []string) error {
 	if !filepath.IsAbs(certPath) {
 		certPath = filepath.Join(repoPath, certPath)
 	}
-	sealer, err := seal.NewCertSealerFromFile(certPath)
-	if err != nil {
-		return fmt.Errorf("load certificate: %w", err)
-	}
+	// Use kubeseal binary for encryption (guarantees controller compatibility)
+	sealer := seal.NewKubesealSealer(certPath)
 
 	engine := reseal.NewEngine(secretStore, sealer, repoPath, dryRun)
 	result, err := engine.ResealOne(ctx, shortName)

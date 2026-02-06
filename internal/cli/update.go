@@ -330,12 +330,9 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("parse manifest: %w", err)
 	}
 
-	// Load cert and sealer
+	// Use kubeseal binary for encryption (guarantees controller compatibility)
 	certPath := filepath.Join(repoPath, cfg.Cert.RepoCertPath)
-	sealer, err := seal.NewCertSealerFromFile(certPath)
-	if err != nil {
-		return fmt.Errorf("load certificate: %w", err)
-	}
+	sealer := seal.NewKubesealSealer(certPath)
 
 	// Seal the new value
 	scope := existingSS.GetScope()

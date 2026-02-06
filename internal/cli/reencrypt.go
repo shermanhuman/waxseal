@@ -184,8 +184,9 @@ func runReencrypt(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("unsupported store kind: %s", cfg.Store.Kind)
 	}
 
-	// Re-seal all secrets with new certificate
-	engine := reseal.NewEngine(secretStore, newSealer, repoPath, false)
+	// Re-seal all secrets with new certificate using kubeseal binary
+	kubesealer := seal.NewKubesealSealer(currentCertPath)
+	engine := reseal.NewEngine(secretStore, kubesealer, repoPath, false)
 
 	results, err := engine.ResealAll(ctx)
 	if err != nil {

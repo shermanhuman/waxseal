@@ -270,12 +270,9 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	manifestFullPath := filepath.Join(repoPath, manifestPath)
 	os.MkdirAll(filepath.Dir(manifestFullPath), 0o755)
 
-	// Load cert for sealing
+	// Use kubeseal binary for encryption (guarantees controller compatibility)
 	certPath := filepath.Join(repoPath, cfg.Cert.RepoCertPath)
-	sealer, err := seal.NewCertSealerFromFile(certPath)
-	if err != nil {
-		return fmt.Errorf("load certificate: %w", err)
-	}
+	sealer := seal.NewKubesealSealer(certPath)
 
 	// Seal each key and build SealedSecret
 	encryptedData := make(map[string]string)
