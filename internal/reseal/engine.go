@@ -188,7 +188,17 @@ func (e *Engine) resealFromMetadata(ctx context.Context, metadata *core.SecretMe
 	}
 
 	// Build the SealedSecret manifest
-	manifest := e.buildManifest(metadata, encryptedData)
+	ss := seal.NewSealedSecret(
+		metadata.SealedSecret.Name,
+		metadata.SealedSecret.Namespace,
+		metadata.SealedSecret.Scope,
+		metadata.SealedSecret.Type,
+		encryptedData,
+	)
+	manifest, err := ss.ToYAML()
+	if err != nil {
+		return nil, fmt.Errorf("serialize manifest for %s: %w", metadata.ShortName, err)
+	}
 
 	// Write the manifest
 	manifestPath := metadata.ManifestPath
@@ -209,7 +219,7 @@ func (e *Engine) resealFromMetadata(ctx context.Context, metadata *core.SecretMe
 	}
 
 	writer := files.NewAtomicWriter(files.YAMLKindValidator("SealedSecret"))
-	if err := writer.Write(manifestPath, []byte(manifest)); err != nil {
+	if err := writer.Write(manifestPath, manifest); err != nil {
 		return nil, fmt.Errorf("write manifest: %w", err)
 	}
 
@@ -265,59 +275,4 @@ func (e *Engine) evaluateComputed(config *core.ComputedConfig, keyValues map[str
 
 	// Execute template
 	return tmpl.Execute(values)
-}
-
-func (e *Engine) buildManifest(metadata *core.SecretMetadata, encryptedData map[string]string) string {
-	var sb strings.Builder
-
-	sb.WriteString("apiVersion: bitnami.com/v1alpha1\n")
-	sb.WriteString("kind: SealedSecret\n")
-	sb.WriteString("metadata:\n")
-	sb.WriteString(fmt.Sprintf("  name: %s\n", metadata.SealedSecret.Name))
-	sb.WriteString(fmt.Sprintf("  namespace: %s\n", metadata.SealedSecret.Namespace))
-
-	// Add scope annotation if not strict (using controller's annotation format)
-	if metadata.SealedSecret.Scope == "namespace-wide" {
-		sb.WriteString("  annotations:\n")
-		sb.WriteString("    sealedsecrets.bitnami.com/namespace-wide: \"true\"\n")
-	} else if metadata.SealedSecret.Scope == "cluster-wide" {
-		sb.WriteString("  annotations:\n")
-		sb.WriteString("    sealedsecrets.bitnami.com/cluster-wide: \"true\"\n")
-	}
-
-	sb.WriteString("spec:\n")
-	sb.WriteString("  encryptedData:\n")
-
-	// Sort keys for deterministic output
-	keys := make([]string, 0, len(encryptedData))
-	for k := range encryptedData {
-		keys = append(keys, k)
-	}
-	sortStrings(keys)
-
-	for _, key := range keys {
-		sb.WriteString(fmt.Sprintf("    %s: %s\n", key, encryptedData[key]))
-	}
-
-	// Add template if there's a specific type
-	if metadata.SealedSecret.Type != "" && metadata.SealedSecret.Type != "Opaque" {
-		sb.WriteString("  template:\n")
-		sb.WriteString(fmt.Sprintf("    type: %s\n", metadata.SealedSecret.Type))
-		sb.WriteString("    metadata:\n")
-		sb.WriteString(fmt.Sprintf("      name: %s\n", metadata.SealedSecret.Name))
-		sb.WriteString(fmt.Sprintf("      namespace: %s\n", metadata.SealedSecret.Namespace))
-	}
-
-	return sb.String()
-}
-
-// Simple string sort without importing sort package
-func sortStrings(s []string) {
-	for i := 0; i < len(s); i++ {
-		for j := i + 1; j < len(s); j++ {
-			if s[i] > s[j] {
-				s[i], s[j] = s[j], s[i]
-			}
-		}
-	}
 }

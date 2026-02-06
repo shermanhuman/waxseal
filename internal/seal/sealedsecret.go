@@ -32,7 +32,7 @@ type SealedSecretSpec struct {
 // SecretTemplateSpec mirrors the target Secret structure.
 type SecretTemplateSpec struct {
 	Type     string            `json:"type,omitempty"`
-	Metadata ObjectMeta        `json:"metadata,omitempty"`
+	Metadata *ObjectMeta       `json:"metadata,omitempty"`
 	Data     map[string]string `json:"data,omitempty"`
 }
 
@@ -49,6 +49,38 @@ const (
 	AnnotationNamespace = "sealedsecrets.bitnami.com/namespace"
 	AnnotationName      = "sealedsecrets.bitnami.com/name"
 )
+
+// NewSealedSecret constructs a SealedSecret with the correct annotations.
+// This is the single authoritative builder — all manifest creation goes through here.
+func NewSealedSecret(name, namespace, scope, secretType string, encryptedData map[string]string) *SealedSecret {
+	ss := &SealedSecret{
+		APIVersion: "bitnami.com/v1alpha1",
+		Kind:       "SealedSecret",
+		Metadata: ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: SealedSecretSpec{
+			EncryptedData: encryptedData,
+		},
+	}
+
+	// Add scope annotation if not strict (strict is the default)
+	if scope != ScopeStrict && scope != "" {
+		ss.Metadata.Annotations = map[string]string{
+			AnnotationScope: scope,
+		}
+	}
+
+	// Add template with type if not Opaque
+	if secretType != "" && secretType != "Opaque" {
+		ss.Spec.Template = &SecretTemplateSpec{
+			Type: secretType,
+		}
+	}
+
+	return ss
+}
 
 // ParseSealedSecret parses a SealedSecret from YAML bytes.
 func ParseSealedSecret(data []byte) (*SealedSecret, error) {

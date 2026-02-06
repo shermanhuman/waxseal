@@ -276,7 +276,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	// Build SealedSecret manifest
-	sealedSecret := buildSealedSecretManifest(shortName, namespace, scope, secretType, encryptedData)
+	sealedSecret := seal.NewSealedSecret(shortName, namespace, scope, secretType, encryptedData)
 	sealed, err := sealedSecret.ToYAML()
 	if err != nil {
 		return fmt.Errorf("serialize SealedSecret: %w", err)
@@ -436,35 +436,3 @@ func runAddInteractive(shortName, projectID string) (namespace, manifestPath, sc
 }
 
 
-
-// buildSealedSecretManifest creates a SealedSecret structure.
-func buildSealedSecretManifest(name, namespace, scope, secretType string, encryptedData map[string]string) *seal.SealedSecret {
-	ss := &seal.SealedSecret{
-		APIVersion: "bitnami.com/v1alpha1",
-		Kind:       "SealedSecret",
-		Metadata: seal.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-		Spec: seal.SealedSecretSpec{
-			EncryptedData: encryptedData,
-		},
-	}
-
-	// Add scope annotation if not strict (strict is default)
-	if scope != "strict" && scope != "" {
-		if ss.Metadata.Annotations == nil {
-			ss.Metadata.Annotations = make(map[string]string)
-		}
-		ss.Metadata.Annotations[seal.AnnotationScope] = scope
-	}
-
-	// Add template with type if not Opaque
-	if secretType != "" && secretType != "Opaque" {
-		ss.Spec.Template = &seal.SecretTemplateSpec{
-			Type: secretType,
-		}
-	}
-
-	return ss
-}
