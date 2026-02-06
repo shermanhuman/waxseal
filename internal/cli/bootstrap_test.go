@@ -18,7 +18,7 @@ func TestRequiresMetadata(t *testing.T) {
 		{"reseal", true},
 		{"rotate", true},
 		{"retire", true},
-		{"init", false},
+		{"setup", false},
 		{"discover", false},
 		{"reminders", false},
 	}

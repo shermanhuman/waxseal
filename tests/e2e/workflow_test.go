@@ -8,7 +8,7 @@ import (
 )
 
 // TestE2E_WorkflowHappyPath tests the complete happy path workflow:
-// init → discover → validate → list → reseal → rotate → retire
+// setup → discover → validate → list → reseal → rotate → retire
 func TestE2E_WorkflowHappyPath(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping E2E test in short mode")
@@ -22,19 +22,19 @@ func TestE2E_WorkflowHappyPath(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	// Step 1: Initialize
-	t.Run("step 1: init", func(t *testing.T) {
-		output, err := runWaxsealWithDir(t, tmpDir, "init", "--project-id=test-project", "--non-interactive", "--repo="+tmpDir)
+	t.Run("step 1: setup", func(t *testing.T) {
+		output, err := runWaxsealWithDir(t, tmpDir, "setup", "--project-id=test-project", "--repo="+tmpDir)
 		if err != nil {
-			t.Fatalf("init failed: %v\nOutput: %s", err, output)
+			t.Fatalf("setup failed: %v\nOutput: %s", err, output)
 		}
 
 		// Fetch real cert from cluster and write it
 		cert := fetchClusterCert(t)
 		if cert != nil {
 			os.WriteFile(filepath.Join(tmpDir, "keys/pub-cert.pem"), cert, 0o644)
-			t.Log("✓ init completed with real cluster cert")
+			t.Log("✓ setup completed with real cluster cert")
 		} else {
-			t.Log("✓ init completed (no cluster cert available)")
+			t.Log("✓ setup completed (no cluster cert available)")
 		}
 	})
 
@@ -261,10 +261,10 @@ func TestE2E_WorkflowNewSecretLifecycle(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	// Setup: Initialize waxseal
-	t.Run("setup: init", func(t *testing.T) {
-		output, err := runWaxsealWithDir(t, tmpDir, "init", "--project-id=test-project", "--non-interactive", "--repo="+tmpDir)
+	t.Run("setup: setup", func(t *testing.T) {
+		output, err := runWaxsealWithDir(t, tmpDir, "setup", "--project-id=test-project", "--repo="+tmpDir)
 		if err != nil {
-			t.Fatalf("init failed: %v\nOutput: %s", err, output)
+			t.Fatalf("setup failed: %v\nOutput: %s", err, output)
 		}
 
 		// Fetch real cert from cluster
@@ -272,7 +272,7 @@ func TestE2E_WorkflowNewSecretLifecycle(t *testing.T) {
 		if cert != nil {
 			os.WriteFile(filepath.Join(tmpDir, "keys/pub-cert.pem"), cert, 0o644)
 		}
-		t.Log("✓ init completed")
+		t.Log("✓ setup completed")
 	})
 
 	// Step 1: Add a new secret (dry run)
@@ -281,7 +281,6 @@ func TestE2E_WorkflowNewSecretLifecycle(t *testing.T) {
 			"add", "new-api-secret",
 			"--namespace=default",
 			"--key=api_key:random",
-			"--non-interactive",
 			"--dry-run",
 			"--repo="+tmpDir,
 		)

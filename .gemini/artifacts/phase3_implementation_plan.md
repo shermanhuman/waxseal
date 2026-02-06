@@ -7,7 +7,7 @@ This phase adds commands for the complete secret lifecycle:
 - **add**: Create new secrets from scratch
 - **update**: Modify secret values
 - **show**: View secret metadata
-- **reminders integration**: Add calendar setup to init wizard
+- **reminders integration**: Add calendar setup to setup wizard
 
 ## Task Order Rationale
 
@@ -15,7 +15,7 @@ This phase adds commands for the complete secret lifecycle:
 2. **add (non-interactive)** - core creation logic, easier to test
 3. **add (interactive)** - builds on non-interactive with huh prompts
 4. **update** - depends on having secrets to update
-5. **reminders in init** - enhancement to existing workflow
+5. **reminders in setup** - enhancement to existing workflow
 
 ---
 
@@ -229,11 +229,11 @@ waxseal update <shortName> <keyName> --generate-random --length=32
 
 ---
 
-## Task 9: Integrate Reminders Setup into Init
+## Task 9: Integrate Reminders Setup into Setup
 
-**Purpose**: Offer calendar reminder setup as optional step in init wizard.
+**Purpose**: Offer calendar reminder setup as optional step in setup wizard.
 
-**Changes to init**:
+**Changes to setup**:
 
 1. After bootstrap step, add prompt:
    ```
@@ -247,22 +247,22 @@ waxseal update <shortName> <keyName> --generate-random --length=32
 **Essential behaviors**:
 
 - [ ] Only shown in interactive mode
-- [ ] Skippable without breaking init
+- [ ] Skippable without breaking setup
 - [ ] Config updated atomically
 - [ ] Prerequisites displayed clearly
 - [ ] Works with existing reminders setup wizard logic
 
 ---
 
-## Task 10: Tests for Reminders in Init
+## Task 10: Tests for Reminders in Setup
 
-**Unit tests** (extend `internal/cli/init_test.go`):
+**Unit tests** (extend `internal/cli/setup_test.go`):
 
-- `TestInit_SkipsRemindersNonInteractive` - no prompts in CI mode
+- `TestSetup_SkipsRemindersNonInteractive` - no prompts in CI mode
 
-**E2E tests** (extend `tests/e2e/init_test.go`):
+**E2E tests** (extend `tests/e2e/setup_test.go`):
 
-- `TestE2E_Init_NonInteractive_NoReminders` - config doesn't have reminders section
+- `TestE2E_Setup_NonInteractive_NoReminders` - config doesn't have reminders section
 
 ---
 
@@ -275,7 +275,7 @@ After all tasks complete:
 - [ ] `waxseal update my-secret api_key --generate-random` updates value
 - [ ] `waxseal show my-secret` displays metadata
 - [ ] `waxseal show my-secret --json` outputs valid JSON
-- [ ] `waxseal init` offers reminders setup
+- [ ] `waxseal setup` offers reminders setup
 - [ ] All unit tests pass: `go test ./...`
 - [ ] All E2E tests pass: `docker compose -f docker-compose.e2e.yaml up --build`
 - [ ] README updated with new commands
@@ -294,6 +294,6 @@ After all tasks complete:
 | Task 6: add interactive tests | 30 min        |
 | Task 7: update command        | 1.5 hours     |
 | Task 8: update tests          | 1 hour        |
-| Task 9: reminders in init     | 1 hour        |
+| Task 9: reminders in setup    | 1 hour        |
 | Task 10: reminders tests      | 30 min        |
 | **Total**                     | **~10 hours** |

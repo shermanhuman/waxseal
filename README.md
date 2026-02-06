@@ -36,7 +36,7 @@ Before using waxseal, ensure you have:
 
 ```bash
 cd my-infra-repo
-waxseal init
+waxseal setup
 ```
 
 The interactive wizard will:
@@ -85,7 +85,7 @@ waxseal reseal --all --dry-run
 
 | Command           | Description                                          |
 | ----------------- | ---------------------------------------------------- |
-| `init`            | Initialize waxseal in a GitOps repository            |
+| `setup`           | Interactive setup wizard for a GitOps repository     |
 | `discover`        | Find SealedSecrets and create metadata stubs         |
 | `list`            | List registered secrets with status and expiry       |
 | `validate`        | Validate repo and metadata consistency (CI-friendly) |

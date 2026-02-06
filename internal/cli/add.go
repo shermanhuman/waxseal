@@ -27,46 +27,52 @@ This command:
   2. Creates GSM secrets for each key
   3. Generates a SealedSecret manifest
 
+When --key flags are provided, the command uses flag values for everything
+except static key values, which are prompted for securely (never in shell
+history). Without --key flags, an interactive TUI wizard collects all input.
+
+Key formats:
+  --key=name             Static key (prompts for value securely)
+  --key=name:random      Generated random value (mode: generated)
+
 Examples:
-  # Interactive mode (prompts for all values)
+  # Interactive mode (no --key flags)
   waxseal add my-app-secrets
 
-  # Non-interactive mode (all values via flags)
+  # Mix of static and generated keys (prompts for username value)
   waxseal add my-app-secrets \
     --namespace=default \
-    --key=api_key \
-    --key=db_password \
-    --manifest-path=apps/my-app/sealed-secret.yaml \
-    --non-interactive
+    --key=username \
+    --key=password:random \
+    --key=encryption_key:random \
+    --manifest-path=apps/my-app/sealed-secret.yaml
 
-  # Generate random values
+  # All generated keys with custom random length
   waxseal add my-app-secrets \
     --namespace=default \
     --key=api_key:random \
     --key=db_password:random \
-    --non-interactive`,
+    --random-length=64`,
 	Args: cobra.ExactArgs(1),
 	RunE: runAdd,
 }
 
 var (
-	addNamespace      string
-	addKeys           []string
-	addManifestPath   string
-	addScope          string
-	addSecretType     string
-	addNonInteractive bool
-	addRandomLength   int
+	addNamespace    string
+	addKeys         []string
+	addManifestPath string
+	addScope        string
+	addSecretType   string
+	addRandomLength int
 )
 
 func init() {
 	rootCmd.AddCommand(addCmd)
 	addCmd.Flags().StringVar(&addNamespace, "namespace", "", "Kubernetes namespace")
-	addCmd.Flags().StringSliceVar(&addKeys, "key", nil, "Key names (use key:random to generate value)")
+	addCmd.Flags().StringSliceVar(&addKeys, "key", nil, "Key name (use name:random to auto-generate)")
 	addCmd.Flags().StringVar(&addManifestPath, "manifest-path", "", "Path for SealedSecret manifest")
 	addCmd.Flags().StringVar(&addScope, "scope", "strict", "Sealing scope (strict, namespace-wide, cluster-wide)")
 	addCmd.Flags().StringVar(&addSecretType, "type", "Opaque", "Secret type (Opaque, kubernetes.io/tls, etc.)")
-	addCmd.Flags().BoolVar(&addNonInteractive, "non-interactive", false, "Run without prompts")
 	addCmd.Flags().IntVar(&addRandomLength, "random-length", 32, "Length of generated random values (bytes)")
 }
 
@@ -87,20 +93,17 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	}
 	cfg, err := config.Load(cfgFile)
 	if err != nil {
-		return fmt.Errorf("load config (run 'waxseal init' first): %w", err)
+		return fmt.Errorf("load config (run 'waxseal setup' first): %w", err)
 	}
 
 	// Collect input (interactive or flags)
 	var namespace, manifestPath, scope, secretType string
 	var keys []addKeyInput
 
-	if addNonInteractive {
-		// Validate required flags
+	if len(addKeys) > 0 {
+		// Non-interactive: --key flags provide all input
 		if addNamespace == "" {
-			return fmt.Errorf("--namespace is required in non-interactive mode")
-		}
-		if len(addKeys) == 0 {
-			return fmt.Errorf("at least one --key is required")
+			return fmt.Errorf("--namespace is required when using --key flags")
 		}
 
 		namespace = addNamespace
@@ -111,16 +114,16 @@ func runAdd(cmd *cobra.Command, args []string) error {
 			manifestPath = fmt.Sprintf("apps/%s/sealed-secret.yaml", shortName)
 		}
 
-		// Parse keys
+		// Parse keys: name:random (generated) or name (static, prompts for value)
 		for _, k := range addKeys {
-			parts := strings.SplitN(k, ":", 2)
-			keyName := parts[0]
-			generateRandom := len(parts) > 1 && parts[1] == "random"
-
+			var keyName string
 			var value []byte
 			var rotationMode string
 			var generator *core.GeneratorConfig
-			if generateRandom {
+
+			if parts := strings.SplitN(k, ":", 2); len(parts) > 1 && parts[1] == "random" {
+				// name:random → generated key
+				keyName = parts[0]
 				var err error
 				value, err = generateRandomBytes(addRandomLength)
 				if err != nil {
@@ -129,7 +132,26 @@ func runAdd(cmd *cobra.Command, args []string) error {
 				rotationMode = "generated"
 				generator = &core.GeneratorConfig{Kind: "randomBase64", Bytes: addRandomLength}
 			} else {
-				return fmt.Errorf("key %q requires a value (use key:random or interactive mode)", keyName)
+				// name → static key, prompt for value securely
+				keyName = k
+				var inputValue string
+				err := huh.NewInput().
+					Title(fmt.Sprintf("Enter value for key %q", keyName)).
+					EchoMode(huh.EchoModePassword).
+					Value(&inputValue).
+					Run()
+				if err != nil {
+					return fmt.Errorf("prompt for key %q: %w", keyName, err)
+				}
+				if inputValue == "" {
+					return fmt.Errorf("value for key %q cannot be empty", keyName)
+				}
+				value = []byte(inputValue)
+				rotationMode = "static"
+			}
+
+			if keyName == "" {
+				return fmt.Errorf("key name cannot be empty in %q", k)
 			}
 
 			keys = append(keys, addKeyInput{

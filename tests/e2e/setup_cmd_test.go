@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-// TestE2E_Init tests the `waxseal init` command
-func TestE2E_Init(t *testing.T) {
+// TestE2E_Setup tests the `waxseal setup` command
+func TestE2E_Setup(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping E2E test in short mode")
 	}
@@ -21,8 +21,8 @@ func TestE2E_Init(t *testing.T) {
 		wantContent map[string]string
 	}{
 		{
-			name:    "basic init with project ID",
-			args:    []string{"init", "--project-id=test-project", "--non-interactive"},
+			name:    "basic setup with project ID",
+			args:    []string{"setup", "--project-id=test-project"},
 			wantErr: false,
 			wantFiles: []string{
 				".waxseal/config.yaml",
@@ -34,8 +34,8 @@ func TestE2E_Init(t *testing.T) {
 			},
 		},
 		{
-			name:    "init with custom controller namespace",
-			args:    []string{"init", "--project-id=test-project", "--controller-namespace=sealed-secrets", "--non-interactive"},
+			name:    "setup with custom controller namespace",
+			args:    []string{"setup", "--project-id=test-project", "--controller-namespace=sealed-secrets"},
 			wantErr: false,
 			wantFiles: []string{
 				".waxseal/config.yaml",
@@ -45,13 +45,13 @@ func TestE2E_Init(t *testing.T) {
 			},
 		},
 		{
-			name:    "init without required project ID",
-			args:    []string{"init", "--non-interactive"},
+			name:    "setup with empty project ID",
+			args:    []string{"setup", "--project-id="},
 			wantErr: true,
 		},
 		{
-			name:    "init with skip-reminders flag",
-			args:    []string{"init", "--project-id=test-project", "--non-interactive", "--skip-reminders"},
+			name:    "setup with skip-reminders flag",
+			args:    []string{"setup", "--project-id=test-project", "--skip-reminders"},
 			wantErr: false,
 			wantFiles: []string{
 				".waxseal/config.yaml",
@@ -62,8 +62,8 @@ func TestE2E_Init(t *testing.T) {
 			},
 		},
 		{
-			name:    "init with custom controller name",
-			args:    []string{"init", "--project-id=test-project", "--controller-name=my-sealed-secrets", "--non-interactive", "--skip-reminders"},
+			name:    "setup with custom controller name",
+			args:    []string{"setup", "--project-id=test-project", "--controller-name=my-sealed-secrets", "--skip-reminders"},
 			wantErr: false,
 			wantFiles: []string{
 				".waxseal/config.yaml",
@@ -77,13 +77,13 @@ func TestE2E_Init(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create isolated temp directory for each test
-			tmpDir, err := os.MkdirTemp("", "waxseal-init-*")
+			tmpDir, err := os.MkdirTemp("", "waxseal-setup-*")
 			if err != nil {
 				t.Fatalf("create temp dir: %v", err)
 			}
 			defer os.RemoveAll(tmpDir)
 
-			// Run waxseal init
+			// Run waxseal setup
 			args := append(tt.args, "--repo="+tmpDir)
 			output, err := runWaxsealWithDir(t, tmpDir, args...)
 
@@ -124,39 +124,39 @@ func TestE2E_Init(t *testing.T) {
 	}
 }
 
-// TestE2E_InitIdempotent tests that running init twice doesn't break things
-func TestE2E_InitIdempotent(t *testing.T) {
+// TestE2E_SetupIdempotent tests that running setup twice doesn't break things
+func TestE2E_SetupIdempotent(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping E2E test in short mode")
 	}
 
-	tmpDir, err := os.MkdirTemp("", "waxseal-init-idem-*")
+	tmpDir, err := os.MkdirTemp("", "waxseal-setup-idem-*")
 	if err != nil {
 		t.Fatalf("create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// First init
-	_, err = runWaxsealWithDir(t, tmpDir, "init", "--project-id=test-project", "--non-interactive", "--repo="+tmpDir)
+	// First setup
+	_, err = runWaxsealWithDir(t, tmpDir, "setup", "--project-id=test-project", "--repo="+tmpDir)
 	if err != nil {
-		t.Fatalf("first init: %v", err)
+		t.Fatalf("first setup: %v", err)
 	}
 
 	// Read config content
 	configPath := filepath.Join(tmpDir, ".waxseal/config.yaml")
 	config1, _ := os.ReadFile(configPath)
 
-	// Second init should fail or warn (config exists)
-	output, err := runWaxsealWithDir(t, tmpDir, "init", "--project-id=test-project", "--non-interactive", "--repo="+tmpDir)
+	// Second setup should fail or warn (config exists)
+	output, err := runWaxsealWithDir(t, tmpDir, "setup", "--project-id=test-project", "--repo="+tmpDir)
 
 	// Should either error or warn about existing config
 	if err == nil && !strings.Contains(output, "already") && !strings.Contains(output, "exists") {
 		// Check config wasn't corrupted
 		config2, _ := os.ReadFile(configPath)
 		if string(config1) != string(config2) {
-			t.Error("config was modified on second init")
+			t.Error("config was modified on second setup")
 		}
 	}
 
-	t.Log("✓ init is safe to run multiple times")
+	t.Log("✓ setup is safe to run multiple times")
 }

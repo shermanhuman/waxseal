@@ -8,9 +8,9 @@ import (
 	"testing"
 )
 
-// Edge cases for init command
+// Edge cases for setup command
 
-func TestE2E_Edge_InitAlreadyInitialized(t *testing.T) {
+func TestE2E_Edge_SetupAlreadyInitialized(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping E2E test in short mode")
 	}
@@ -18,21 +18,21 @@ func TestE2E_Edge_InitAlreadyInitialized(t *testing.T) {
 	tmpDir, _ := os.MkdirTemp("", "waxseal-edge-*")
 	defer os.RemoveAll(tmpDir)
 
-	// First init
-	runWaxsealWithDir(t, tmpDir, "init", "--project-id=test-project", "--non-interactive", "--repo="+tmpDir)
+	// First setup
+	runWaxsealWithDir(t, tmpDir, "setup", "--project-id=test-project", "--repo="+tmpDir)
 
-	// Second init should warn or fail gracefully
-	output, err := runWaxsealWithDir(t, tmpDir, "init", "--project-id=test-project", "--non-interactive", "--repo="+tmpDir)
+	// Second setup should warn or fail gracefully
+	output, err := runWaxsealWithDir(t, tmpDir, "setup", "--project-id=test-project", "--repo="+tmpDir)
 	if err != nil {
 		// Expected - already initialized
 		if !strings.Contains(output, "already") && !strings.Contains(output, "exists") {
 			t.Logf("Expected 'already exists' message, got: %s", output)
 		}
 	}
-	t.Log("✓ Init on already initialized repo handled")
+	t.Log("✓ Setup on already initialized repo handled")
 }
 
-func TestE2E_Edge_InitInvalidProjectID(t *testing.T) {
+func TestE2E_Edge_SetupInvalidProjectID(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping E2E test in short mode")
 	}
@@ -41,7 +41,7 @@ func TestE2E_Edge_InitInvalidProjectID(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	// Invalid project ID with spaces
-	output, err := runWaxsealWithDir(t, tmpDir, "init", "--project-id=invalid project", "--non-interactive", "--repo="+tmpDir)
+	output, err := runWaxsealWithDir(t, tmpDir, "setup", "--project-id=invalid project", "--repo="+tmpDir)
 	if err == nil {
 		t.Error("expected error for invalid project ID")
 	}

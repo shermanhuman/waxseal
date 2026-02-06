@@ -39,7 +39,7 @@ Source of truth:
 Primary commands:
   - waxseal reseal --all    Non-interactive ciphertext refresh
   - waxseal rotate          Value rotation with operator guidance
-  - waxseal init            Happy-path onboarding`,
+  - waxseal setup           Interactive setup wizard`,
 	Version: Version,
 }
 
@@ -102,7 +102,7 @@ func checkMetadataExists(cmd *cobra.Command) (bool, error) {
 	if _, err := os.Stat(configFile); os.IsNotExist(err) {
 		fmt.Fprintf(os.Stderr, "No waxseal configuration found at %s\n", configFile)
 		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Run 'waxseal init' to set up waxseal in this repository.")
+		fmt.Fprintln(os.Stderr, "Run 'waxseal setup' to set up waxseal in this repository.")
 		return false, nil
 	}
 

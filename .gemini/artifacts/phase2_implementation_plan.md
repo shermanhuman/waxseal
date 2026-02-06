@@ -144,7 +144,7 @@ go build ./... && go test ./... -count=1
 
 - [x] 5.1. Add `reminders list` - show upcoming expirations (default 90d)
 - [x] 5.2. Add `reminders clean` - remove calendar entries for retired secrets
-- [x] 5.3. Add `reminders setup` - interactive wizard (same as init)
+- [x] 5.3. Add `reminders setup` - interactive wizard (same as setup)
 - [ ] 5.4. Update README with all reminders subcommands
 
 ### Tests

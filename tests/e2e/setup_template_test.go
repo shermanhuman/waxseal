@@ -1,4 +1,4 @@
-// Package e2e contains tests for the init wizard and template detection.
+// Package e2e contains tests for the setup wizard and template detection.
 package e2e
 
 import (
@@ -8,25 +8,24 @@ import (
 	"testing"
 )
 
-// Tests for init wizard
+// Tests for setup wizard
 
-func TestE2E_Init_NonInteractiveMode(t *testing.T) {
+func TestE2E_Setup_WithFlags(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping E2E test in short mode")
 	}
 
-	tmpDir, _ := os.MkdirTemp("", "waxseal-init-*")
+	tmpDir, _ := os.MkdirTemp("", "waxseal-setup-*")
 	defer os.RemoveAll(tmpDir)
 
-	// Test non-interactive init with all flags
-	output, err := runWaxsealWithDir(t, tmpDir, "init",
+	// Test setup with all flags (skips interactive prompts)
+	output, err := runWaxsealWithDir(t, tmpDir, "setup",
 		"--project-id=test-project",
-		"--non-interactive",
 		"--skip-cert-fetch",
 		"--repo="+tmpDir,
 	)
 	if err != nil {
-		t.Fatalf("init failed: %v\nOutput: %s", err, output)
+		t.Fatalf("setup failed: %v\nOutput: %s", err, output)
 	}
 
 	// Verify all expected files/dirs created
@@ -54,30 +53,29 @@ func TestE2E_Init_NonInteractiveMode(t *testing.T) {
 		t.Error("config missing version field")
 	}
 
-	t.Log("✓ Init non-interactive mode works")
+	t.Log("✓ Setup with flags works")
 }
 
-func TestE2E_Init_WithExistingRepo(t *testing.T) {
+func TestE2E_Setup_WithExistingRepo(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping E2E test in short mode")
 	}
 
-	tmpDir, _ := os.MkdirTemp("", "waxseal-init-*")
+	tmpDir, _ := os.MkdirTemp("", "waxseal-setup-*")
 	defer os.RemoveAll(tmpDir)
 
 	// Create an existing apps structure
 	os.MkdirAll(filepath.Join(tmpDir, "apps/webapp"), 0o755)
 	os.WriteFile(filepath.Join(tmpDir, "apps/webapp/deployment.yaml"), []byte("kind: Deployment"), 0o644)
 
-	// Init should work with existing structure
-	output, err := runWaxsealWithDir(t, tmpDir, "init",
+	// Setup should work with existing structure
+	output, err := runWaxsealWithDir(t, tmpDir, "setup",
 		"--project-id=test-project",
-		"--non-interactive",
 		"--skip-cert-fetch",
 		"--repo="+tmpDir,
 	)
 	if err != nil {
-		t.Fatalf("init failed: %v\nOutput: %s", err, output)
+		t.Fatalf("setup failed: %v\nOutput: %s", err, output)
 	}
 
 	// Verify existing files preserved
@@ -85,25 +83,25 @@ func TestE2E_Init_WithExistingRepo(t *testing.T) {
 		t.Error("existing file was removed")
 	}
 
-	t.Log("✓ Init preserves existing repo structure")
+	t.Log("✓ Setup preserves existing repo structure")
 }
 
-func TestE2E_Init_ConfigOverwrite(t *testing.T) {
+func TestE2E_Setup_ConfigOverwrite(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping E2E test in short mode")
 	}
 
-	tmpDir, _ := os.MkdirTemp("", "waxseal-init-*")
+	tmpDir, _ := os.MkdirTemp("", "waxseal-setup-*")
 	defer os.RemoveAll(tmpDir)
 
-	// First init
-	runWaxsealWithDir(t, tmpDir, "init", "--project-id=project-one", "--non-interactive", "--skip-cert-fetch", "--repo="+tmpDir)
+	// First setup
+	runWaxsealWithDir(t, tmpDir, "setup", "--project-id=project-one", "--skip-cert-fetch", "--repo="+tmpDir)
 
 	// Read first config
 	data1, _ := os.ReadFile(filepath.Join(tmpDir, ".waxseal/config.yaml"))
 
-	// Second init with --force should overwrite
-	runWaxsealWithDir(t, tmpDir, "init", "--project-id=project-two", "--non-interactive", "--skip-cert-fetch", "--force", "--repo="+tmpDir)
+	// Second setup with --force should overwrite
+	runWaxsealWithDir(t, tmpDir, "setup", "--project-id=project-two", "--skip-cert-fetch", "--force", "--repo="+tmpDir)
 
 	data2, _ := os.ReadFile(filepath.Join(tmpDir, ".waxseal/config.yaml"))
 
@@ -111,19 +109,19 @@ func TestE2E_Init_ConfigOverwrite(t *testing.T) {
 		t.Log("Config unchanged (force may not be implemented)")
 	}
 
-	t.Log("✓ Init config handling tested")
+	t.Log("✓ Setup config handling tested")
 }
 
-func TestE2E_Init_DiscoveryGlobsConfiguration(t *testing.T) {
+func TestE2E_Setup_DiscoveryGlobsConfiguration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping E2E test in short mode")
 	}
 
-	tmpDir, _ := os.MkdirTemp("", "waxseal-init-*")
+	tmpDir, _ := os.MkdirTemp("", "waxseal-setup-*")
 	defer os.RemoveAll(tmpDir)
 
-	// Init with defaults
-	runWaxsealWithDir(t, tmpDir, "init", "--project-id=test-project", "--non-interactive", "--skip-cert-fetch", "--repo="+tmpDir)
+	// Setup with defaults
+	runWaxsealWithDir(t, tmpDir, "setup", "--project-id=test-project", "--skip-cert-fetch", "--repo="+tmpDir)
 
 	// Check default discovery globs in config
 	data, _ := os.ReadFile(filepath.Join(tmpDir, ".waxseal/config.yaml"))

@@ -17,27 +17,26 @@ const (
 	gsmTestProject = "waxseal-test"
 )
 
-// TestE2E_GSM_Init tests waxseal init with real GCP project
-func TestE2E_GSM_Init(t *testing.T) {
+// TestE2E_GSM_Setup tests waxseal setup with real GCP project
+func TestE2E_GSM_Setup(t *testing.T) {
 	if os.Getenv("WAXSEAL_GSM_E2E") == "" {
 		t.Skip("skipping GSM E2E test - set WAXSEAL_GSM_E2E=1 to run")
 	}
 
-	tmpDir, err := os.MkdirTemp("", "waxseal-gsm-init-*")
+	tmpDir, err := os.MkdirTemp("", "waxseal-gsm-setup-*")
 	if err != nil {
 		t.Fatalf("create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Run init with the test project
-	output, err := runWaxsealWithDir(t, tmpDir, "init",
+	// Run setup with the test project
+	output, err := runWaxsealWithDir(t, tmpDir, "setup",
 		"--project-id="+gsmTestProject,
-		"--non-interactive",
 		"--skip-cert-fetch", // Skip cert fetch since we may not have a cluster
 		"--repo="+tmpDir,
 	)
 	if err != nil {
-		t.Fatalf("init failed: %v\nOutput: %s", err, output)
+		t.Fatalf("setup failed: %v\nOutput: %s", err, output)
 	}
 
 	// Verify config was created with correct project
@@ -50,7 +49,7 @@ func TestE2E_GSM_Init(t *testing.T) {
 		t.Error("config does not contain test project ID")
 	}
 
-	t.Log("✓ init with GSM project completed")
+	t.Log("✓ setup with GSM project completed")
 }
 
 // TestE2E_GSM_SecretCreate tests creating a secret in GSM

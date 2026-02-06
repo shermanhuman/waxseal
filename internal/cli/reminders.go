@@ -440,7 +440,7 @@ func runRemindersSetup(cmd *cobra.Command, args []string) error {
 	}
 
 	if _, err := os.Stat(configFile); os.IsNotExist(err) {
-		fmt.Println("No config file found. Run 'waxseal init' first.")
+		fmt.Println("No config file found. Run 'waxseal setup' first.")
 		return nil
 	}
 

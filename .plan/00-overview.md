@@ -23,7 +23,7 @@ Primary UX goals:
 - `discover` is interactive adoption (read-only with respect to GSM):
   - registers existing SealedSecret manifests into `.waxseal/metadata/*.yaml`
   - fills “unknowns” by prompting and writing metadata only
-  - does not write to GSM; importing plaintext into GSM is handled by `bootstrap`/`init`
+  - does not write to GSM; importing plaintext into GSM is handled by `bootstrap`/`setup`
 
 - `reseal` is deterministic and non-interactive:
   - values come from GSM versions pinned in metadata

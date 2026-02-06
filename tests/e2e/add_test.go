@@ -21,26 +21,20 @@ func TestE2E_Add(t *testing.T) {
 		checkFiles []string // files that should exist after
 	}{
 		{
-			name:       "add requires namespace in non-interactive",
-			args:       []string{"add", "test-secret", "--non-interactive", "--key=api_key:random"},
+			name:       "add requires namespace when using --key",
+			args:       []string{"add", "test-secret", "--key=api_key:random"},
 			wantErr:    true,
 			wantOutput: []string{"--namespace is required"},
 		},
 		{
-			name:       "add requires at least one key",
-			args:       []string{"add", "test-secret", "--non-interactive", "--namespace=default"},
-			wantErr:    true,
-			wantOutput: []string{"at least one --key is required"},
-		},
-		{
 			name:       "add dry run shows plan",
-			args:       []string{"add", "test-secret", "--non-interactive", "--namespace=default", "--key=api_key:random", "--dry-run"},
+			args:       []string{"add", "test-secret", "--namespace=default", "--key=api_key:random", "--dry-run"},
 			wantErr:    false,
 			wantOutput: []string{"[DRY RUN]", "test-secret", "default", "api_key"},
 		},
 		{
 			name:       "add fails if secret exists",
-			args:       []string{"add", "existing-secret", "--non-interactive", "--namespace=default", "--key=api_key:random"},
+			args:       []string{"add", "existing-secret", "--namespace=default", "--key=api_key:random"},
 			wantErr:    true,
 			wantOutput: []string{"already exists"},
 		},
@@ -143,7 +137,6 @@ func TestE2E_AddDryRun(t *testing.T) {
 		"add", "new-secret",
 		"--namespace=default",
 		"--key=api_key:random",
-		"--non-interactive",
 		"--dry-run",
 		"--repo="+tmpDir,
 	)

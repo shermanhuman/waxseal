@@ -2,21 +2,21 @@
 
 ## Command tree
 
-- `waxseal init`
+- `waxseal setup`
   - Happy-path onboarding command.
   - Orchestrates: `discover` → plan summary (no values) → confirmation → reminders setup (optional) → `bootstrap` → `reseal` → reminders sync.
   - Goal: one command to adopt an existing cluster/repo into the GSM-first, ciphertext-only Git model.
 
-  Reminders setup (during `init`):
+  Reminders setup (during `setup`):
 
   - Ask: “Do you want expiration reminders?”
   - If yes, list available reminder plugins (v1: `google-calendar`) and prompt to select one.
   - Walk-through setup for the selected plugin and write the resulting config to `.waxseal/config.yaml`.
   - Auth is opinionated in v1: use Application Default Credentials (ADC).
     - waxseal does not ingest/store Google credentials in GSM.
-    - `init` guides the operator through setting up ADC and verifies access.
+    - `setup` guides the operator through setting up ADC and verifies access.
 
-  Google Calendar setup steps printed by `init` (v1):
+  Google Calendar setup steps printed by `setup` (v1):
 
   1) Enable the Calendar API in the selected Google Cloud project (one-time).
   2) Set up ADC on this machine:
@@ -27,7 +27,7 @@
      - Recommended for teams: create a dedicated shared calendar and grant write access to the identity used by ADC, then set its `calendarId`.
   4) Verify access: waxseal performs a non-destructive Calendar API call (list calendars or create+delete a probe event) and fails closed with actionable error output.
 
-  Note: GCP-side provisioning is not a script in v1. Use `waxseal gcp bootstrap` (or let `init` offer to run it) to keep setup deterministic and cross-platform.
+  Note: GCP-side provisioning is not a script in v1. Use `waxseal gcp bootstrap` (or let `setup` offer to run it) to keep setup deterministic and cross-platform.
 
 - `waxseal discover`
   - Discover existing SealedSecret manifests in a repo and register them into `.waxseal/` metadata.
@@ -35,7 +35,7 @@
   - Non-destructive (does not change manifests).
   - Interactive by default: prompts the operator to connect keys to GSM (recommended) and fill in intent gaps.
   - `--non-interactive` keeps the stub-only behavior (CI/automation): write metadata stubs with unknown rotation for raw keys and exit successfully.
-  - Naming note: this is intentionally more explicit than `init`/`import`.
+  - Naming note: this is intentionally more explicit than `setup`/`import`.
 
   Interactive prompts (initial scope):
 
@@ -68,7 +68,7 @@
   - Operator hints (recommended for `external`/`manual`):
     - Always store rotation URLs / runbook notes in GSM (not in Git).
     - During `discover`, collect rotation URLs and notes (optional) and record the intended hint secret ID in metadata.
-    - Writing operator hints to GSM happens during `bootstrap`/`init`.
+    - Writing operator hints to GSM happens during `bootstrap`/`setup`.
 
   - Expirations (optional, per key):
     - If the operator indicates a key has a real expiration, collect `expiresAt` (RFC3339) and record it in metadata.
@@ -113,7 +113,7 @@
 
 - `waxseal bootstrap`
   - Explicitly push plaintext from cluster into GSM to establish the GSM-as-source-of-truth model.
-  - In practice, this is normally invoked via `waxseal init` (happy path).
+  - In practice, this is normally invoked via `waxseal setup` (happy path).
   - If reminders are enabled, auto-sync reminders for any keys that have `expiry.expiresAt`.
 
 - `waxseal gcp bootstrap`
@@ -144,7 +144,7 @@
     - `waxseal reminders list` (shows upcoming expirations; default window 90d)
     - `waxseal reminders sync` (create/update Google Calendar entries for all keys with `expiry.expiresAt`)
     - `waxseal reminders clean` (remove calendar entries for retired secrets or removed expirations)
-    - `waxseal reminders setup` (interactive; same wizard as `init` without running discovery/bootstrap/reseal)
+    - `waxseal reminders setup` (interactive; same wizard as `setup` without running discovery/bootstrap/reseal)
 
 ## Targeting rules
 
@@ -167,7 +167,7 @@ Reminders sync behavior (opinionated defaults):
 
 - `waxseal reminders sync` is idempotent (safe to run repeatedly).
 - When enabled in config, `rotate` and `bootstrap` run an implicit `reminders sync` for the touched keys as a final step.
-- `init` runs `reminders sync` at the end (after `reseal`) and prints a short “upcoming expirations” summary.
+- `setup` runs `reminders sync` at the end (after `reseal`) and prints a short "upcoming expirations" summary.
 
 ## External/manual rotation prompts
 

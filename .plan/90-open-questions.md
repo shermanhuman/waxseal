@@ -11,7 +11,7 @@
 - Adoption/bootstrap commands:
 	- Keep `discover` read-only (no writes to GSM).
 	- Keep `bootstrap` write-capable (imports plaintext into GSM).
-	- Provide one happy-path `init` command that orchestrates: discover → plan summary (no values) → confirmation → bootstrap → reseal.
+	- Provide one happy-path `setup` command that orchestrates: discover → plan summary (no values) → confirmation → bootstrap → reseal.
 
 - Reseal modes:
 	- Default `reseal` is GSM-driven (plaintext source-of-truth remains GSM).
@@ -43,7 +43,7 @@
 	- Track expirations as non-secret per-key metadata (`keys[].expiry.expiresAt`).
 	- Provide an optional reminders system with a pluggable provider.
 	- v1 reminder provider: Google Calendar, creating/upserting Calendar *events* (not Google Tasks).
-	- `init` offers reminders setup, lists available providers, and guides credential setup.
+	- `setup` offers reminders setup, lists available providers, and guides credential setup.
 	- Auth (v1): Application Default Credentials only.
 		- Avoid service account keys where possible; prefer attached identity / federation / local user ADC.
 		- No reminder credentials are stored in Git or GSM.

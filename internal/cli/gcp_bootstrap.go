@@ -258,7 +258,7 @@ func runGCPBootstrap(cmd *cobra.Command, args []string) error {
 		fmt.Printf("✓ GCP bootstrap complete for project %s\n", gcpProjectID)
 		fmt.Println()
 		fmt.Println("Next steps:")
-		fmt.Printf("  1. Run 'waxseal init --store-project-id %s'\n", gcpProjectID)
+		fmt.Printf("  1. Run 'waxseal setup --project-id %s'\n", gcpProjectID)
 		fmt.Println("  2. Run 'waxseal discover' to find existing SealedSecrets")
 	}
 

@@ -13,49 +13,55 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var initCmd = &cobra.Command{
-	Use:   "init",
-	Short: "Initialize waxseal in a GitOps repository",
-	Long: `Initialize waxseal configuration in the current repository.
+var setupCmd = &cobra.Command{
+	Use:   "setup",
+	Short: "Interactive setup wizard for waxseal",
+	Long: `Interactive setup wizard for waxseal in a GitOps repository.
 
-This command creates:
+This wizard walks you through:
+  1. GCP Project Setup     - Configure or create a GCP project
+  2. Controller Discovery  - Find your SealedSecrets controller
+  3. Certificate Fetch     - Download the controller's public cert
+  4. Secret Discovery      - Find existing SealedSecret manifests
+  5. Key Configuration     - Configure rotation for each secret key
+  6. Bootstrap to GSM      - Push secret values to Google Secret Manager
+  7. Reminders Setup       - Set up expiration reminders (optional)
+
+Files created:
   - .waxseal/config.yaml - Main configuration file
   - .waxseal/metadata/   - Directory for secret metadata
-  - keys/pub-cert.pem    - Placeholder for controller certificate
+  - keys/pub-cert.pem    - Controller certificate
 
-Interactive mode prompts for:
-  - GCP Project ID for Secret Manager
-  - Controller namespace and name
-
-Use --non-interactive with required flags for CI/automation.`,
-	RunE: runInit,
+Flags like --project-id pre-fill wizard values, skipping those prompts.`,
+	RunE: runSetup,
 }
 
 var (
-	initNonInteractive bool
-	initProjectID      string
-	initControllerNS   string
-	initControllerName string
-	initSkipReminders  bool
+	setupProjectID      string
+	setupControllerNS   string
+	setupControllerName string
+	setupSkipReminders  bool
 )
 
 func init() {
-	rootCmd.AddCommand(initCmd)
-	initCmd.Flags().BoolVar(&initNonInteractive, "non-interactive", false, "Run without prompts")
-	initCmd.Flags().StringVar(&initProjectID, "project-id", "", "GCP Project ID for Secret Manager")
-	initCmd.Flags().StringVar(&initControllerNS, "controller-namespace", "kube-system", "Sealed Secrets controller namespace")
-	initCmd.Flags().StringVar(&initControllerName, "controller-name", "sealed-secrets", "Sealed Secrets controller service name")
-	initCmd.Flags().BoolVar(&initSkipReminders, "skip-reminders", false, "Skip the calendar reminders setup prompt")
+	rootCmd.AddCommand(setupCmd)
+	setupCmd.Flags().StringVar(&setupProjectID, "project-id", "", "GCP Project ID (pre-fills wizard, skips project prompt)")
+	setupCmd.Flags().StringVar(&setupControllerNS, "controller-namespace", "kube-system", "Sealed Secrets controller namespace")
+	setupCmd.Flags().StringVar(&setupControllerName, "controller-name", "sealed-secrets", "Sealed Secrets controller service name")
+	setupCmd.Flags().BoolVar(&setupSkipReminders, "skip-reminders", false, "Skip the calendar reminders setup prompt")
 }
 
-func runInit(cmd *cobra.Command, args []string) error {
+func runSetup(cmd *cobra.Command, args []string) error {
 	waxsealDir := filepath.Join(repoPath, ".waxseal")
 	metadataDir := filepath.Join(waxsealDir, "metadata")
 	keysDir := filepath.Join(repoPath, "keys")
 	configFile := filepath.Join(waxsealDir, "config.yaml")
 
+	// When --project-id is given via flag, skip interactive GCP prompts
+	hasProjectFlag := cmd.Flags().Changed("project-id")
+
 	// Check if this looks like a project root
-	if !initNonInteractive {
+	if !hasProjectFlag {
 		gitDir := filepath.Join(repoPath, ".git")
 		if _, err := os.Stat(gitDir); os.IsNotExist(err) {
 			fmt.Println()
@@ -72,7 +78,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 				return err
 			}
 			if !continueAnyway {
-				fmt.Println("Aborted. Please cd to your repository root and run 'waxseal init' again.")
+				fmt.Println("Aborted. Please cd to your repository root and run 'waxseal setup' again.")
 				return nil
 			}
 		}
@@ -93,7 +99,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Welcome message (interactive only)
-	if !initNonInteractive {
+	if !hasProjectFlag {
 		fmt.Println()
 		fmt.Println("╔══════════════════════════════════════════════════════════════╗")
 		fmt.Println("║                    Welcome to WaxSeal                        ║")
@@ -114,8 +120,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Handle GCP setup
-	projectID := initProjectID
-	if projectID == "" && !initNonInteractive {
+	projectID := setupProjectID
+	if projectID == "" && !hasProjectFlag {
 		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		fmt.Println("Step 1/7: GCP Project Setup")
 		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -358,12 +364,15 @@ func runInit(cmd *cobra.Command, args []string) error {
 			}
 		}
 	}
-	if projectID == "" && initNonInteractive {
-		return fmt.Errorf("--project-id is required in non-interactive mode")
+	if projectID == "" && hasProjectFlag {
+		return fmt.Errorf("--project-id value cannot be empty")
+	}
+	if projectID == "" {
+		return fmt.Errorf("GCP project ID is required; re-run the setup wizard or pass --project-id")
 	}
 
 	// Check billing and enable APIs (for existing project path)
-	if projectID != "" && !initNonInteractive {
+	if projectID != "" && !hasProjectFlag {
 		// Check if billing is enabled
 		fmt.Printf("\nChecking billing for project %s...\n", projectID)
 		checkCmd := exec.CommandContext(cmd.Context(), "gcloud", "billing", "projects", "describe", projectID, "--format=value(billingAccountName)")
@@ -427,11 +436,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	controllerNS := initControllerNS
-	controllerName := initControllerName
+	controllerNS := setupControllerNS
+	controllerName := setupControllerName
 
 	// Interactive prompts for controller
-	if !initNonInteractive {
+	if !hasProjectFlag {
 		fmt.Println()
 		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		fmt.Println("Step 2/7: Controller Discovery")
@@ -554,7 +563,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Run discover if interactive
-	if !initNonInteractive && certErr == nil {
+	if !hasProjectFlag && certErr == nil {
 		fmt.Println()
 		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		fmt.Println("Step 4/7: Secret Discovery")
@@ -564,7 +573,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println()
 
 		// Call discover command (call run directly to avoid re-parsing root args)
-		discoverNonInteractive = initNonInteractive
+		discoverNonInteractive = hasProjectFlag
 		if err := runDiscover(cmd, []string{}); err != nil {
 			// Don't fail init if discover has issues
 			fmt.Printf("Note: discover encountered an issue: %v\n", err)
@@ -604,7 +613,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Offer reminders setup
-	if !initNonInteractive && !initSkipReminders {
+	if !hasProjectFlag && !setupSkipReminders {
 		fmt.Println()
 		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		fmt.Println("Step 7/7: Expiration Reminders (Optional)")
@@ -769,7 +778,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 func generateConfig(projectID, controllerNS, controllerName string) string {
 	return fmt.Sprintf(`# waxseal configuration
-# Generated by waxseal init
+# Generated by waxseal setup
 
 version: "1"
 
