@@ -208,10 +208,9 @@ func bootstrapOne(ctx context.Context, shortName string) error {
 		}
 
 		// Generate GSM resource name
-		gsmResource := fmt.Sprintf("projects/%s/secrets/%s-%s",
+		gsmResource := store.SecretResource(
 			cfg.Store.ProjectID,
-			shortName,
-			sanitizeGSMName(keyName))
+			store.FormatSecretID(shortName, keyName))
 
 		keysToPush = append(keysToPush, keyToPush{
 			keyName:        keyName,
@@ -410,18 +409,4 @@ func defaultReadSecretFromCluster(ctx context.Context, namespace, name string) (
 	return result, nil
 }
 
-// sanitizeGSMName converts a key name to a valid GSM secret name component.
-func sanitizeGSMName(name string) string {
-	// GSM allows: letters, numbers, hyphens, underscores
-	// Replace dots and other chars with hyphens
-	result := strings.Map(func(r rune) rune {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
-			(r >= '0' && r <= '9') || r == '-' || r == '_' {
-			return r
-		}
-		return '-'
-	}, name)
 
-	// Remove leading/trailing hyphens
-	return strings.Trim(result, "-")
-}

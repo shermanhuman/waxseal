@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/shermanhuman/waxseal/internal/config"
 	"github.com/shermanhuman/waxseal/internal/seal"
+	"github.com/shermanhuman/waxseal/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -449,7 +450,7 @@ func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) ([]k
 
 		// Generate default GSM resource using manifest filename + secret name
 		manifestBase := strings.TrimSuffix(filepath.Base(ds.path), filepath.Ext(ds.path))
-		defaultGSM := fmt.Sprintf("projects/%s/secrets/%s-%s", projectID, manifestBase, sanitizeGSMName(keyName))
+		defaultGSM := store.SecretResource(projectID, store.FormatSecretID(manifestBase, keyName))
 
 		// Auto-detect if this looks like a templated key
 		var keyType, rotationURL, expiry, template string
@@ -575,9 +576,11 @@ func generateMetadataStub(ds discoveredSecret, shortName, projectID string, keyC
 	if keyConfigs == nil {
 		keyConfigs = make([]keyConfig, 0)
 		for _, keyName := range ss.GetEncryptedKeys() {
-			gsmResource := fmt.Sprintf("projects/%s/secrets/%s-%s", projectID, shortName, sanitizeGSMName(keyName))
-			if projectID == "" {
-				gsmResource = fmt.Sprintf("projects/<PROJECT>/secrets/%s-%s", shortName, sanitizeGSMName(keyName))
+			var gsmResource string
+			if projectID != "" {
+				gsmResource = store.SecretResource(projectID, store.FormatSecretID(shortName, keyName))
+			} else {
+				gsmResource = "projects/<PROJECT>/secrets/" + store.FormatSecretID(shortName, keyName)
 			}
 			keyConfigs = append(keyConfigs, keyConfig{
 				keyName:      keyName,

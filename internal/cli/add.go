@@ -178,8 +178,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	}
 	var keysToCreate []keyToCreate
 	for _, k := range keys {
-		gsmResource := fmt.Sprintf("projects/%s/secrets/%s-%s",
-			cfg.Store.ProjectID, shortName, sanitizeGSMName(k.keyName))
+		gsmResource := store.SecretResource(cfg.Store.ProjectID, store.FormatSecretID(shortName, k.keyName))
 		keysToCreate = append(keysToCreate, keyToCreate{
 			keyName:     k.keyName,
 			value:       k.value,

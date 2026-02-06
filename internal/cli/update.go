@@ -211,8 +211,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		}
 	} else {
 		// Generate GSM resource for new key
-		gsmResource = fmt.Sprintf("projects/%s/secrets/%s-%s",
-			cfg.Store.ProjectID, shortName, sanitizeGSMName(keyName))
+		gsmResource = store.SecretResource(cfg.Store.ProjectID, store.FormatSecretID(shortName, keyName))
 	}
 
 	// Get new value
