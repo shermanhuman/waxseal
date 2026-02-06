@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -341,14 +342,16 @@ func runRemindersList(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Sort by expiry date (inline bubble sort)
-	for i := 0; i < len(expiring); i++ {
-		for j := i + 1; j < len(expiring); j++ {
-			if expiring[i].expiresAt > expiring[j].expiresAt {
-				expiring[i], expiring[j] = expiring[j], expiring[i]
-			}
+	// Sort by expiry date
+	slices.SortFunc(expiring, func(a, b expiringKey) int {
+		if a.expiresAt < b.expiresAt {
+			return -1
 		}
-	}
+		if a.expiresAt > b.expiresAt {
+			return 1
+		}
+		return 0
+	})
 
 	fmt.Printf("Secrets expiring within %d days:\n\n", remindersListDays)
 	fmt.Printf("%-25s %-20s %-12s %s\n", "SECRET", "KEY", "DAYS", "EXPIRES")
