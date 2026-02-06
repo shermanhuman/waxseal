@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/shermanhuman/waxseal/internal/files"
 	"sigs.k8s.io/yaml"
 )
 
@@ -81,7 +82,8 @@ func (s *State) Save(repoPath string) error {
 		return err
 	}
 
-	return os.WriteFile(path, data, 0o644)
+	writer := files.NewAtomicWriter()
+	return writer.Write(path, data)
 }
 
 // AddRotation adds a rotation record to the state.
