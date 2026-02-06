@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +13,7 @@ import (
 	"github.com/shermanhuman/waxseal/internal/config"
 	"github.com/shermanhuman/waxseal/internal/seal"
 	"github.com/shermanhuman/waxseal/internal/store"
+	tmpl "github.com/shermanhuman/waxseal/internal/template"
 	"github.com/spf13/cobra"
 )
 
@@ -276,114 +276,6 @@ func fetchSecretFromCluster(namespace, name string) (map[string]string, error) {
 
 // detectConnectionStringTemplate analyzes a value and suggests a template if it looks like a connection string.
 // Returns: isTemplate, template string, extracted values map
-func detectConnectionStringTemplate(value string, allKeys []string) (isTemplate bool, template string, values map[string]string) {
-	// Check if it looks like a URL-based connection string
-	if !strings.Contains(value, "://") {
-		return false, "", nil
-	}
-
-	parsed, err := url.Parse(value)
-	if err != nil {
-		return false, "", nil
-	}
-
-	// Common database/service connection string schemes
-	schemes := []string{
-		// SQL Databases
-		"postgresql", "postgres", "mysql", "mariadb", "sqlserver", "mssql",
-		// NoSQL Databases
-		"mongodb", "mongodb+srv", "couchbase", "couchdb", "cockroachdb",
-		// Key-Value / Cache
-		"redis", "rediss", "memcached",
-		// Message Queues
-		"amqp", "amqps", "nats", "tls", "kafka",
-		// Search
-		"elasticsearch", "opensearch",
-		// Other
-		"clickhouse", "cassandra", "scylla", "neo4j", "bolt",
-	}
-	isDBConnection := false
-	for _, s := range schemes {
-		if strings.EqualFold(parsed.Scheme, s) {
-			isDBConnection = true
-			break
-		}
-	}
-	if !isDBConnection {
-		return false, "", nil
-	}
-
-	// Extract values and build template
-	values = make(map[string]string)
-	template = value
-
-	// Extract username and password (password becomes {{secret}})
-	if parsed.User != nil {
-		if username := parsed.User.Username(); username != "" {
-			values["username"] = username
-			template = strings.Replace(template, username, "{{username}}", 1)
-		}
-		if password, ok := parsed.User.Password(); ok && password != "" {
-			// Password is the secret - use {{secret}} as standard variable
-			template = strings.Replace(template, password, "{{secret}}", 1)
-		}
-	}
-
-	// Extract host and port
-	if parsed.Host != "" {
-		host := parsed.Hostname()
-		port := parsed.Port()
-
-		if host != "" {
-			values["host"] = host
-			// Replace host in template carefully (it may appear after @)
-			template = strings.Replace(template, host, "{{host}}", 1)
-		}
-		if port != "" {
-			values["port"] = port
-			template = strings.Replace(template, ":"+port, ":{{port}}", 1)
-		}
-	}
-
-	// Extract database name from path
-	if parsed.Path != "" && parsed.Path != "/" {
-		database := strings.TrimPrefix(parsed.Path, "/")
-		if database != "" {
-			values["database"] = database
-			template = strings.Replace(template, "/"+database, "/{{database}}", 1)
-		}
-	}
-
-	return true, template, values
-}
-
-// suggestKeyType analyzes a key's value and suggests if it should be templated.
-// Returns: suggestedType, suggestedTemplate, extractedValues
-func suggestKeyType(keyName string, value string, allKeys []string) (suggestedType string, suggestedTemplate string, extractedValues map[string]string) {
-	// Check for common templated key names
-	templateKeyPatterns := []string{"url", "uri", "connection", "dsn"}
-	keyLower := strings.ToLower(keyName)
-	mightBeTemplated := false
-	for _, pattern := range templateKeyPatterns {
-		if strings.Contains(keyLower, pattern) {
-			mightBeTemplated = true
-			break
-		}
-	}
-
-	if !mightBeTemplated {
-		return "standalone", "", nil
-	}
-
-	// Try to detect if it's a connection string
-	isTemplate, template, values := detectConnectionStringTemplate(value, allKeys)
-	if isTemplate {
-		return "templated", template, values
-	}
-
-	return "standalone", "", nil
-}
-
 func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) ([]keyConfig, error) {
 	keys := ds.sealedSecret.GetEncryptedKeys()
 	configs := make([]keyConfig, 0, len(keys))
@@ -458,7 +350,7 @@ func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) ([]k
 		keyType = "standalone" // default
 		if secretData != nil {
 			if value, ok := secretData[keyName]; ok {
-				suggestedType, suggestedTemplate, values := suggestKeyType(keyName, value, keys)
+				suggestedType, suggestedTemplate, values := tmpl.SuggestKeyType(keyName, value, keys)
 				keyType = suggestedType
 				template = suggestedTemplate
 				extractedValues = values

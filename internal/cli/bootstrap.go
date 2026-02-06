@@ -248,7 +248,7 @@ func bootstrapOne(ctx context.Context, shortName string) error {
 			}
 
 			// Detect template and extract values
-			isTemplate, templateStr, extractedValues := detectConnectionStringTemplate(valueStr, allKeys)
+			isTemplate, templateStr, extractedValues := template.DetectConnectionString(valueStr, allKeys)
 			if isTemplate {
 				// Get generator config if available
 				var genConfig *template.GeneratorConfig
