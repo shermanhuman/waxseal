@@ -11,6 +11,7 @@ import (
 
 	"github.com/shermanhuman/waxseal/internal/config"
 	"github.com/shermanhuman/waxseal/internal/core"
+	"github.com/shermanhuman/waxseal/internal/files"
 	"github.com/shermanhuman/waxseal/internal/reseal"
 	"github.com/shermanhuman/waxseal/internal/seal"
 	"github.com/shermanhuman/waxseal/internal/state"
@@ -86,18 +87,11 @@ func runRotate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Load metadata
-	metadataPath := filepath.Join(repoPath, ".waxseal", "metadata", shortName+".yaml")
-	data, err := os.ReadFile(metadataPath)
+	metadata, err := files.LoadMetadata(repoPath, shortName)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("secret %q not found", shortName)
-		}
-		return fmt.Errorf("read metadata: %w", err)
+		return err
 	}
-	metadata, err := core.ParseMetadata(data)
-	if err != nil {
-		return fmt.Errorf("parse metadata: %w", err)
-	}
+	metadataPath := files.MetadataPath(repoPath, shortName)
 
 	if metadata.IsRetired() {
 		return fmt.Errorf("cannot rotate retired secret %q", shortName)

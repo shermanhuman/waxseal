@@ -5,10 +5,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/url"
-	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 
 	"github.com/shermanhuman/waxseal/internal/config"
 	"github.com/shermanhuman/waxseal/internal/core"
@@ -74,22 +72,9 @@ func runBootstrap(cmd *cobra.Command, args []string) error {
 
 // bootstrapAll iterates over all discovered secrets and bootstraps each one.
 func bootstrapAll(ctx context.Context) error {
-	metadataDir := filepath.Join(repoPath, ".waxseal", "metadata")
-	entries, err := os.ReadDir(metadataDir)
+	secrets, err := files.ListMetadataNames(repoPath)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("no secrets discovered. Run 'waxseal discover' first")
-		}
-		return fmt.Errorf("read metadata directory: %w", err)
-	}
-
-	var secrets []string
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
-			continue
-		}
-		shortName := strings.TrimSuffix(e.Name(), ".yaml")
-		secrets = append(secrets, shortName)
+		return fmt.Errorf("no secrets discovered. Run 'waxseal discover' first: %w", err)
 	}
 
 	if len(secrets) == 0 {
@@ -116,19 +101,11 @@ func bootstrapAll(ctx context.Context) error {
 // bootstrapOne bootstraps a single secret.
 func bootstrapOne(ctx context.Context, shortName string) error {
 	// Load metadata
-	metadataPath := filepath.Join(repoPath, ".waxseal", "metadata", shortName+".yaml")
-	data, err := os.ReadFile(metadataPath)
+	metadata, err := files.LoadMetadata(repoPath, shortName)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("secret %q not found. Run 'waxseal discover' first", shortName)
-		}
-		return fmt.Errorf("read metadata: %w", err)
+		return err
 	}
-
-	metadata, err := core.ParseMetadata(data)
-	if err != nil {
-		return fmt.Errorf("parse metadata: %w", err)
-	}
+	metadataPath := files.MetadataPath(repoPath, shortName)
 
 	if metadata.IsRetired() {
 		return fmt.Errorf("secret %q is retired", shortName)

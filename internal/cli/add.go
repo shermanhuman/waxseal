@@ -81,10 +81,10 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	shortName := args[0]
 
 	// Check if already exists
-	metadataPath := filepath.Join(repoPath, ".waxseal", "metadata", shortName+".yaml")
-	if _, err := os.Stat(metadataPath); err == nil {
+	if files.MetadataExists(repoPath, shortName) {
 		return fmt.Errorf("secret %q already exists", shortName)
 	}
+	metadataPath := files.MetadataPath(repoPath, shortName)
 
 	// Load config for project ID
 	cfgFile := configPath

@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/shermanhuman/waxseal/internal/config"
 	"github.com/shermanhuman/waxseal/internal/core"
+	"github.com/shermanhuman/waxseal/internal/files"
 	"github.com/shermanhuman/waxseal/internal/reminder"
 	"github.com/spf13/cobra"
 )
@@ -287,36 +288,7 @@ func runRemindersClear(cmd *cobra.Command, args []string) error {
 }
 
 func loadAllMetadata() ([]*core.SecretMetadata, error) {
-	metadataDir := filepath.Join(repoPath, ".waxseal", "metadata")
-	entries, err := os.ReadDir(metadataDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("metadata directory not found: %s", metadataDir)
-		}
-		return nil, fmt.Errorf("read metadata directory: %w", err)
-	}
-
-	var secrets []*core.SecretMetadata
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
-			continue
-		}
-
-		path := filepath.Join(metadataDir, entry.Name())
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil, fmt.Errorf("read %s: %w", path, err)
-		}
-
-		m, err := core.ParseMetadata(data)
-		if err != nil {
-			return nil, fmt.Errorf("parse %s: %w", path, err)
-		}
-
-		secrets = append(secrets, m)
-	}
-
-	return secrets, nil
+	return files.LoadAllMetadata(repoPath)
 }
 
 func hasExpiry(s *core.SecretMetadata) bool {

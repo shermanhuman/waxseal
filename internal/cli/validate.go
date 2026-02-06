@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/shermanhuman/waxseal/internal/config"
-	"github.com/shermanhuman/waxseal/internal/core"
+	"github.com/shermanhuman/waxseal/internal/files"
 	"github.com/shermanhuman/waxseal/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -71,37 +71,18 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Check metadata
-	metadataDir := filepath.Join(repoPath, ".waxseal", "metadata")
-	entries, err := os.ReadDir(metadataDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			fmt.Fprintf(os.Stderr, "ERROR: metadata directory not found: %s\n", metadataDir)
-			os.Exit(2)
-		}
-		return fmt.Errorf("read metadata directory: %w", err)
+	secrets, loadErrs := files.LoadAllMetadataCollectErrors(repoPath)
+	if len(secrets) == 0 && len(loadErrs) > 0 {
+		fmt.Fprintf(os.Stderr, "ERROR: %v\n", loadErrs[0])
+		os.Exit(2)
+	}
+	for _, err := range loadErrs {
+		fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
+		hasErrors = true
 	}
 
 	var secretCount int
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
-			continue
-		}
-
-		path := filepath.Join(metadataDir, entry.Name())
-		data, err := os.ReadFile(path)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "ERROR: read %s: %v\n", path, err)
-			hasErrors = true
-			continue
-		}
-
-		m, err := core.ParseMetadata(data)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "ERROR: invalid metadata %s: %v\n", entry.Name(), err)
-			hasErrors = true
-			continue
-		}
-
+	for _, m := range secrets {
 		// Check manifest exists
 		manifestPath := m.ManifestPath
 		if !filepath.IsAbs(manifestPath) {
@@ -193,18 +174,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		}
 		fmt.Println()
 
-		for _, entry := range entries {
-			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
-				continue
-			}
-
-			path := filepath.Join(metadataDir, entry.Name())
-			data, _ := os.ReadFile(path)
-			m, err := core.ParseMetadata(data)
-			if err != nil {
-				continue
-			}
-
+		for _, m := range secrets {
 			if m.IsRetired() {
 				continue
 			}

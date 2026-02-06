@@ -4,7 +4,6 @@ package reseal
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -45,18 +44,9 @@ type Result struct {
 // ResealOne reseals a single secret by its short name.
 func (e *Engine) ResealOne(ctx context.Context, shortName string) (*Result, error) {
 	// Load metadata
-	metadataPath := filepath.Join(e.repoDir, ".waxseal", "metadata", shortName+".yaml")
-	data, err := os.ReadFile(metadataPath)
+	metadata, err := files.LoadMetadata(e.repoDir, shortName)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, core.WrapNotFound(shortName, err)
-		}
-		return nil, fmt.Errorf("read metadata: %w", err)
-	}
-
-	metadata, err := core.ParseMetadata(data)
-	if err != nil {
-		return nil, fmt.Errorf("parse metadata: %w", err)
+		return nil, err
 	}
 
 	// Check if retired
@@ -69,45 +59,23 @@ func (e *Engine) ResealOne(ctx context.Context, shortName string) (*Result, erro
 
 // ResealAll reseals all active secrets.
 func (e *Engine) ResealAll(ctx context.Context) ([]*Result, error) {
-	metadataDir := filepath.Join(e.repoDir, ".waxseal", "metadata")
-	entries, err := os.ReadDir(metadataDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, core.WrapNotFound(metadataDir, err)
-		}
-		return nil, fmt.Errorf("read metadata directory: %w", err)
+	allSecrets, loadErrs := files.LoadAllMetadataCollectErrors(e.repoDir)
+	if len(allSecrets) == 0 && len(loadErrs) > 0 {
+		// All files failed — likely directory not found
+		return nil, loadErrs[0]
 	}
 
 	var results []*Result
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
-			continue
-		}
 
-		shortName := strings.TrimSuffix(entry.Name(), ".yaml")
+	// Record load errors as results
+	for _, err := range loadErrs {
+		results = append(results, &Result{Error: err})
+	}
 
-		// Check if retired before attempting reseal
-		metadataPath := filepath.Join(metadataDir, entry.Name())
-		data, err := os.ReadFile(metadataPath)
-		if err != nil {
-			results = append(results, &Result{
-				ShortName: shortName,
-				Error:     err,
-			})
-			continue
-		}
-		metadata, err := core.ParseMetadata(data)
-		if err != nil {
-			results = append(results, &Result{
-				ShortName: shortName,
-				Error:     err,
-			})
-			continue
-		}
-
+	for _, metadata := range allSecrets {
 		// Skip retired secrets silently
 		if metadata.IsRetired() {
-			logging.Info("skipping retired secret", "shortName", shortName)
+			logging.Info("skipping retired secret", "shortName", metadata.ShortName)
 			continue
 		}
 
@@ -115,7 +83,7 @@ func (e *Engine) ResealAll(ctx context.Context) ([]*Result, error) {
 		if err != nil {
 			// Record error but continue with other secrets
 			results = append(results, &Result{
-				ShortName: shortName,
+				ShortName: metadata.ShortName,
 				Error:     err,
 			})
 			continue

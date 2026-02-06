@@ -6,10 +6,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 
 	"github.com/shermanhuman/waxseal/internal/config"
-	"github.com/shermanhuman/waxseal/internal/core"
+	"github.com/shermanhuman/waxseal/internal/files"
 	"github.com/shermanhuman/waxseal/internal/logging"
 	"github.com/shermanhuman/waxseal/internal/reseal"
 	"github.com/shermanhuman/waxseal/internal/seal"
@@ -122,26 +121,10 @@ func runReencrypt(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  New:     %s...\n", newFingerprint[:16])
 	fmt.Println()
 
-	// Count secrets
-	metadataDir := filepath.Join(repoPath, ".waxseal", "metadata")
-	entries, err := os.ReadDir(metadataDir)
-	if err != nil {
-		return fmt.Errorf("read metadata directory: %w", err)
-	}
-
+	// Count active secrets
+	allSecrets, _ := files.LoadAllMetadataCollectErrors(repoPath)
 	var activeCount int
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(metadataDir, e.Name()))
-		if err != nil {
-			continue
-		}
-		m, err := core.ParseMetadata(data)
-		if err != nil {
-			continue
-		}
+	for _, m := range allSecrets {
 		if !m.IsRetired() {
 			activeCount++
 		}
