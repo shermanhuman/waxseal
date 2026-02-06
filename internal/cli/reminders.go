@@ -203,7 +203,7 @@ reminders:
 		allErrors = append(allErrors, result.Errors...)
 	}
 
-	fmt.Printf("✓ Created: %d, Updated: %d, Skipped: %d\n",
+	printSuccess("Created: %d, Updated: %d, Skipped: %d",
 		totalCreated, totalUpdated, totalSkipped)
 
 	if len(allErrors) > 0 {
@@ -282,7 +282,7 @@ func runRemindersClear(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	fmt.Printf("✓ Cleared reminders for %s\n", shortName)
+	printSuccess("Cleared reminders for %s", shortName)
 	return nil
 }
 
@@ -417,10 +417,10 @@ func runRemindersList(cmd *cobra.Command, args []string) error {
 
 	fmt.Println()
 	if expiredCount > 0 {
-		fmt.Printf("⚠ %d expired keys require immediate attention\n", expiredCount)
+		printWarning("%d expired keys require immediate attention", expiredCount)
 	}
 	if soonCount > 0 {
-		fmt.Printf("⚠ %d keys expire within 7 days\n", soonCount)
+		printWarning("%d keys expire within 7 days", soonCount)
 	}
 
 	return nil
@@ -614,7 +614,7 @@ func runRemindersSetup(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("write config: %w", err)
 	}
 
-	fmt.Println("✓ Config updated successfully")
+	printSuccess("Config updated successfully")
 	fmt.Println()
 	fmt.Println("Next steps:")
 	fmt.Println("  1. Run 'waxseal reminders sync' to create reminders")

@@ -283,7 +283,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("create GSM version: %w", err)
 	}
-	fmt.Printf("✓ Created new GSM version: %s\n", newVersion)
+	printSuccess("Created new GSM version: %s", newVersion)
 
 	// Update or create metadata for this key
 	if createNewKey {
@@ -305,10 +305,10 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 			}
 		}
 		metadata.Keys = append(metadata.Keys, newKeyMeta)
-		fmt.Printf("✓ Added key %s to metadata\n", keyName)
+		printSuccess("Added key %s to metadata", keyName)
 	} else {
 		keyMeta.GSM.Version = newVersion
-		fmt.Printf("✓ Updated metadata: version %s\n", newVersion)
+		printSuccess("Updated metadata: version %s", newVersion)
 	}
 	metadataYAML := serializeMetadata(metadata)
 	writer := files.NewAtomicWriter()
@@ -362,10 +362,10 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	if err := writer.Write(manifestPath, updatedYAML); err != nil {
 		return fmt.Errorf("write manifest: %w", err)
 	}
-	fmt.Printf("✓ Updated manifest: %s\n", metadata.ManifestPath)
+	printSuccess("Updated manifest: %s", metadata.ManifestPath)
 
 	fmt.Println()
-	fmt.Printf("✓ Key %s/%s updated successfully!\n", shortName, keyName)
+	printSuccess("Key %s/%s updated successfully!", shortName, keyName)
 	fmt.Println()
 	fmt.Println("Next steps:")
 	fmt.Println("  1. Commit the updated files")

@@ -129,18 +129,14 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// ANSI color codes
-	green := "\033[32m"
-	reset := "\033[0m"
-
 	fmt.Printf("\n📦 Found %d SealedSecret manifest(s):\n\n", len(found))
 	for _, ds := range found {
 		shortName := deriveShortName(ds.sealedSecret.Metadata.Namespace, ds.sealedSecret.Metadata.Name)
 		metadataPath := filepath.Join(metadataDir, shortName+".yaml")
 		if _, err := os.Stat(metadataPath); err == nil {
-			fmt.Printf("  %s✓%s %-45s %s[registered]%s\n", green, reset, shortName, green, reset)
+			fmt.Printf("  %s✓%s %-45s %s[registered]%s\n", styleGreen, styleReset, shortName, styleGreen, styleReset)
 		} else {
-			fmt.Printf("  %s✓%s %-45s %s[new]%s\n", green, reset, shortName, green, reset)
+			fmt.Printf("  %s✓%s %-45s %s[new]%s\n", styleGreen, styleReset, shortName, styleGreen, styleReset)
 		}
 		fmt.Printf("      %s\n", ds.path)
 	}
@@ -198,7 +194,7 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("write metadata %s: %w", shortName, err)
 		}
 
-		fmt.Printf("✓ Created: %s\n", metadataPath)
+		printSuccess("Created: %s", metadataPath)
 	}
 
 	fmt.Printf("\nMetadata stubs written to %s\n", metadataDir)
@@ -415,17 +411,13 @@ func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) ([]k
 			projectID = "<PROJECT>"
 		}
 	}
-	// ANSI codes for formatting
-	green := "\033[32m"
-	bold := "\033[1m"
-	dim := "\033[2m"
-	reset := "\033[0m"
 	clearScreen := "\033[H\033[2J" // Move to top-left and clear screen
 
 	// Pause to let user read the info before clearing screen for forms
 	fmt.Println()
-	fmt.Print("Press Enter to start configuring secrets...")
-	fmt.Scanln()
+	if _, err := confirm("Start configuring secrets?"); err != nil {
+		return nil, err
+	}
 
 	// Configure each key
 	for i, keyName := range keys {
@@ -444,13 +436,13 @@ func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) ([]k
 				if configs[j].sourceKind == "templated" {
 					mode = "templated"
 				}
-				fmt.Printf("  %s✓%s %s %s[%s]%s\n", green, reset, k, dim, mode, reset)
+				fmt.Printf("  %s✓%s %s %s[%s]%s\n", styleGreen, styleReset, k, styleDim, mode, styleReset)
 			} else if j == i {
 				// Current - highlighted
-				fmt.Printf("  %s▶ %s%s\n", bold, k, reset)
+				fmt.Printf("  %s▶ %s%s\n", styleBold, k, styleReset)
 			} else {
 				// Pending
-				fmt.Printf("  %s  %s%s\n", dim, k, reset)
+				fmt.Printf("  %s  %s%s\n", styleDim, k, styleReset)
 			}
 		}
 		fmt.Println()
@@ -569,7 +561,7 @@ func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) ([]k
 		if configs[i].sourceKind == "templated" {
 			mode = "templated"
 		}
-		fmt.Printf("  %s✓%s %s %s[%s]%s\n", green, reset, k, dim, mode, reset)
+		fmt.Printf("  %s✓%s %s %s[%s]%s\n", styleGreen, styleReset, k, styleDim, mode, styleReset)
 	}
 	fmt.Println()
 

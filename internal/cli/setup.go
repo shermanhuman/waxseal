@@ -65,8 +65,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		gitDir := filepath.Join(repoPath, ".git")
 		if _, err := os.Stat(gitDir); os.IsNotExist(err) {
 			fmt.Println()
-			fmt.Println("⚠️  Warning: No .git folder found in this directory.")
-			fmt.Println("   WaxSeal should be initialized in the root of your GitOps repository.")
+		printWarning("No .git folder found in this directory.")
 			fmt.Println()
 
 			var continueAnyway bool
@@ -122,9 +121,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	// Handle GCP setup
 	projectID := setupProjectID
 	if projectID == "" && !hasProjectFlag {
-		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		fmt.Println("Step 1/7: GCP Project Setup")
-		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		printStep(1, 7, "GCP Project Setup")
 		fmt.Println()
 
 		// Project setup choice
@@ -269,7 +266,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 				if err == nil {
 					// Success
 					fmt.Println()
-					fmt.Println("✓ GCP Project created and bootstrapped.")
+				printSuccess("GCP Project created and bootstrapped.")
 					fmt.Println("Proceeding with WaxSeal initialization...")
 					fmt.Println()
 					break
@@ -374,13 +371,19 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	// Check billing and enable APIs (for existing project path)
 	if projectID != "" && !hasProjectFlag {
 		// Check if billing is enabled
-		fmt.Printf("\nChecking billing for project %s...\n", projectID)
-		checkCmd := exec.CommandContext(cmd.Context(), "gcloud", "billing", "projects", "describe", projectID, "--format=value(billingAccountName)")
-		output, _ := checkCmd.Output()
-		billingAccount := strings.TrimSpace(string(output))
+		var billingAccount string
+		err := withSpinner(fmt.Sprintf("Checking billing for project %s...", projectID), func() error {
+			checkCmd := exec.CommandContext(cmd.Context(), "gcloud", "billing", "projects", "describe", projectID, "--format=value(billingAccountName)")
+			output, _ := checkCmd.Output()
+			billingAccount = strings.TrimSpace(string(output))
+			return nil
+		})
+		if err != nil {
+			return err
+		}
 
 		if billingAccount == "" {
-			fmt.Println("⚠️  No billing account linked to this project.")
+			printWarning("No billing account linked to this project.")
 			fmt.Println("   Billing is required to enable Secret Manager API.")
 
 			// Get available billing accounts
@@ -409,10 +412,10 @@ func runSetup(cmd *cobra.Command, args []string) error {
 					linkCmd := exec.CommandContext(cmd.Context(), "gcloud", "billing", "projects", "link",
 						projectID, "--billing-account="+billingID)
 					if output, err := linkCmd.CombinedOutput(); err != nil {
-						fmt.Printf("⚠️  Could not link billing: %s\n", string(output))
+						printWarning("Could not link billing: %s", string(output))
 						fmt.Println("   You may need to link billing manually.")
 					} else {
-						fmt.Println("✓ Billing account linked")
+						printSuccess("Billing account linked")
 					}
 				}
 			} else {
@@ -420,19 +423,27 @@ func runSetup(cmd *cobra.Command, args []string) error {
 				fmt.Printf("   https://console.cloud.google.com/billing/linkedaccount?project=%s\n", projectID)
 			}
 		} else {
-			fmt.Printf("✓ Billing enabled (%s)\n", billingAccount)
+			printSuccess("Billing enabled (%s)", billingAccount)
 		}
 
 		// Enable Secret Manager API
-		fmt.Printf("Enabling Secret Manager API for project %s...\n", projectID)
-		enableCmd := exec.CommandContext(cmd.Context(), "gcloud", "services", "enable",
-			"secretmanager.googleapis.com", "--project", projectID)
-		if output, err := enableCmd.CombinedOutput(); err != nil {
-			fmt.Printf("⚠️  Could not enable Secret Manager API: %s\n", string(output))
+		var enableOut []byte
+		var enableErr error
+		err = withSpinner(fmt.Sprintf("Enabling Secret Manager API for project %s...", projectID), func() error {
+			enableCmd := exec.CommandContext(cmd.Context(), "gcloud", "services", "enable",
+				"secretmanager.googleapis.com", "--project", projectID)
+			enableOut, enableErr = enableCmd.CombinedOutput()
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+		if enableErr != nil {
+			printWarning("Could not enable Secret Manager API: %s", string(enableOut))
 			fmt.Println("   You may need to enable it manually at:")
 			fmt.Printf("   https://console.cloud.google.com/apis/library/secretmanager.googleapis.com?project=%s\n", projectID)
 		} else {
-			fmt.Println("✓ Secret Manager API enabled")
+			printSuccess("Secret Manager API enabled")
 		}
 	}
 
@@ -442,16 +453,21 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	// Interactive prompts for controller
 	if !hasProjectFlag {
 		fmt.Println()
-		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		fmt.Println("Step 2/7: Controller Discovery")
-		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		printStep(2, 7, "Controller Discovery")
 		fmt.Println()
 
 		// Attempt to discover controller
-		fmt.Println("Scanning cluster for SealedSecrets controller...")
-		discoveredNS, discoveredName, err := discoverController()
-		if err == nil && discoveredNS != "" {
-			fmt.Printf("✓ Found controller in namespace '%s' (service: '%s')\n", discoveredNS, discoveredName)
+		var discoveredNS, discoveredName string
+		var discoverErr error
+		err := withSpinner("Scanning cluster for SealedSecrets controller...", func() error {
+			discoveredNS, discoveredName, discoverErr = discoverController()
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+		if discoverErr == nil && discoveredNS != "" {
+			printSuccess("Found controller in namespace '%s' (service: '%s')", discoveredNS, discoveredName)
 			controllerNS = discoveredNS
 			controllerName = discoveredName
 		} else {
@@ -522,26 +538,30 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("write .gitkeep: %w", err)
 	}
 
-	fmt.Printf("✓ Created %s\n", configFile)
-	fmt.Printf("✓ Created %s\n", metadataDir)
+	printSuccess("Created %s", configFile)
+	printSuccess("Created %s", metadataDir)
 
 	// Fetch certificate from cluster
 	certPath := filepath.Join(keysDir, "pub-cert.pem")
 	fmt.Println()
-	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Println("Step 3/7: Certificate Fetch")
-	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	printStep(3, 7, "Certificate Fetch")
 	fmt.Println()
-	fmt.Println("Fetching certificate from Sealed Secrets controller...")
 
-	certCmd := exec.Command("kubeseal",
-		"--controller-name="+controllerName,
-		"--controller-namespace="+controllerNS,
-		"--fetch-cert")
-	certOutput, certErr := certCmd.Output()
+	var certOutput []byte
+	var certErr error
+	if err := withSpinner("Fetching certificate from controller...", func() error {
+		c := exec.Command("kubeseal",
+			"--controller-name="+controllerName,
+			"--controller-namespace="+controllerNS,
+			"--fetch-cert")
+		certOutput, certErr = c.Output()
+		return nil
+	}); err != nil {
+		return err
+	}
 
 	if certErr != nil {
-		fmt.Println("⚠️  Could not fetch certificate from cluster.")
+		printWarning("Could not fetch certificate from cluster.")
 		fmt.Println("   This might mean:")
 		fmt.Println("   - kubeseal is not installed")
 		fmt.Println("   - kubectl is not configured")
@@ -559,15 +579,13 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		if err := os.WriteFile(certPath, certOutput, 0o644); err != nil {
 			return fmt.Errorf("write cert: %w", err)
 		}
-		fmt.Printf("✓ Saved certificate to %s\n", certPath)
+		printSuccess("Saved certificate to %s", certPath)
 	}
 
 	// Run discover if interactive
 	if !hasProjectFlag && certErr == nil {
 		fmt.Println()
-		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		fmt.Println("Step 4/7: Secret Discovery")
-		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		printStep(4, 7, "Secret Discovery")
 		fmt.Println()
 		fmt.Println("Looking for existing SealedSecrets...")
 		fmt.Println()
@@ -591,9 +609,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 					Run()
 				if err == nil && doBootstrap {
 					fmt.Println()
-					fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-					fmt.Println("Step 6/7: Bootstrap to GSM")
-					fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+					printStep(6, 7, "Bootstrap to GSM")
 					fmt.Println()
 					fmt.Println("Syncing secrets to GSM...")
 					for _, mf := range metadataFiles {
@@ -603,7 +619,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 						}
 						fmt.Printf("\nBootstrapping %s...\n", shortName)
 						if err := runBootstrap(cmd, []string{shortName}); err != nil {
-							fmt.Printf("⚠️  Could not bootstrap %s: %v\n", shortName, err)
+							printWarning("Could not bootstrap %s: %v", shortName, err)
 							fmt.Println("   You can run 'waxseal bootstrap " + shortName + "' later.")
 						}
 					}
@@ -615,9 +631,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	// Offer reminders setup
 	if !hasProjectFlag && !setupSkipReminders {
 		fmt.Println()
-		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		fmt.Println("Step 7/7: Expiration Reminders (Optional)")
-		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		printStep(7, 7, "Expiration Reminders (Optional)")
 		fmt.Println()
 		fmt.Println("WaxSeal can create automatic reminders for secrets with expiry dates.")
 		fmt.Println()
@@ -751,15 +765,15 @@ func runSetup(cmd *cobra.Command, args []string) error {
 				configFile := filepath.Join(repoPath, ".waxseal", "config.yaml")
 				existingConfig, err := os.ReadFile(configFile)
 				if err != nil {
-					fmt.Printf("⚠️  Could not read config: %v\n", err)
+					printWarning("Could not read config: %v", err)
 				} else if strings.Contains(string(existingConfig), "reminders:") {
-					fmt.Println("⚠️  Config already contains reminders section. Update manually.")
+					printWarning("Config already contains reminders section. Update manually.")
 				} else {
 					newConfig := string(existingConfig) + "\n" + reminderConfig
 					if err := os.WriteFile(configFile, []byte(newConfig), 0o644); err != nil {
-						fmt.Printf("⚠️  Could not update config: %v\n", err)
+						printWarning("Could not update config: %v", err)
 					} else {
-						fmt.Println("✓ Reminders configuration added to config")
+						printSuccess("Reminders configuration added to config")
 					}
 				}
 			} else {
@@ -769,7 +783,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println()
-	fmt.Println("✓ WaxSeal initialization complete!")
+	printSuccess("WaxSeal initialization complete!")
 	fmt.Println()
 	fmt.Println("Next: Run 'waxseal reseal --all' to sync secrets from GSM to your SealedSecrets.")
 

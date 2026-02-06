@@ -265,12 +265,15 @@ func runRotate(cmd *cobra.Command, args []string) error {
 					return fmt.Errorf("parse payload for %s: %w", key.KeyName, err)
 				}
 
-				// Prompt for new secret value
+				// Prompt for new secret value (masked input)
 				fmt.Println("  After updating externally, enter the new secret value:")
-				fmt.Print("  New {{secret}}: ")
 				var newSecret string
 				if !dryRun && !yes {
-					fmt.Scanln(&newSecret)
+					var err error
+					newSecret, err = promptSecret("New {{secret}}")
+					if err != nil {
+						return fmt.Errorf("prompt for secret: %w", err)
+					}
 				}
 
 				if newSecret == "" {
@@ -315,9 +318,15 @@ func runRotate(cmd *cobra.Command, args []string) error {
 			}
 
 			// Regular GSM key - just wait for user to update externally
-			fmt.Println("  Please update the value externally, then press Enter to continue...")
 			if !dryRun && !yes {
-				fmt.Scanln()
+				ok, err := confirm("Have you updated the value externally?")
+				if err != nil {
+					return fmt.Errorf("confirmation: %w", err)
+				}
+				if !ok {
+					fmt.Println("  Skipping")
+					continue
+				}
 			}
 			// For external/manual non-templated, we don't generate - we expect GSM to have been updated
 			// Just increment version reference
@@ -336,12 +345,15 @@ func runRotate(cmd *cobra.Command, args []string) error {
 				displayOperatorHints(key.OperatorHints, key.KeyName)
 			}
 
-			// Prompt for new value
+			// Prompt for new value (masked input)
 			fmt.Println("  Enter the new value for this static secret:")
-			fmt.Print("  New value: ")
 			var inputValue string
 			if !dryRun && !yes {
-				fmt.Scanln(&inputValue)
+				var err error
+				inputValue, err = promptSecret("New value")
+				if err != nil {
+					return fmt.Errorf("prompt for value: %w", err)
+				}
 			}
 
 			if inputValue == "" {
@@ -394,7 +406,8 @@ func runRotate(cmd *cobra.Command, args []string) error {
 		if err := os.WriteFile(metadataPath, []byte(updatedMetadata), 0o644); err != nil {
 			return fmt.Errorf("write metadata: %w", err)
 		}
-		fmt.Printf("\n✓ Updated metadata: %s\n", metadataPath)
+		fmt.Printf("\n")
+		printSuccess("Updated metadata: %s", metadataPath)
 	}
 
 	// Reseal
@@ -416,9 +429,9 @@ func runRotate(cmd *cobra.Command, args []string) error {
 	}
 
 	if result.DryRun {
-		fmt.Printf("✓ Would reseal %d keys [DRY RUN]\n", result.KeysResealed)
+		printSuccess("Would reseal %d keys [DRY RUN]", result.KeysResealed)
 	} else {
-		fmt.Printf("✓ Resealed %d keys\n", result.KeysResealed)
+		printSuccess("Resealed %d keys", result.KeysResealed)
 		// Record rotation in state
 		if err := recordRotateState(shortName, keyName); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to update state: %v\n", err)

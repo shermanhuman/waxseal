@@ -102,13 +102,14 @@ func bootstrapAll(ctx context.Context) error {
 	for _, shortName := range secrets {
 		fmt.Printf("Bootstrapping %s...\n", shortName)
 		if err := bootstrapOne(ctx, shortName); err != nil {
-			fmt.Printf("⚠️  %s: %v\n", shortName, err)
+			printWarning("%s: %v", shortName, err)
 		} else {
 			successCount++
 		}
 	}
 
-	fmt.Printf("\n✓ Bootstrap complete: %d/%d secrets\n", successCount, len(secrets))
+	fmt.Println()
+	printSuccess("Bootstrap complete: %d/%d secrets", successCount, len(secrets))
 	return nil
 }
 
@@ -178,7 +179,7 @@ func bootstrapOne(ctx context.Context, shortName string) error {
 	}
 
 	if len(missingInCluster) > 0 {
-		fmt.Printf("  ⚠️  Keys in metadata but NOT in cluster: %v\n", missingInCluster)
+		printWarning("Keys in metadata but NOT in cluster: %v", missingInCluster)
 		fmt.Println("     These keys will be skipped. Remove them from metadata or add to cluster.")
 	}
 	if len(extraInCluster) > 0 {
@@ -295,7 +296,7 @@ func bootstrapOne(ctx context.Context, shortName string) error {
 		if err != nil {
 			return fmt.Errorf("push %s to GSM: %w", k.keyName, err)
 		}
-		fmt.Printf("  ✓ %s (v%s)\n", k.keyName, version)
+		fmt.Printf("  %s✓%s %s (v%s)\n", styleGreen, styleReset, k.keyName, version)
 
 		// Update metadata
 		found := false

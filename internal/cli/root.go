@@ -2,7 +2,6 @@
 package cli
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -56,12 +55,6 @@ Built:  ` + BuildDate + `
 `)
 }
 
-// ANSI color codes
-const (
-	colorRed   = "\033[31m"
-	colorReset = "\033[0m"
-)
-
 // Execute runs the root command.
 func Execute() error {
 	// Disable Cobra's default error printing
@@ -70,7 +63,7 @@ func Execute() error {
 	err := rootCmd.Execute()
 	if err != nil {
 		// Print error with red color and proper spacing
-		fmt.Fprintf(os.Stderr, "\n%sError: %s%s\n\n", colorRed, err.Error(), colorReset)
+		fmt.Fprintf(os.Stderr, "\n%sError: %s%s\n\n", styleRed, err.Error(), styleReset)
 	}
 	return err
 }
@@ -118,14 +111,11 @@ func checkMetadataExists(cmd *cobra.Command) (bool, error) {
 		}
 
 		// Prompt user
-		fmt.Fprintln(os.Stderr, "Would you like to discover existing SealedSecrets?")
-		fmt.Fprint(os.Stderr, "Run 'waxseal discover'? [y/N]: ")
-
-		reader := bufio.NewReader(os.Stdin)
-		input, _ := reader.ReadString('\n')
-		input = strings.TrimSpace(strings.ToLower(input))
-
-		if input == "y" || input == "yes" {
+		ok, err := confirm("Run 'waxseal discover' to find existing SealedSecrets?")
+		if err != nil {
+			return false, err
+		}
+		if ok {
 			return runDiscoverNonInteractive()
 		}
 

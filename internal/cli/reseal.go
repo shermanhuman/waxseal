@@ -105,9 +105,9 @@ func runResealOne(ctx context.Context, engine *reseal.Engine, shortName string) 
 	}
 
 	if result.DryRun {
-		fmt.Printf("✓ %s: would reseal %d keys [DRY RUN]\n", result.ShortName, result.KeysResealed)
+		printSuccess("%s: would reseal %d keys [DRY RUN]", result.ShortName, result.KeysResealed)
 	} else {
-		fmt.Printf("✓ %s: resealed %d keys\n", result.ShortName, result.KeysResealed)
+		printSuccess("%s: resealed %d keys", result.ShortName, result.KeysResealed)
 		// Record in state
 		if err := recordResealState(result.ShortName); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to update state: %v\n", err)
@@ -127,13 +127,13 @@ func runResealAll(ctx context.Context, engine *reseal.Engine) error {
 	var successNames []string
 	for _, r := range results {
 		if r.Error != nil {
-			fmt.Fprintf(os.Stderr, "✗ %s: %v\n", r.ShortName, r.Error)
+			printError("%s: %v", r.ShortName, r.Error)
 			failCount++
 		} else if r.DryRun {
-			fmt.Printf("✓ %s: would reseal %d keys [DRY RUN]\n", r.ShortName, r.KeysResealed)
+			printSuccess("%s: would reseal %d keys [DRY RUN]", r.ShortName, r.KeysResealed)
 			successCount++
 		} else {
-			fmt.Printf("✓ %s: resealed %d keys\n", r.ShortName, r.KeysResealed)
+			printSuccess("%s: resealed %d keys", r.ShortName, r.KeysResealed)
 			successCount++
 			successNames = append(successNames, r.ShortName)
 		}

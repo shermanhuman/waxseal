@@ -66,7 +66,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(os.Stderr, "ERROR: invalid config: %v\n", err)
 			hasErrors = true
 		} else {
-			fmt.Printf("✓ Config valid: %s\n", configFile)
+			printSuccess("Config valid: %s", configFile)
 		}
 	}
 
@@ -160,7 +160,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		secretCount++
 	}
 
-	fmt.Printf("✓ Validated %d secrets\n", secretCount)
+	printSuccess("Validated %d secrets", secretCount)
 
 	// Cluster validation (if --cluster flag set)
 	if validateCluster || validateGSM {
@@ -249,7 +249,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 						hasWarnings = true
 					}
 					if len(missingInCluster) == 0 && len(extraInCluster) == 0 {
-						fmt.Printf("  ✓ %s: cluster matches metadata (%d keys)\n", m.ShortName, len(clusterData))
+						fmt.Printf("  %s✓%s %s: cluster matches metadata (%d keys)\n", styleGreen, styleReset, m.ShortName, len(clusterData))
 					}
 				}
 			}

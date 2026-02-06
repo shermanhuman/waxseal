@@ -227,7 +227,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("create GSM secret %s: %w", k.keyName, err)
 		}
-		fmt.Printf("✓ Created GSM secret: %s (version %s)\n", k.keyName, version)
+		printSuccess("Created GSM secret: %s (version %s)", k.keyName, version)
 
 		keyMetadata = append(keyMetadata, core.KeyMetadata{
 			KeyName: k.keyName,
@@ -264,7 +264,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	if err := writer.Write(metadataPath, []byte(metadataYAML)); err != nil {
 		return fmt.Errorf("write metadata: %w", err)
 	}
-	fmt.Printf("✓ Created metadata: %s\n", metadataPath)
+	printSuccess("Created metadata: %s", metadataPath)
 
 	// Create SealedSecret manifest
 	manifestFullPath := filepath.Join(repoPath, manifestPath)
@@ -297,10 +297,10 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	if err := writer.Write(manifestFullPath, sealed); err != nil {
 		return fmt.Errorf("write manifest: %w", err)
 	}
-	fmt.Printf("✓ Created manifest: %s\n", manifestFullPath)
+	printSuccess("Created manifest: %s", manifestFullPath)
 
 	fmt.Println()
-	fmt.Printf("✓ Secret %s created successfully!\n", shortName)
+	printSuccess("Secret %s created successfully!", shortName)
 	fmt.Println()
 	fmt.Println("Next steps:")
 	fmt.Printf("  1. Commit the new files: git add %s %s\n", metadataPath, manifestPath)

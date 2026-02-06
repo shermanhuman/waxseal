@@ -87,6 +87,8 @@ waxseal reseal --all --dry-run
 | ----------------- | ---------------------------------------------------- |
 | `setup`           | Interactive setup wizard for a GitOps repository     |
 | `discover`        | Find SealedSecrets and create metadata stubs         |
+| `add`             | Create a new secret (GSM + metadata + manifest)      |
+| `update`          | Update a secret key's value                          |
 | `list`            | List registered secrets with status and expiry       |
 | `validate`        | Validate repo and metadata consistency (CI-friendly) |
 | `reseal`          | Reseal secrets from GSM to SealedSecret manifests    |
@@ -96,8 +98,8 @@ waxseal reseal --all --dry-run
 | `bootstrap`       | Push existing cluster secrets to GSM                 |
 | `cert-check`      | Check sealing certificate expiry                     |
 | `gcp bootstrap`   | Set up GCP infrastructure for WaxSeal                |
-| `reminders sync`  | Sync expiry reminders to Google Calendar             |
-| `reminders clear` | Remove calendar reminders for a secret               |
+| `reminders sync`  | Sync expiry reminders to calendar/tasks              |
+| `reminders clear` | Remove reminders for a secret                        |
 | `reminders list`  | List secrets with upcoming expiry                    |
 | `reminders setup` | Configure reminder settings                          |
 
@@ -135,11 +137,12 @@ discovery:
   excludeGlobs:
     - "**/kustomization.yaml"
 
-# Optional: Google Calendar reminders for expiry
+# Optional: Expiry reminders (tasks, calendar, both, none)
 reminders:
   enabled: true
-  provider: google-calendar
-  calendarId: primary
+  provider: tasks
+  # tasklistId: "@default"    # Optional for tasks provider
+  # calendarId: primary       # Only needed for calendar/both provider
   leadTimeDays: [30, 7, 1]
   auth:
     kind: adc
@@ -210,7 +213,7 @@ keys:
 | ----------- | ----------------------------------- | --------------------------------- |
 | `generated` | Auto-generate new value on rotate   | API keys, passwords, tokens       |
 | `external`  | Manual update, waxseal reseals      | OAuth secrets, third-party tokens |
-| `manual`    | Operator updates in external system | Legacy systems                    |
+| `static`    | Operator provides value at rotation | Legacy systems, shared secrets    |
 
 ### Rotating Secrets
 

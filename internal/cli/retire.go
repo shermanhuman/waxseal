@@ -112,7 +112,7 @@ func runRetire(cmd *cobra.Command, args []string) error {
 	if err := writer.Write(metadataPath, []byte(updatedYAML)); err != nil {
 		return fmt.Errorf("write metadata: %w", err)
 	}
-	fmt.Printf("✓ Marked %q as retired\n", shortName)
+	printSuccess("Marked %q as retired", shortName)
 
 	// Record in state
 	if err := recordRetireState(shortName, retireReason, retireReplacedBy); err != nil {
@@ -130,7 +130,7 @@ func runRetire(cmd *cobra.Command, args []string) error {
 			if err := os.Remove(manifestPath); err != nil {
 				return fmt.Errorf("delete manifest: %w", err)
 			}
-			fmt.Printf("✓ Deleted manifest: %s\n", metadata.ManifestPath)
+			printSuccess("Deleted manifest: %s", metadata.ManifestPath)
 		} else if os.IsNotExist(err) {
 			fmt.Printf("  Manifest already deleted: %s\n", metadata.ManifestPath)
 		}

@@ -93,11 +93,14 @@ func runReencrypt(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Using certificate from: %s\n", reencryptNewCert)
 	} else {
 		// Fetch from cluster
-		newCertData, err = fetchCertFromCluster(ctx)
+		err = withSpinner("Fetching certificate from cluster...", func() error {
+			newCertData, err = fetchCertFromCluster(ctx)
+			return err
+		})
 		if err != nil {
 			return fmt.Errorf("fetch certificate from cluster: %w", err)
 		}
-		fmt.Println("Fetched certificate from cluster")
+		printSuccess("Fetched certificate from cluster")
 	}
 
 	// Create sealer from new cert to get fingerprint
@@ -152,10 +155,11 @@ func runReencrypt(cmd *cobra.Command, args []string) error {
 	}
 
 	if !yes {
-		fmt.Print("\nProceed with re-encryption? [y/N]: ")
-		var confirm string
-		fmt.Scanln(&confirm)
-		if strings.ToLower(confirm) != "y" && strings.ToLower(confirm) != "yes" {
+		ok, err := confirm("Proceed with re-encryption?")
+		if err != nil {
+			return err
+		}
+		if !ok {
 			fmt.Println("Aborted.")
 			return nil
 		}
@@ -165,7 +169,7 @@ func runReencrypt(cmd *cobra.Command, args []string) error {
 	if err := os.WriteFile(currentCertPath, newCertData, 0o644); err != nil {
 		return fmt.Errorf("write certificate: %w", err)
 	}
-	fmt.Printf("✓ Updated certificate at %s\n", cfg.Cert.RepoCertPath)
+	printSuccess("Updated certificate at %s", cfg.Cert.RepoCertPath)
 
 	// Create store
 	var secretStore store.Store
@@ -191,23 +195,21 @@ func runReencrypt(cmd *cobra.Command, args []string) error {
 	var successCount, failCount int
 	for _, r := range results {
 		if r.Error != nil {
-			fmt.Fprintf(os.Stderr, "✗ %s: %v\n", r.ShortName, r.Error)
+			printError("%s: %v", r.ShortName, r.Error)
 			failCount++
 		} else {
-			fmt.Printf("✓ %s: re-encrypted %d keys\n", r.ShortName, r.KeysResealed)
+			printSuccess("%s: re-encrypted %d keys", r.ShortName, r.KeysResealed)
 			successCount++
 		}
 	}
 
-	fmt.Printf("\n✓ Re-encrypted %d secrets", successCount)
-	if failCount > 0 {
-		fmt.Printf(", %d failed", failCount)
-	}
 	fmt.Println()
-
 	if failCount > 0 {
+		printWarning("Re-encrypted %d secrets, %d failed", successCount, failCount)
 		logging.Warn("some secrets failed to re-encrypt", "failed", failCount)
 		os.Exit(1)
+	} else {
+		printSuccess("Re-encrypted %d secrets", successCount)
 	}
 
 	fmt.Println("\nNext steps:")

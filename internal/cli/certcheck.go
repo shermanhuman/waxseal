@@ -100,7 +100,7 @@ func runCertCheck(cmd *cobra.Command, args []string) error {
 	}
 
 	if sealer.ExpiresWithinDays(certCheckWarnDays) {
-		fmt.Printf("⚠ EXPIRING SOON\n")
+		printWarning("EXPIRING SOON")
 		fmt.Printf("Certificate expires in %d days\n", daysUntil)
 		fmt.Println("\nRecommended actions:")
 		fmt.Println("  1. Plan certificate rotation before expiry")
@@ -112,7 +112,7 @@ func runCertCheck(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	fmt.Printf("✓ VALID\n")
+	printSuccess("VALID")
 	fmt.Printf("Certificate is valid for %d more days\n", daysUntil)
 	return nil
 }

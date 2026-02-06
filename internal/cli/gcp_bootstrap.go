@@ -236,7 +236,7 @@ func runGCPBootstrap(cmd *cobra.Command, args []string) error {
 				// If it's an "already exists" error (local idempotency), we can proceed
 				// "Project '...' already exists." -> We likely own it.
 				if strings.Contains(errMsg, "already exists") {
-					fmt.Printf("✓ %s (already done)\n", c.desc)
+					printSuccess("%s (already done)", c.desc)
 				} else if strings.Contains(errMsg, "already in use") {
 					// "Project ID ... is already in use by another project." -> Global conflict.
 					// We return a specific error so init.go can handle it.
@@ -246,7 +246,7 @@ func runGCPBootstrap(cmd *cobra.Command, args []string) error {
 					return fmt.Errorf("step '%s' failed: %v", c.desc, runErr)
 				}
 			} else {
-				fmt.Printf("✓ %s\n", c.desc)
+				printSuccess("%s", c.desc)
 			}
 		}
 	}
@@ -255,7 +255,7 @@ func runGCPBootstrap(cmd *cobra.Command, args []string) error {
 	if dryRun {
 		fmt.Println("[DRY RUN] Would complete GCP bootstrap")
 	} else {
-		fmt.Printf("✓ GCP bootstrap complete for project %s\n", gcpProjectID)
+		printSuccess("GCP bootstrap complete for project %s", gcpProjectID)
 		fmt.Println()
 		fmt.Println("Next steps:")
 		fmt.Printf("  1. Run 'waxseal setup --project-id %s'\n", gcpProjectID)
@@ -285,7 +285,7 @@ Please install the Google Cloud SDK:
 func CheckKubesealInstalled() error {
 	_, err := exec.LookPath("kubeseal")
 	if err != nil {
-		fmt.Println("⚠ Warning: 'kubeseal' CLI not found in PATH.")
+		printWarning("'kubeseal' CLI not found in PATH.")
 		fmt.Println("  WaxSeal requires 'kubeseal' to encrypt secrets for Kubernetes.")
 		fmt.Println("  Install it from: https://github.com/bitnami-labs/sealed-secrets/releases")
 		fmt.Println()
@@ -312,12 +312,12 @@ func EnsureGcloudADC(scopes ...string) error {
 			fmt.Println("WaxSeal needs these credentials to talk to Secret Manager.")
 		}
 
-		fmt.Print("Run 'gcloud auth application-default login' now? [Y/n]: ")
-		var response string
-		fmt.Scanln(&response)
-
-		if response != "" && strings.ToLower(response) != "y" && strings.ToLower(response) != "yes" {
-			fmt.Println("  ⚠ Warning: Without ADC, 'reseal' and 'rotate' will fail unless GOOGLE_APPLICATION_CREDENTIALS is set.")
+		ok, err := confirm("Run 'gcloud auth application-default login' now?")
+		if err != nil {
+			return err
+		}
+		if !ok {
+			printWarning("Without ADC, 'reseal' and 'rotate' will fail unless GOOGLE_APPLICATION_CREDENTIALS is set.")
 			return nil
 		}
 
@@ -342,7 +342,7 @@ func EnsureGcloudADC(scopes ...string) error {
 		}
 
 		if err := runGcloud(args...); err != nil {
-			fmt.Printf("  ⚠ ADC login failed: %v\n", err)
+			printWarning("ADC login failed: %v", err)
 		}
 	}
 	return nil
@@ -360,17 +360,17 @@ func EnsureGcloudAuth() error {
 		}
 
 		fmt.Println("GCP credentials not found. WaxSeal requires an active gcloud account.")
-		fmt.Print("Run 'gcloud auth login' now? [Y/n]: ")
-		var response string
-		fmt.Scanln(&response)
-
-		if response != "" && strings.ToLower(response) != "y" && strings.ToLower(response) != "yes" {
+		ok, err := confirm("Run 'gcloud auth login' now?")
+		if err != nil {
+			return err
+		}
+		if !ok {
 			return fmt.Errorf("gcloud authentication required to continue")
 		}
 
 		fmt.Println("Running 'gcloud auth login'...")
 		if err := runGcloud("auth", "login"); err != nil {
-			fmt.Printf("  ⚠ gcloud login failed: %v\n", err)
+			printWarning("gcloud login failed: %v", err)
 			fmt.Println("Please try again or authenticate manually.")
 			continue
 		}
