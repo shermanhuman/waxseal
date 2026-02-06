@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shermanhuman/waxseal/internal/config"
 	"github.com/shermanhuman/waxseal/internal/files"
 	"github.com/shermanhuman/waxseal/internal/store"
 	"github.com/spf13/cobra"
@@ -146,13 +145,9 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	// Cluster validation (if --cluster flag set)
 	if validateCluster || validateGSM {
 		// Load config for GSM
-		cfgFile := configPath
-		if !filepath.IsAbs(cfgFile) {
-			cfgFile = filepath.Join(repoPath, cfgFile)
-		}
-		cfg, err := config.Load(cfgFile)
+		cfg, err := resolveConfig()
 		if err != nil {
-			return fmt.Errorf("load config: %w", err)
+			return err
 		}
 
 		ctx := context.Background()

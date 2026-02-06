@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/huh"
-	"github.com/shermanhuman/waxseal/internal/config"
+
 	"github.com/shermanhuman/waxseal/internal/seal"
 	"github.com/shermanhuman/waxseal/internal/store"
 	tmpl "github.com/shermanhuman/waxseal/internal/template"
@@ -46,14 +46,9 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("create metadata directory: %w", err)
 	}
 
-	// Load config to get project ID
-	configFile := configPath
-	if !filepath.IsAbs(configFile) {
-		configFile = filepath.Join(repoPath, configFile)
-	}
-
+	// Load config to get project ID (optional — may not exist yet)
 	var projectID string
-	cfg, err := config.Load(configFile)
+	cfg, err := resolveConfig()
 	if err == nil && cfg.Store.ProjectID != "" {
 		projectID = cfg.Store.ProjectID
 	}

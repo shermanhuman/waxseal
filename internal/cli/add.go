@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/huh"
-	"github.com/shermanhuman/waxseal/internal/config"
 	"github.com/shermanhuman/waxseal/internal/core"
 	"github.com/shermanhuman/waxseal/internal/files"
 	"github.com/shermanhuman/waxseal/internal/seal"
@@ -87,13 +86,9 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	metadataPath := files.MetadataPath(repoPath, shortName)
 
 	// Load config for project ID
-	cfgFile := configPath
-	if !filepath.IsAbs(cfgFile) {
-		cfgFile = filepath.Join(repoPath, cfgFile)
-	}
-	cfg, err := config.Load(cfgFile)
+	cfg, err := resolveConfig()
 	if err != nil {
-		return fmt.Errorf("load config (run 'waxseal setup' first): %w", err)
+		return fmt.Errorf("run 'waxseal setup' first: %w", err)
 	}
 
 	// Collect input (interactive or flags)
@@ -208,11 +203,11 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create GSM secrets
-	gsmStore, err := store.NewGSMStore(ctx, cfg.Store.ProjectID)
+	gsmStore, closeStore, err := resolveStore(ctx, cfg)
 	if err != nil {
-		return fmt.Errorf("create GSM store: %w", err)
+		return err
 	}
-	defer gsmStore.Close()
+	defer closeStore()
 
 	// Build lookup for rotation config per key
 	keysByName := make(map[string]addKeyInput, len(keys))
@@ -270,8 +265,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	os.MkdirAll(filepath.Dir(manifestFullPath), 0o755)
 
 	// Use kubeseal binary for encryption (guarantees controller compatibility)
-	certPath := filepath.Join(repoPath, cfg.Cert.RepoCertPath)
-	sealer := seal.NewKubesealSealer(certPath)
+	sealer := resolveSealer(cfg)
 
 	// Seal each key and build SealedSecret
 	encryptedData := make(map[string]string)

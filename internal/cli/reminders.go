@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/charmbracelet/huh"
-	"github.com/shermanhuman/waxseal/internal/config"
 	"github.com/shermanhuman/waxseal/internal/core"
 	"github.com/shermanhuman/waxseal/internal/files"
 	"github.com/shermanhuman/waxseal/internal/reminder"
@@ -88,13 +87,9 @@ func runRemindersSync(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
 	// Load config
-	configFile := configPath
-	if !filepath.IsAbs(configFile) {
-		configFile = filepath.Join(repoPath, configFile)
-	}
-	cfg, err := config.Load(configFile)
+	cfg, err := resolveConfig()
 	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+		return err
 	}
 
 	// Check if reminders are enabled
@@ -222,13 +217,9 @@ func runRemindersClear(cmd *cobra.Command, args []string) error {
 	shortName := args[0]
 
 	// Load config
-	configFile := configPath
-	if !filepath.IsAbs(configFile) {
-		configFile = filepath.Join(repoPath, configFile)
-	}
-	cfg, err := config.Load(configFile)
+	cfg, err := resolveConfig()
 	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+		return err
 	}
 
 	if cfg.Reminders == nil || !cfg.Reminders.Enabled {

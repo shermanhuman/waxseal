@@ -6,16 +6,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
-	"github.com/shermanhuman/waxseal/internal/config"
 	"github.com/shermanhuman/waxseal/internal/core"
 	"github.com/shermanhuman/waxseal/internal/files"
 	"github.com/shermanhuman/waxseal/internal/reseal"
-	"github.com/shermanhuman/waxseal/internal/seal"
 	"github.com/shermanhuman/waxseal/internal/state"
-	"github.com/shermanhuman/waxseal/internal/store"
 	"github.com/shermanhuman/waxseal/internal/template"
 	"github.com/spf13/cobra"
 )
@@ -77,13 +73,9 @@ func runRotate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Load config
-	configFile := configPath
-	if !filepath.IsAbs(configFile) {
-		configFile = filepath.Join(repoPath, configFile)
-	}
-	cfg, err := config.Load(configFile)
+	cfg, err := resolveConfig()
 	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+		return err
 	}
 
 	// Load metadata
@@ -98,17 +90,11 @@ func runRotate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create store
-	var secretStore store.Store
-	if cfg.Store.Kind == "gsm" {
-		gsmStore, err := store.NewGSMStore(ctx, cfg.Store.ProjectID)
-		if err != nil {
-			return fmt.Errorf("create GSM store: %w", err)
-		}
-		defer gsmStore.Close()
-		secretStore = gsmStore
-	} else {
-		return fmt.Errorf("unsupported store kind: %s", cfg.Store.Kind)
+	secretStore, closeStore, err := resolveStore(ctx, cfg)
+	if err != nil {
+		return err
 	}
+	defer closeStore()
 
 	// Find keys to rotate
 	var keysToRotate []core.KeyMetadata
@@ -407,12 +393,8 @@ func runRotate(cmd *cobra.Command, args []string) error {
 	// Reseal
 	fmt.Println("\nResealing...")
 
-	certPath := cfg.Cert.RepoCertPath
-	if !filepath.IsAbs(certPath) {
-		certPath = filepath.Join(repoPath, certPath)
-	}
 	// Use kubeseal binary for encryption (guarantees controller compatibility)
-	sealer := seal.NewKubesealSealer(certPath)
+	sealer := resolveSealer(cfg)
 
 	engine := reseal.NewEngine(secretStore, sealer, repoPath, dryRun)
 	result, err := engine.ResealOne(ctx, shortName)
@@ -435,12 +417,9 @@ func runRotate(cmd *cobra.Command, args []string) error {
 
 // recordRotateState adds a rotation record to state.yaml.
 func recordRotateState(shortName, keyName string) error {
-	s, err := state.Load(repoPath)
-	if err != nil {
-		return err
-	}
-	s.AddRotation(shortName, keyName, "rotate", "")
-	return s.Save(repoPath)
+	return withState(func(s *state.State) {
+		s.AddRotation(shortName, keyName, "rotate", "")
+	})
 }
 
 func generateValue(gen *core.GeneratorConfig) ([]byte, error) {

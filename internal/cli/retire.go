@@ -150,10 +150,7 @@ func runRetire(cmd *cobra.Command, args []string) error {
 
 // recordRetireState adds a retirement record to state.yaml.
 func recordRetireState(shortName, reason, replacedBy string) error {
-	s, err := state.Load(repoPath)
-	if err != nil {
-		return err
-	}
-	s.AddRetirement(shortName, reason, replacedBy)
-	return s.Save(repoPath)
+	return withState(func(s *state.State) {
+		s.AddRetirement(shortName, reason, replacedBy)
+	})
 }

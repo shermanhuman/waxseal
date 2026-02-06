@@ -6,9 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os/exec"
-	"path/filepath"
 
-	"github.com/shermanhuman/waxseal/internal/config"
 	"github.com/shermanhuman/waxseal/internal/core"
 	"github.com/shermanhuman/waxseal/internal/files"
 	"github.com/shermanhuman/waxseal/internal/store"
@@ -112,14 +110,9 @@ func bootstrapOne(ctx context.Context, shortName string) error {
 	}
 
 	// Load config
-	configFile := configPath
-	if !filepath.IsAbs(configFile) {
-		configFile = filepath.Join(repoPath, configFile)
-	}
-
-	cfg, err := config.Load(configFile)
+	cfg, err := resolveConfig()
 	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+		return err
 	}
 
 	// Read secret from cluster
@@ -203,11 +196,11 @@ func bootstrapOne(ctx context.Context, shortName string) error {
 	}
 
 	// Create GSM store
-	gsmStore, err := store.NewGSMStore(ctx, cfg.Store.ProjectID)
+	gsmStore, closeStore, err := resolveStore(ctx, cfg)
 	if err != nil {
-		return fmt.Errorf("create GSM store: %w", err)
+		return err
 	}
-	defer gsmStore.Close()
+	defer closeStore()
 
 	// Push each key to GSM
 	for _, k := range keysToPush {

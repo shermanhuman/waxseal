@@ -5,14 +5,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 
-	"github.com/shermanhuman/waxseal/internal/config"
 	"github.com/shermanhuman/waxseal/internal/files"
 	"github.com/shermanhuman/waxseal/internal/logging"
 	"github.com/shermanhuman/waxseal/internal/reseal"
 	"github.com/shermanhuman/waxseal/internal/seal"
-	"github.com/shermanhuman/waxseal/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -58,21 +55,13 @@ func runReencrypt(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
 	// Load config
-	configFile := configPath
-	if !filepath.IsAbs(configFile) {
-		configFile = filepath.Join(repoPath, configFile)
-	}
-
-	cfg, err := config.Load(configFile)
+	cfg, err := resolveConfig()
 	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+		return err
 	}
 
 	// Get current certificate path
-	currentCertPath := cfg.Cert.RepoCertPath
-	if !filepath.IsAbs(currentCertPath) {
-		currentCertPath = filepath.Join(repoPath, currentCertPath)
-	}
+	currentCertPath := resolveCertPath(cfg)
 
 	// Load current certificate fingerprint
 	currentSealer, err := seal.NewCertSealerFromFile(currentCertPath)
@@ -155,17 +144,11 @@ func runReencrypt(cmd *cobra.Command, args []string) error {
 	printSuccess("Updated certificate at %s", cfg.Cert.RepoCertPath)
 
 	// Create store
-	var secretStore store.Store
-	if cfg.Store.Kind == "gsm" {
-		gsmStore, err := store.NewGSMStore(ctx, cfg.Store.ProjectID)
-		if err != nil {
-			return fmt.Errorf("create GSM store: %w", err)
-		}
-		defer gsmStore.Close()
-		secretStore = gsmStore
-	} else {
-		return fmt.Errorf("unsupported store kind: %s", cfg.Store.Kind)
+	secretStore, closeStore, err := resolveStore(ctx, cfg)
+	if err != nil {
+		return err
 	}
+	defer closeStore()
 
 	// Re-seal all secrets with new certificate using kubeseal binary
 	kubesealer := seal.NewKubesealSealer(currentCertPath)

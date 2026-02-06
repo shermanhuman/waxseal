@@ -4,13 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 
-	"github.com/shermanhuman/waxseal/internal/config"
 	"github.com/shermanhuman/waxseal/internal/reseal"
-	"github.com/shermanhuman/waxseal/internal/seal"
 	"github.com/shermanhuman/waxseal/internal/state"
-	"github.com/shermanhuman/waxseal/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -51,36 +47,20 @@ func runReseal(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
 	// Load config
-	configFile := configPath
-	if !filepath.IsAbs(configFile) {
-		configFile = filepath.Join(repoPath, configFile)
-	}
-
-	cfg, err := config.Load(configFile)
+	cfg, err := resolveConfig()
 	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+		return err
 	}
 
 	// Create store
-	var secretStore store.Store
-	if cfg.Store.Kind == "gsm" {
-		gsmStore, err := store.NewGSMStore(ctx, cfg.Store.ProjectID)
-		if err != nil {
-			return fmt.Errorf("create GSM store: %w", err)
-		}
-		defer gsmStore.Close()
-		secretStore = gsmStore
-	} else {
-		return fmt.Errorf("unsupported store kind: %s", cfg.Store.Kind)
+	secretStore, closeStore, err := resolveStore(ctx, cfg)
+	if err != nil {
+		return err
 	}
+	defer closeStore()
 
 	// Create sealer using kubeseal binary for guaranteed controller compatibility
-	certPath := cfg.Cert.RepoCertPath
-	if !filepath.IsAbs(certPath) {
-		certPath = filepath.Join(repoPath, certPath)
-	}
-
-	sealer := seal.NewKubesealSealer(certPath)
+	sealer := resolveSealer(cfg)
 
 	fmt.Printf("Using certificate: %s (kubeseal binary)\n", cfg.Cert.RepoCertPath)
 
@@ -164,22 +144,16 @@ func runResealAll(ctx context.Context, engine *reseal.Engine) error {
 
 // recordResealState adds a reseal record to state.yaml.
 func recordResealState(shortName string) error {
-	s, err := state.Load(repoPath)
-	if err != nil {
-		return err
-	}
-	s.AddRotation(shortName, "", "reseal", "")
-	return s.Save(repoPath)
+	return withState(func(s *state.State) {
+		s.AddRotation(shortName, "", "reseal", "")
+	})
 }
 
 // recordResealStateAll records multiple reseals in a single state update.
 func recordResealStateAll(shortNames []string) error {
-	s, err := state.Load(repoPath)
-	if err != nil {
-		return err
-	}
-	for _, name := range shortNames {
-		s.AddRotation(name, "", "reseal", "")
-	}
-	return s.Save(repoPath)
+	return withState(func(s *state.State) {
+		for _, name := range shortNames {
+			s.AddRotation(name, "", "reseal", "")
+		}
+	})
 }

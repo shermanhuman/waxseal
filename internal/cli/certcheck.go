@@ -3,9 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
-	"github.com/shermanhuman/waxseal/internal/config"
 	"github.com/shermanhuman/waxseal/internal/seal"
 	"github.com/spf13/cobra"
 )
@@ -53,21 +51,13 @@ func init() {
 
 func runCertCheck(cmd *cobra.Command, args []string) error {
 	// Load config
-	configFile := configPath
-	if !filepath.IsAbs(configFile) {
-		configFile = filepath.Join(repoPath, configFile)
-	}
-
-	cfg, err := config.Load(configFile)
+	cfg, err := resolveConfig()
 	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+		return err
 	}
 
 	// Get certificate path
-	certPath := cfg.Cert.RepoCertPath
-	if !filepath.IsAbs(certPath) {
-		certPath = filepath.Join(repoPath, certPath)
-	}
+	certPath := resolveCertPath(cfg)
 
 	// Load certificate
 	sealer, err := seal.NewCertSealerFromFile(certPath)
