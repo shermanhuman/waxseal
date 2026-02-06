@@ -2,8 +2,6 @@ package cli
 
 import (
 	"bufio"
-	"crypto/rand"
-	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -204,12 +202,11 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	// Get new value
 	var newValue []byte
 	if updateGenerateRandom {
-		bytes := make([]byte, updateRandomLength)
-		if _, err := rand.Read(bytes); err != nil {
+		var err error
+		newValue, err = core.GenerateValue(&core.GeneratorConfig{Kind: "randomBase64", Bytes: updateRandomLength})
+		if err != nil {
 			return fmt.Errorf("generate random bytes: %w", err)
 		}
-		encoded := base64.StdEncoding.EncodeToString(bytes)
-		newValue = []byte(encoded)
 		fmt.Printf("Generated random value (%d bytes, base64 encoded)\n", updateRandomLength)
 	} else if updateFromStdin {
 		reader := bufio.NewReader(os.Stdin)

@@ -1,22 +1,20 @@
-package cli
+package core
 
 import (
 	"encoding/base64"
 	"encoding/hex"
 	"testing"
-
-	"github.com/shermanhuman/waxseal/internal/core"
 )
 
 func TestGenerateValue_RandomBase64(t *testing.T) {
-	gen := &core.GeneratorConfig{
+	gen := &GeneratorConfig{
 		Kind:  "randomBase64",
 		Bytes: 32,
 	}
 
-	value, err := generateValue(gen)
+	value, err := GenerateValue(gen)
 	if err != nil {
-		t.Fatalf("generateValue failed: %v", err)
+		t.Fatalf("GenerateValue failed: %v", err)
 	}
 
 	// Should be valid base64
@@ -31,14 +29,14 @@ func TestGenerateValue_RandomBase64(t *testing.T) {
 }
 
 func TestGenerateValue_RandomHex(t *testing.T) {
-	gen := &core.GeneratorConfig{
+	gen := &GeneratorConfig{
 		Kind:  "randomHex",
 		Bytes: 16,
 	}
 
-	value, err := generateValue(gen)
+	value, err := GenerateValue(gen)
 	if err != nil {
-		t.Fatalf("generateValue failed: %v", err)
+		t.Fatalf("GenerateValue failed: %v", err)
 	}
 
 	// Should be valid hex
@@ -53,14 +51,14 @@ func TestGenerateValue_RandomHex(t *testing.T) {
 }
 
 func TestGenerateValue_RandomBytes(t *testing.T) {
-	gen := &core.GeneratorConfig{
+	gen := &GeneratorConfig{
 		Kind:  "randomBytes",
 		Bytes: 24,
 	}
 
-	value, err := generateValue(gen)
+	value, err := GenerateValue(gen)
 	if err != nil {
-		t.Fatalf("generateValue failed: %v", err)
+		t.Fatalf("GenerateValue failed: %v", err)
 	}
 
 	if len(value) != 24 {
@@ -69,14 +67,14 @@ func TestGenerateValue_RandomBytes(t *testing.T) {
 }
 
 func TestGenerateValue_DefaultBytes(t *testing.T) {
-	gen := &core.GeneratorConfig{
+	gen := &GeneratorConfig{
 		Kind: "randomBase64",
 		// No bytes specified
 	}
 
-	value, err := generateValue(gen)
+	value, err := GenerateValue(gen)
 	if err != nil {
-		t.Fatalf("generateValue failed: %v", err)
+		t.Fatalf("GenerateValue failed: %v", err)
 	}
 
 	decoded, _ := base64.StdEncoding.DecodeString(string(value))
@@ -86,7 +84,7 @@ func TestGenerateValue_DefaultBytes(t *testing.T) {
 }
 
 func TestGenerateValue_Randomness(t *testing.T) {
-	gen := &core.GeneratorConfig{
+	gen := &GeneratorConfig{
 		Kind:  "randomBase64",
 		Bytes: 32,
 	}
@@ -94,7 +92,7 @@ func TestGenerateValue_Randomness(t *testing.T) {
 	// Generate multiple values - should all be different
 	values := make(map[string]bool)
 	for i := 0; i < 10; i++ {
-		value, _ := generateValue(gen)
+		value, _ := GenerateValue(gen)
 		if values[string(value)] {
 			t.Error("generated duplicate value - randomness failure")
 		}
@@ -103,19 +101,19 @@ func TestGenerateValue_Randomness(t *testing.T) {
 }
 
 func TestGenerateValue_UnsupportedKind(t *testing.T) {
-	gen := &core.GeneratorConfig{
+	gen := &GeneratorConfig{
 		Kind:  "unsupported",
 		Bytes: 32,
 	}
 
-	_, err := generateValue(gen)
+	_, err := GenerateValue(gen)
 	if err == nil {
 		t.Error("expected error for unsupported generator kind")
 	}
 }
 
 func TestGenerateValue_NilGenerator(t *testing.T) {
-	_, err := generateValue(nil)
+	_, err := GenerateValue(nil)
 	if err == nil {
 		t.Error("expected error for nil generator")
 	}

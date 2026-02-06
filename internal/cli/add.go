@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"crypto/rand"
-	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -119,13 +117,13 @@ func runAdd(cmd *cobra.Command, args []string) error {
 			if parts := strings.SplitN(k, ":", 2); len(parts) > 1 && parts[1] == "random" {
 				// name:random → generated key
 				keyName = parts[0]
+				generator = &core.GeneratorConfig{Kind: "randomBase64", Bytes: addRandomLength}
 				var err error
-				value, err = generateRandomBytes(addRandomLength)
+				value, err = core.GenerateValue(generator)
 				if err != nil {
 					return fmt.Errorf("generate value for key %q: %w", keyName, err)
 				}
 				rotationMode = "generated"
-				generator = &core.GeneratorConfig{Kind: "randomBase64", Bytes: addRandomLength}
 			} else {
 				// name → static key, prompt for value securely
 				keyName = k
@@ -384,12 +382,12 @@ func runAddInteractive(shortName, projectID string) (namespace, manifestPath, sc
 		var generator *core.GeneratorConfig
 		switch valueSource {
 		case "random":
-			value, err = generateRandomBytes(32)
+			generator = &core.GeneratorConfig{Kind: "randomBase64", Bytes: 32}
+			value, err = core.GenerateValue(generator)
 			if err != nil {
 				return namespace, manifestPath, scope, secretType, nil, fmt.Errorf("generate random value: %w", err)
 			}
 			rotationMode = "generated"
-			generator = &core.GeneratorConfig{Kind: "randomBase64", Bytes: 32}
 			fmt.Printf("  Generated random value for %s\n", keyName)
 		case "enter":
 			var valueStr string
@@ -437,15 +435,7 @@ func runAddInteractive(shortName, projectID string) (namespace, manifestPath, sc
 	return
 }
 
-func generateRandomBytes(length int) ([]byte, error) {
-	bytes := make([]byte, length)
-	if _, err := rand.Read(bytes); err != nil {
-		return nil, fmt.Errorf("generate random bytes: %w", err)
-	}
-	// Return as base64 encoded
-	encoded := base64.StdEncoding.EncodeToString(bytes)
-	return []byte(encoded), nil
-}
+
 
 // buildSealedSecretManifest creates a SealedSecret structure.
 func buildSealedSecretManifest(name, namespace, scope, secretType string, encryptedData map[string]string) *seal.SealedSecret {
