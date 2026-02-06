@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/shermanhuman/waxseal/internal/files"
 	"github.com/shermanhuman/waxseal/internal/store"
@@ -15,30 +14,33 @@ import (
 
 var validateCmd = &cobra.Command{
 	Use:   "validate",
-	Short: "Validate repo and metadata consistency",
-	Long: `Validate the waxseal configuration and metadata.
+	Short: "Validate repo structure and metadata consistency",
+	Long: `Validate the waxseal configuration and metadata (structural, CI-friendly).
 
 Checks:
   - Config file exists and is valid
   - Metadata files are valid
   - Manifest paths exist
   - GSM versions are numeric (no aliases)
-  - Expiration status (expired = fail, expiring soon = warn)
+  - Operator hints and computed key hygiene
+
+For expiration and certificate checks, use 'waxseal check'.
+
+Opt-in live checks:
+  --cluster   Compare metadata against live cluster state
+  --gsm       Verify GSM secrets exist
 
 Exit codes:
-  0 - Success
-  2 - Validation failed
-  >2 - Runtime error`,
+  0 - Validation passed
+  2 - Validation failed`,
 	RunE: runValidate,
 }
 
-var validateSoonDays int
 var validateCluster bool
 var validateGSM bool
 
 func init() {
 	rootCmd.AddCommand(validateCmd)
-	validateCmd.Flags().IntVar(&validateSoonDays, "soon-days", 30, "Days threshold for 'expiring soon' warnings")
 	validateCmd.Flags().BoolVar(&validateCluster, "cluster", false, "Compare against live cluster state")
 	validateCmd.Flags().BoolVar(&validateGSM, "gsm", false, "Verify GSM secrets exist")
 }
@@ -90,17 +92,6 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		if _, err := os.Stat(manifestPath); os.IsNotExist(err) {
 			fmt.Fprintf(os.Stderr, "ERROR: manifest not found: %s (referenced by %s)\n", m.ManifestPath, m.ShortName)
 			hasErrors = true
-		}
-
-		// Check expiration
-		if m.IsRetired() {
-			// Retired secrets don't need expiration checks
-		} else if m.IsExpired() {
-			fmt.Fprintf(os.Stderr, "ERROR: %s has expired keys\n", m.ShortName)
-			hasErrors = true
-		} else if m.ExpiresWithinDays(validateSoonDays) {
-			fmt.Fprintf(os.Stderr, "WARNING: %s has keys expiring within %d days\n", m.ShortName, validateSoonDays)
-			hasWarnings = true
 		}
 
 		// Validate GSM versions are numeric
@@ -288,15 +279,6 @@ func parseConfig(data []byte) (interface{}, error) {
 		return nil, fmt.Errorf("missing store field")
 	}
 	return data, nil
-}
-
-// Helper to check expiration
-func isExpired(expiresAt string) bool {
-	t, err := time.Parse(time.RFC3339, expiresAt)
-	if err != nil {
-		return false
-	}
-	return t.Before(time.Now())
 }
 
 // containsInternalHostname checks if a value contains patterns suggesting
