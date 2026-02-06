@@ -421,16 +421,6 @@ func recordRotateState(shortName, keyName string) error {
 
 
 // truncateStr shortens a string to maxLen characters, adding "..." if truncated.
-func truncateStr(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	if maxLen <= 3 {
-		return s[:maxLen]
-	}
-	return s[:maxLen-3] + "..."
-}
-
 // displayOperatorHints prints operator hints for manual rotation.
 // Per plan: hints content is stored in GSM, metadata only has the reference.
 func displayOperatorHints(hints *core.OperatorHints, keyName string) {

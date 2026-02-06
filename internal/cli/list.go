@@ -83,10 +83,10 @@ func printListTable(secrets []*core.SecretMetadata) error {
 		}
 
 		fmt.Printf("%-25s %-10s %-6d %-30s %-20s\n",
-			truncate(s.ShortName, 25),
+			truncateStr(s.ShortName, 25),
 			status,
 			len(s.Keys),
-			truncate(strings.Join(modeList, ", "), 30),
+			truncateStr(strings.Join(modeList, ", "), 30),
 			expiry,
 		)
 	}
@@ -118,9 +118,4 @@ func printListJSON(secrets []*core.SecretMetadata) error {
 	return nil
 }
 
-func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen-3] + "..."
-}
+
