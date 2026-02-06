@@ -16,17 +16,17 @@ import "strings"
 var wellKnownGenerated = map[string]string{
 
 	// ── Authentik ──────────────────────────────────────────────────────────
-	"authentik_secret_key":        "authentik",
+	"authentik_secret_key":         "authentik",
 	"authentik_bootstrap_password": "authentik",
 
 	// ── Authelia ───────────────────────────────────────────────────────────
-	"jwt_secret":               "authelia", // also used by Immich, Supabase, etc.
-	"session_secret":           "authelia",
-	"storage_encryption_key":   "authelia",
+	"jwt_secret":             "authelia", // also used by Immich, Supabase, etc.
+	"session_secret":         "authelia",
+	"storage_encryption_key": "authelia",
 
 	// ── Budibase ───────────────────────────────────────────────────────────
 	"bb_admin_user_password": "budibase",
-	"internal_api_key":      "budibase",
+	"internal_api_key":       "budibase",
 
 	// ── Directus ───────────────────────────────────────────────────────────
 	"directus_secret": "directus",
@@ -43,10 +43,10 @@ var wellKnownGenerated = map[string]string{
 	"ghost_database__connection__password": "ghost",
 
 	// ── Gitea / Forgejo ────────────────────────────────────────────────────
-	"gitea__security__secret_key":  "gitea",
+	"gitea__security__secret_key":     "gitea",
 	"gitea__security__internal_token": "gitea",
-	"gitea__oauth2__jwt_secret":    "gitea",
-	"gitea__server__lfs_jwt_secret": "gitea",
+	"gitea__oauth2__jwt_secret":       "gitea",
+	"gitea__server__lfs_jwt_secret":   "gitea",
 
 	// ── GitLab ─────────────────────────────────────────────────────────────
 	"gitlab_secrets_secret_key_base": "gitlab",
@@ -54,8 +54,8 @@ var wellKnownGenerated = map[string]string{
 	"gitlab_secrets_db_key_base":     "gitlab",
 
 	// ── Grafana ────────────────────────────────────────────────────────────
-	"gf_security_secret_key":      "grafana",
-	"gf_security_admin_password":  "grafana",
+	"gf_security_secret_key":     "grafana",
+	"gf_security_admin_password": "grafana",
 
 	// ── Immich ─────────────────────────────────────────────────────────────
 	"immich_jwt_secret": "immich",
@@ -104,7 +104,7 @@ var wellKnownGenerated = map[string]string{
 	"nextauth_secret": "nextauth",
 
 	// ── Outline ────────────────────────────────────────────────────────────
-	"secret_key":  "outline", // also generic; many apps use this
+	"secret_key":   "outline", // also generic; many apps use this
 	"utils_secret": "outline",
 
 	// ── Plausible ──────────────────────────────────────────────────────────
@@ -118,8 +118,8 @@ var wellKnownGenerated = map[string]string{
 	"posthog_secret_key": "posthog",
 
 	// ── Rails (generic) ────────────────────────────────────────────────────
-	"rails_master_key":    "rails",
-	"secret_key_base":     "rails", // Phoenix/Elixir also uses this
+	"rails_master_key": "rails",
+	"secret_key_base":  "rails", // Phoenix/Elixir also uses this
 
 	// ── Redis / Valkey ─────────────────────────────────────────────────────
 	"redis_password":  "redis",
@@ -136,9 +136,9 @@ var wellKnownGenerated = map[string]string{
 	"transfer_token_salt": "strapi",
 
 	// ── Supabase ───────────────────────────────────────────────────────────
-	"supabase_jwt_secret":      "supabase",
-	"dashboard_password":       "supabase",
-	"supabase_anon_key":        "supabase",
+	"supabase_jwt_secret":       "supabase",
+	"dashboard_password":        "supabase",
+	"supabase_anon_key":         "supabase",
 	"supabase_service_role_key": "supabase",
 
 	// ── Umami ──────────────────────────────────────────────────────────────
@@ -146,7 +146,7 @@ var wellKnownGenerated = map[string]string{
 	"hash_salt":  "umami",
 
 	// ── Vaultwarden ────────────────────────────────────────────────────────
-	"admin_token":          "vaultwarden",
+	"admin_token":             "vaultwarden",
 	"vaultwarden_admin_token": "vaultwarden",
 
 	// ── WordPress ──────────────────────────────────────────────────────────

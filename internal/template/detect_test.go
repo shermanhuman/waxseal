@@ -80,18 +80,18 @@ func TestSuggestRotationModeProductionKeys(t *testing.T) {
 		// default-ghcr-pull-secret
 		".dockerconfigjson": "external",
 		// default-breakdown-sites-secrets
-		"github_oauth_client_id":     "external",
-		"github_oauth_client_secret": "external",
-		"rosearch_database_url":      "computed",
-		"rosearch_secret_key_base":   "generated",
-		"breakdown_web_database_url": "computed",
+		"github_oauth_client_id":        "external",
+		"github_oauth_client_secret":    "external",
+		"rosearch_database_url":         "computed",
+		"rosearch_secret_key_base":      "generated",
+		"breakdown_web_database_url":    "computed",
 		"breakdown_web_secret_key_base": "generated",
-		"cms_webhook_secret":         "generated",
+		"cms_webhook_secret":            "generated",
 		// default-breakdown-admin-secrets
-		"secret_key_base":               "generated",
-		"tekmetric_client_id":           "external",
-		"tekmetric_client_secret":       "external",
-		"database_url":                  "computed",
+		"secret_key_base":         "generated",
+		"tekmetric_client_id":     "external",
+		"tekmetric_client_secret": "external",
+		"database_url":            "computed",
 		// default-b2-backup-creds
 		"ACCESS_KEY_ID":     "external",
 		"SECRET_ACCESS_KEY": "external",
