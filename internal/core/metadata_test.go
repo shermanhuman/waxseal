@@ -262,7 +262,7 @@ keys:
 }
 
 func TestParseMetadata_RotationModes(t *testing.T) {
-	modes := []string{"generated", "external", "manual", "unknown"}
+	modes := []string{"static", "generated", "external", "unknown"}
 
 	for _, mode := range modes {
 		t.Run(mode, func(t *testing.T) {

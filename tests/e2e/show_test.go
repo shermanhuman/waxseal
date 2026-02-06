@@ -138,7 +138,7 @@ keys:
       secretResource: projects/test-project/secrets/api-key
       version: "1"
     rotation:
-      mode: manual
+      mode: static
 `
 	os.WriteFile(filepath.Join(tmpDir, ".waxseal/metadata/test-secret.yaml"), []byte(metadata), 0o644)
 

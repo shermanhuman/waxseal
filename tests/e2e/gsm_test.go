@@ -228,7 +228,7 @@ keys:
       secretResource: projects/` + gsmTestProject + `/secrets/` + gsmSecretName + `
       version: "1"
     rotation:
-      mode: manual
+      mode: static
 `
 	os.WriteFile(filepath.Join(tmpDir, ".waxseal/metadata", testNamespace+"-"+secretName+".yaml"),
 		[]byte(metadata), 0o644)
@@ -316,7 +316,7 @@ keys:
       secretResource: projects/` + gsmTestProject + `/secrets/` + gsmSecretName + `
       version: "1"
     rotation:
-      mode: manual
+      mode: static
 `
 	os.WriteFile(filepath.Join(tmpDir, ".waxseal/metadata/default-"+secretName+".yaml"),
 		[]byte(metadata), 0o644)

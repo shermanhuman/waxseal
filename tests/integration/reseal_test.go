@@ -38,7 +38,7 @@ keys:
       secretResource: projects/test/secrets/username
       version: "1"
     rotation:
-      mode: manual
+      mode: static
   - keyName: password
     source:
       kind: gsm
@@ -131,7 +131,7 @@ keys:
       secretResource: projects/test/secrets/key1
       version: "1"
     rotation:
-      mode: manual
+      mode: static
 `
 	secret2 := `shortName: secret2
 manifestPath: apps/app2/sealed-secret.yaml
@@ -148,7 +148,7 @@ keys:
       secretResource: projects/test/secrets/key2
       version: "1"
     rotation:
-      mode: manual
+      mode: static
 `
 	writeFile(t, filepath.Join(dir, ".waxseal", "metadata", "secret1.yaml"), secret1)
 	writeFile(t, filepath.Join(dir, ".waxseal", "metadata", "secret2.yaml"), secret2)
@@ -200,7 +200,7 @@ keys:
       secretResource: projects/test/secrets/s
       version: "1"
     rotation:
-      mode: manual
+      mode: static
 `
 	writeFile(t, filepath.Join(dir, ".waxseal", "metadata", "test-secret.yaml"), metadata)
 	os.MkdirAll(filepath.Join(dir, "apps", "test"), 0o755)
@@ -249,7 +249,7 @@ keys:
       secretResource: projects/test/secrets/key
       version: "1"
     rotation:
-      mode: manual
+      mode: static
 `
 	writeFile(t, filepath.Join(dir, ".waxseal", "metadata", "retired-secret.yaml"), metadata)
 
@@ -288,7 +288,7 @@ keys:
       secretResource: projects/test/secrets/active
       version: "1"
     rotation:
-      mode: manual
+      mode: static
 `
 	// Create a retired secret
 	retired := `shortName: retired-secret
@@ -308,7 +308,7 @@ keys:
       secretResource: projects/test/secrets/retired
       version: "1"
     rotation:
-      mode: manual
+      mode: static
 `
 	writeFile(t, filepath.Join(dir, ".waxseal", "metadata", "active-secret.yaml"), active)
 	writeFile(t, filepath.Join(dir, ".waxseal", "metadata", "retired-secret.yaml"), retired)
@@ -358,7 +358,7 @@ keys:
       secretResource: projects/test/secrets/nonexistent
       version: "1"
     rotation:
-      mode: manual
+      mode: static
 `
 	writeFile(t, filepath.Join(dir, ".waxseal", "metadata", "missing-secret.yaml"), metadata)
 
@@ -510,7 +510,7 @@ keys:
       secretResource: projects/p/secrets/s
       version: "1"
     rotation:
-      mode: manual
+      mode: static
 `,
 			wantErr: false,
 		},
@@ -530,7 +530,7 @@ keys:
       secretResource: projects/p/secrets/s
       version: latest
     rotation:
-      mode: manual
+      mode: static
 `,
 			wantErr: true,
 		},

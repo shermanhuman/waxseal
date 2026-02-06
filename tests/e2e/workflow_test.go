@@ -324,7 +324,7 @@ keys:
       secretResource: projects/test-project/secrets/new-api-secret-api-key
       version: "1"
     rotation:
-      mode: manual
+      mode: static
 `
 		os.MkdirAll(filepath.Join(tmpDir, "apps/api"), 0o755)
 		err := os.WriteFile(filepath.Join(tmpDir, ".waxseal/metadata/new-api-secret.yaml"), []byte(metadata), 0o644)

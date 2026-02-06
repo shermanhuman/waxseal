@@ -13,7 +13,7 @@ keys:
       secretResource: projects/test/secrets/db-user
       version: "1"
     rotation:
-      mode: manual
+      mode: static
   - keyName: db_pass
     source:
       kind: gsm
@@ -21,7 +21,7 @@ keys:
       secretResource: projects/test/secrets/db-pass
       version: "1"
     rotation:
-      mode: manual
+      mode: external
   - keyName: DATABASE_URL
     source:
       kind: computed

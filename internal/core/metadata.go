@@ -56,7 +56,7 @@ type GSMRef struct {
 
 // RotationConfig describes how a key is rotated.
 type RotationConfig struct {
-	Mode      string           `json:"mode"` // "generated", "external", "manual", "unknown"
+	Mode      string           `json:"mode"` // "static", "generated", "external", "unknown"
 	Generator *GeneratorConfig `json:"generator,omitempty"`
 }
 
@@ -228,9 +228,9 @@ func (g *GSMRef) Validate() error {
 
 // Validate checks the RotationConfig.
 func (r *RotationConfig) Validate() error {
-	validModes := map[string]bool{"generated": true, "external": true, "manual": true, "static": true, "unknown": true}
+	validModes := map[string]bool{"static": true, "generated": true, "external": true, "unknown": true}
 	if !validModes[r.Mode] {
-		return NewValidationError("rotation.mode", "must be 'generated', 'external', 'manual', 'static', or 'unknown'")
+		return NewValidationError("rotation.mode", "must be 'static', 'generated', 'external', or 'unknown'")
 	}
 	if r.Mode == "generated" && r.Generator == nil {
 		return NewValidationError("rotation.generator", "required when mode is 'generated'")

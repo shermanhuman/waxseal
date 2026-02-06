@@ -337,7 +337,7 @@ func bootstrapOne(ctx context.Context, shortName string) error {
 			newKey := core.KeyMetadata{
 				KeyName:  k.keyName,
 				Source:   core.SourceConfig{Kind: sourceKind},
-				Rotation: &core.RotationConfig{Mode: "manual"},
+				Rotation: &core.RotationConfig{Mode: "external"},
 			}
 			if isComputed {
 				newKey.Computed = &core.ComputedConfig{

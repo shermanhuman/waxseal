@@ -147,7 +147,7 @@ keys:
       secretResource: projects/test/secrets/zebra
       version: "1"
     rotation:
-      mode: manual
+      mode: static
   - keyName: alpha
     source:
       kind: gsm
@@ -155,7 +155,7 @@ keys:
       secretResource: projects/test/secrets/alpha
       version: "1"
     rotation:
-      mode: manual
+      mode: static
   - keyName: middle
     source:
       kind: gsm
@@ -163,7 +163,7 @@ keys:
       secretResource: projects/test/secrets/middle
       version: "1"
     rotation:
-      mode: manual
+      mode: static
 `
 	if err := os.WriteFile(filepath.Join(metadataDir, "order-test.yaml"), []byte(metadata), 0o644); err != nil {
 		t.Fatalf("write metadata: %v", err)
@@ -239,7 +239,7 @@ keys:
       secretResource: projects/test/secrets/secret
       version: "1"
     rotation:
-      mode: manual
+      mode: static
 `
 	if err := os.WriteFile(filepath.Join(metadataDir, "idem-test.yaml"), []byte(metadata), 0o644); err != nil {
 		t.Fatalf("write metadata: %v", err)

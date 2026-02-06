@@ -104,7 +104,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 
 	// If key not found, require --create flag or prompt
 	createNewKey := false
-	var newKeyRotationMode string = "manual"
+	var newKeyRotationMode string = "external"
 	var newKeyGenType string
 	if keyIndex == -1 {
 		if !updateCreateKey {
@@ -129,10 +129,9 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 			Title("Rotation mode").
 			Description("How should this key be rotated?").
 			Options(
-				huh.NewOption("Manual - rotated manually when needed", "manual"),
-				huh.NewOption("Static - this key cannot be rotated", "static"),
+				huh.NewOption("Static - not expected to rotate (waxseal rotate ignores)", "static"),
 				huh.NewOption("Generated - waxseal auto-rotates", "generated"),
-				huh.NewOption("External - managed by you (API portal, vendor)", "external"),
+				huh.NewOption("External - managed externally (waxseal rotate prompts with hints)", "external"),
 			).
 			Value(&newKeyRotationMode).
 			Run()
@@ -174,10 +173,9 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 				Title("Rotation mode").
 				Description("How should this key be rotated?").
 				Options(
-					huh.NewOption("Manual - rotated manually when needed", "manual"),
-					huh.NewOption("Static - this key cannot be rotated", "static"),
+					huh.NewOption("Static - not expected to rotate (waxseal rotate ignores)", "static"),
 					huh.NewOption("Generated - waxseal auto-rotates", "generated"),
-					huh.NewOption("External - managed by you (API portal, vendor)", "external"),
+					huh.NewOption("External - managed externally (waxseal rotate prompts with hints)", "external"),
 				).
 				Value(&newKeyRotationMode).
 				Run()

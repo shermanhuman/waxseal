@@ -118,19 +118,25 @@ func runAdd(cmd *cobra.Command, args []string) error {
 			generateRandom := len(parts) > 1 && parts[1] == "random"
 
 			var value []byte
+			var rotationMode string
+			var generator *core.GeneratorConfig
 			if generateRandom {
 				var err error
 				value, err = generateRandomBytes(addRandomLength)
 				if err != nil {
 					return fmt.Errorf("generate value for key %q: %w", keyName, err)
 				}
+				rotationMode = "generated"
+				generator = &core.GeneratorConfig{Kind: "randomBase64", Bytes: addRandomLength}
 			} else {
 				return fmt.Errorf("key %q requires a value (use key:random or interactive mode)", keyName)
 			}
 
 			keys = append(keys, addKeyInput{
-				keyName: keyName,
-				value:   value,
+				keyName:      keyName,
+				value:        value,
+				rotationMode: rotationMode,
+				generator:    generator,
 			})
 		}
 	} else {
@@ -187,6 +193,12 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	}
 	defer gsmStore.Close()
 
+	// Build lookup for rotation config per key
+	keysByName := make(map[string]addKeyInput, len(keys))
+	for _, k := range keys {
+		keysByName[k.keyName] = k
+	}
+
 	var keyMetadata []core.KeyMetadata
 	for _, k := range keysToCreate {
 		version, err := gsmStore.CreateSecretVersion(ctx, k.gsmResource, k.value)
@@ -202,7 +214,10 @@ func runAdd(cmd *cobra.Command, args []string) error {
 				SecretResource: k.gsmResource,
 				Version:        version,
 			},
-			Rotation: &core.RotationConfig{Mode: "manual"},
+			Rotation: &core.RotationConfig{
+				Mode:      keysByName[k.keyName].rotationMode,
+				Generator: keysByName[k.keyName].generator,
+			},
 		})
 	}
 
@@ -273,8 +288,10 @@ func runAdd(cmd *cobra.Command, args []string) error {
 }
 
 type addKeyInput struct {
-	keyName string
-	value   []byte
+	keyName      string
+	value        []byte
+	rotationMode string // "static", "generated", "external"
+	generator    *core.GeneratorConfig
 }
 
 func runAddInteractive(shortName, projectID string) (namespace, manifestPath, scope, secretType string, keys []addKeyInput, err error) {
@@ -351,12 +368,16 @@ func runAddInteractive(shortName, projectID string) (namespace, manifestPath, sc
 		}
 
 		var value []byte
+		var rotationMode string
+		var generator *core.GeneratorConfig
 		switch valueSource {
 		case "random":
 			value, err = generateRandomBytes(32)
 			if err != nil {
 				return namespace, manifestPath, scope, secretType, nil, fmt.Errorf("generate random value: %w", err)
 			}
+			rotationMode = "generated"
+			generator = &core.GeneratorConfig{Kind: "randomBase64", Bytes: 32}
 			fmt.Printf("  Generated random value for %s\n", keyName)
 		case "enter":
 			var valueStr string
@@ -369,14 +390,30 @@ func runAddInteractive(shortName, projectID string) (namespace, manifestPath, sc
 				return
 			}
 			value = []byte(valueStr)
+
+			// Prompt for rotation mode when user enters a value
+			err = huh.NewSelect[string]().
+				Title(fmt.Sprintf("Rotation mode for '%s'", keyName)).
+				Description("How should this key be rotated?").
+				Options(
+					huh.NewOption("Static - not expected to rotate (waxseal rotate ignores)", "static"),
+					huh.NewOption("External - managed externally (waxseal rotate prompts with hints)", "external"),
+				).
+				Value(&rotationMode).
+				Run()
+			if err != nil {
+				return
+			}
 		case "skip":
 			// This shouldn't happen - we need values to create GSM secrets
 			return namespace, manifestPath, scope, secretType, nil, fmt.Errorf("all keys need values during creation")
 		}
 
 		keys = append(keys, addKeyInput{
-			keyName: keyName,
-			value:   value,
+			keyName:      keyName,
+			value:        value,
+			rotationMode: rotationMode,
+			generator:    generator,
 		})
 	}
 

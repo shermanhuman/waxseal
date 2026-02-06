@@ -148,7 +148,7 @@ keys:
       secretResource: projects/test/secrets/secret
       version: "1"
     rotation:
-      mode: manual
+      mode: static
 `
 	_ = os.WriteFile(metadataDir+"/dry-run-test.yaml", []byte(metadata), 0o644)
 
@@ -197,7 +197,7 @@ keys:
       secretResource: projects/test/secrets/username
       version: "1"
     rotation:
-      mode: manual
+      mode: static
   - keyName: password
     source:
       kind: gsm

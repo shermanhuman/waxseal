@@ -30,7 +30,7 @@ For keys with rotation.mode=generated:
   - Updates metadata with new version number
   - Reseals the manifest
 
-For keys with rotation.mode=external or manual:
+For keys with rotation.mode=external:
   - Displays operator hints if available
   - Waits for confirmation that the value has been updated externally
   - Updates metadata with new version number
@@ -237,7 +237,7 @@ func runRotate(cmd *cobra.Command, args []string) error {
 			}
 			fmt.Printf("  Generated new value (%d bytes)\n", len(newValue))
 
-		case "external", "manual":
+		case "external":
 			fmt.Printf("  Mode: %s\n", key.Rotation.Mode)
 			if key.OperatorHints != nil {
 				displayOperatorHints(key.OperatorHints, key.KeyName)

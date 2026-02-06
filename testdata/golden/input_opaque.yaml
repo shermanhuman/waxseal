@@ -14,7 +14,7 @@ keys:
       secretResource: projects/test/secrets/password
       version: "1"
     rotation:
-      mode: manual
+      mode: static
   - keyName: api_key
     source:
       kind: gsm
@@ -33,4 +33,4 @@ keys:
       secretResource: projects/test/secrets/username
       version: "1"
     rotation:
-      mode: manual
+      mode: static

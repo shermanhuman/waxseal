@@ -30,7 +30,7 @@ keys:
       secretResource: projects/test/secrets/password
       version: "1"
     rotation:
-      mode: manual
+      mode: static
 `
 	metadataPath := filepath.Join(metadataDir, "test-secret.yaml")
 	if err := os.WriteFile(metadataPath, []byte(metadata), 0o644); err != nil {
@@ -128,7 +128,7 @@ func TestSerializeMetadata_IncludesRetirement(t *testing.T) {
 					SecretResource: "projects/p/secrets/s",
 					Version:        "1",
 				},
-				Rotation: &core.RotationConfig{Mode: "manual"},
+				Rotation: &core.RotationConfig{Mode: "static"},
 			},
 		},
 	}

@@ -14,4 +14,4 @@ keys:
       secretResource: projects/test/secrets/docker-config
       version: "1"
     rotation:
-      mode: manual
+      mode: external
