@@ -151,7 +151,7 @@ spec:
 	runWaxsealWithDir(t, tmpDir, "discover", "--repo="+tmpDir, "--non-interactive")
 
 	// Bootstrap should push the value to GSM
-	output, err := runWaxsealWithDir(t, tmpDir, "bootstrap",
+	output, err := runWaxsealWithDir(t, tmpDir, "gsm", "bootstrap",
 		testNamespace+"-"+secretName,
 		"--repo="+tmpDir,
 	)
@@ -334,7 +334,7 @@ spec:
 	os.WriteFile(filepath.Join(tmpDir, "apps/test/sealed-secret.yaml"), []byte(manifest), 0o644)
 
 	// Run update with --generate-random
-	output, err := runWaxsealWithDir(t, tmpDir, "update",
+	output, err := runWaxsealWithDir(t, tmpDir, "updatekey",
 		"default-"+secretName, "token",
 		"--generate-random",
 		"--repo="+tmpDir,

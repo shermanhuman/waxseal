@@ -225,7 +225,7 @@ keys:
 	os.WriteFile(filepath.Join(tmpDir, ".waxseal/metadata/postgres-app.yaml"), []byte(metadata), 0o644)
 
 	// Validate should accept this structure
-	output, err := runWaxsealWithDir(t, tmpDir, "validate", "--repo="+tmpDir)
+	output, err := runWaxsealWithDir(t, tmpDir, "check", "metadata", "--repo="+tmpDir)
 	_ = err
 	_ = output
 
@@ -267,7 +267,7 @@ keys:
 	os.WriteFile(filepath.Join(tmpDir, ".waxseal/metadata/mysql-app.yaml"), []byte(metadata), 0o644)
 
 	// Validate should accept this structure
-	output, err := runWaxsealWithDir(t, tmpDir, "validate", "--repo="+tmpDir)
+	output, err := runWaxsealWithDir(t, tmpDir, "check", "metadata", "--repo="+tmpDir)
 	_ = err
 	_ = output
 
@@ -374,7 +374,7 @@ keys:
 	os.WriteFile(filepath.Join(tmpDir, ".waxseal/metadata/multi-key-app.yaml"), []byte(metadata), 0o644)
 
 	// Validate should accept multi-key dependency
-	output, err := runWaxsealWithDir(t, tmpDir, "validate", "--repo="+tmpDir)
+	output, err := runWaxsealWithDir(t, tmpDir, "check", "metadata", "--repo="+tmpDir)
 	_ = err
 	_ = output
 
@@ -432,7 +432,7 @@ keys:
 	os.WriteFile(filepath.Join(tmpDir, ".waxseal/metadata/app-using-shared.yaml"), []byte(appMeta), 0o644)
 
 	// This should be detected during validation/reseal
-	output, _ := runWaxsealWithDir(t, tmpDir, "validate", "--repo="+tmpDir)
+	output, _ := runWaxsealWithDir(t, tmpDir, "check", "metadata", "--repo="+tmpDir)
 	_ = output
 
 	t.Log("✓ Cross-secret reference tested")
@@ -469,7 +469,7 @@ keys:
 	os.WriteFile(filepath.Join(tmpDir, ".waxseal/metadata/gsm-payload-app.yaml"), []byte(metadata), 0o644)
 
 	// Validate the structure
-	output, _ := runWaxsealWithDir(t, tmpDir, "validate", "--repo="+tmpDir)
+	output, _ := runWaxsealWithDir(t, tmpDir, "check", "metadata", "--repo="+tmpDir)
 	_ = output
 
 	t.Log("✓ GSM payload extraction structure validated")

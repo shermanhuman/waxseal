@@ -21,43 +21,35 @@ var resealCmd = &cobra.Command{
 This command fetches plaintext values from GSM, evaluates computed keys,
 encrypts using the controller's public certificate, and writes the manifest.
 
-When using --all, the command first checks if the cluster's sealing certificate
-has rotated. If a rotation is detected, you are prompted to update the repo
-certificate and all secrets are re-encrypted.
+By default all active secrets are resealed. Specify a shortName to reseal
+just one. Before resealing, the cluster's certificate is checked for rotation
+and updated automatically if needed.
 
 Examples:
+  # Reseal all active secrets (default)
+  waxseal reseal
+
   # Reseal a specific secret
   waxseal reseal my-app-secrets
 
-  # Reseal all active secrets
-  waxseal reseal --all
-
-  # Re-encrypt after cert rotation (with new cert from file)
-  waxseal reseal --all --new-cert /path/to/new-cert.pem
-
   # Skip cert check (offline/CI use)
-  waxseal reseal --all --skip-cert-check
+  waxseal reseal --skip-cert-check
 
   # Dry run to see what would be done
-  waxseal reseal --all --dry-run
+  waxseal reseal --dry-run
 
 Exit codes:
   0 - Success
   1 - Partial failure (some secrets failed)
   2 - Complete failure`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: runReseal,
 }
 
-var (
-	resealAll           bool
-	resealNewCert       string
-	resealSkipCertCheck bool
-)
+var resealSkipCertCheck bool
 
 func init() {
 	rootCmd.AddCommand(resealCmd)
-	resealCmd.Flags().BoolVar(&resealAll, "all", false, "Reseal all active secrets")
-	resealCmd.Flags().StringVar(&resealNewCert, "new-cert", "", "Path to new certificate file (forces cert update)")
 	resealCmd.Flags().BoolVar(&resealSkipCertCheck, "skip-cert-check", false, "Skip cluster cert rotation check (offline/CI)")
 	addPreflightChecks(resealCmd, authNeeds{gsm: true, kubeseal: true})
 	addMetadataCheck(resealCmd)
@@ -85,8 +77,8 @@ func runReseal(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Using certificate: %s (kubeseal binary)\n", cfg.Cert.RepoCertPath)
 
-	// Cert rotation check (only on --all or --new-cert)
-	if (resealAll || resealNewCert != "") && !resealSkipCertCheck {
+	// Always check cert rotation unless skipped
+	if !resealSkipCertCheck {
 		certUpdated, err := checkAndUpdateCert(ctx, certPath)
 		if err != nil {
 			return err
@@ -100,15 +92,12 @@ func runReseal(cmd *cobra.Command, args []string) error {
 	// Create engine
 	engine := reseal.NewEngine(secretStore, sealer, repoPath, dryRun)
 
-	if resealAll {
-		return runResealAll(ctx, engine)
+	// No args = reseal all, one arg = reseal one
+	if len(args) == 1 {
+		return runResealOne(ctx, engine, args[0])
 	}
 
-	if len(args) == 0 {
-		return fmt.Errorf("specify a secret name or use --all")
-	}
-
-	return runResealOne(ctx, engine, args[0])
+	return runResealAll(ctx, engine)
 }
 
 func runResealOne(ctx context.Context, engine *reseal.Engine, shortName string) error {
@@ -203,24 +192,16 @@ func checkAndUpdateCert(ctx context.Context, certPath string) (bool, error) {
 	}
 	currentFingerprint := currentSealer.GetCertFingerprint()
 
-	// Get new certificate
+	// Fetch certificate from the cluster
 	var newCertData []byte
-	if resealNewCert != "" {
-		newCertData, err = os.ReadFile(resealNewCert)
-		if err != nil {
-			return false, fmt.Errorf("read new certificate: %w", err)
-		}
-		fmt.Printf("Using certificate from: %s\n", resealNewCert)
-	} else {
-		err = withSpinner("Checking cluster certificate...", func() error {
-			newCertData, err = fetchCertFromCluster(ctx)
-			return err
-		})
-		if err != nil {
-			// Non-fatal: can't reach cluster, continue with current cert
-			fmt.Printf("Note: could not fetch cluster cert (%v), using existing\n", err)
-			return false, nil
-		}
+	err = withSpinner("Checking cluster certificate...", func() error {
+		newCertData, err = fetchCertFromCluster(ctx)
+		return err
+	})
+	if err != nil {
+		// Non-fatal: can't reach cluster, continue with current cert
+		fmt.Printf("Note: could not fetch cluster cert (%v), using existing\n", err)
+		return false, nil
 	}
 
 	// Parse new cert for fingerprint

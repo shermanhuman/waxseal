@@ -17,7 +17,7 @@ func TestE2E_Validate(t *testing.T) {
 		tmpDir := setupValidRepo(t)
 		defer os.RemoveAll(tmpDir)
 
-		output, err := runWaxsealWithDir(t, tmpDir, "validate", "--repo="+tmpDir)
+		output, err := runWaxsealWithDir(t, tmpDir, "check", "metadata", "--repo="+tmpDir)
 		if err != nil {
 			t.Fatalf("validate should pass for valid repo: %v\nOutput: %s", err, output)
 		}
@@ -29,7 +29,7 @@ func TestE2E_Validate(t *testing.T) {
 		tmpDir, _ := os.MkdirTemp("", "waxseal-validate-*")
 		defer os.RemoveAll(tmpDir)
 
-		_, err := runWaxsealWithDir(t, tmpDir, "validate", "--repo="+tmpDir)
+		_, err := runWaxsealWithDir(t, tmpDir, "check", "metadata", "--repo="+tmpDir)
 		if err == nil {
 			t.Error("validate should fail for missing config")
 		}
@@ -41,7 +41,7 @@ func TestE2E_Validate(t *testing.T) {
 		tmpDir := setupRepoWithMissingManifest(t)
 		defer os.RemoveAll(tmpDir)
 
-		output, err := runWaxsealWithDir(t, tmpDir, "validate", "--repo="+tmpDir)
+		output, err := runWaxsealWithDir(t, tmpDir, "check", "metadata", "--repo="+tmpDir)
 
 		// Should warn or error about missing manifest
 		if err != nil || strings.Contains(strings.ToLower(output), "missing") || strings.Contains(strings.ToLower(output), "not found") {
@@ -63,7 +63,7 @@ func TestE2E_List(t *testing.T) {
 		tmpDir := setupRepoWithMultipleSecrets(t)
 		defer os.RemoveAll(tmpDir)
 
-		output, err := runWaxsealWithDir(t, tmpDir, "list", "--repo="+tmpDir)
+		output, err := runWaxsealWithDir(t, tmpDir, "meta", "list", "secrets", "--repo="+tmpDir)
 		if err != nil {
 			t.Fatalf("list: %v\nOutput: %s", err, output)
 		}
@@ -80,7 +80,7 @@ func TestE2E_List(t *testing.T) {
 		tmpDir := setupRepoWithMixedStatus(t)
 		defer os.RemoveAll(tmpDir)
 
-		output, err := runWaxsealWithDir(t, tmpDir, "list", "--repo="+tmpDir, "--status=active")
+		output, err := runWaxsealWithDir(t, tmpDir, "meta", "list", "secrets", "--repo="+tmpDir, "--status=active")
 		if err != nil {
 			t.Logf("list: %v\nOutput: %s", err, output)
 		}
@@ -97,7 +97,7 @@ func TestE2E_List(t *testing.T) {
 		tmpDir := setupEmptyRepo(t)
 		defer os.RemoveAll(tmpDir)
 
-		output, err := runWaxsealWithDir(t, tmpDir, "list", "--repo="+tmpDir)
+		output, err := runWaxsealWithDir(t, tmpDir, "meta", "list", "secrets", "--repo="+tmpDir)
 		// Should complete without error (may show "no secrets" message)
 		_ = err
 		_ = output
@@ -116,7 +116,7 @@ func TestE2E_Check(t *testing.T) {
 		tmpDir := setupRepoWithValidCert(t)
 		defer os.RemoveAll(tmpDir)
 
-		output, err := runWaxsealWithDir(t, tmpDir, "check", "--cert", "--repo="+tmpDir)
+		output, err := runWaxsealWithDir(t, tmpDir, "check", "cert", "--repo="+tmpDir)
 		if err != nil {
 			t.Fatalf("check --cert: %v\nOutput: %s", err, output)
 		}
@@ -134,7 +134,7 @@ func TestE2E_Check(t *testing.T) {
 		tmpDir := setupRepoWithExpiringSoon(t)
 		defer os.RemoveAll(tmpDir)
 
-		output, err := runWaxsealWithDir(t, tmpDir, "check", "--expiry", "--warn-days=365", "--repo="+tmpDir)
+		output, err := runWaxsealWithDir(t, tmpDir, "check", "expiry", "--warn-days=365", "--repo="+tmpDir)
 		_ = err
 
 		if strings.Contains(strings.ToLower(output), "expir") {

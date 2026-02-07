@@ -79,7 +79,7 @@ spec:
 
 	// Step 4: List
 	t.Run("step 4: list", func(t *testing.T) {
-		output, err := runWaxsealWithDir(t, tmpDir, "list", "--repo="+tmpDir)
+		output, err := runWaxsealWithDir(t, tmpDir, "meta", "list", "secrets", "--repo="+tmpDir)
 		if err != nil {
 			t.Fatalf("list failed: %v\nOutput: %s", err, output)
 		}
@@ -92,7 +92,7 @@ spec:
 
 	// Step 5: Validate
 	t.Run("step 5: validate", func(t *testing.T) {
-		output, err := runWaxsealWithDir(t, tmpDir, "validate", "--repo="+tmpDir)
+		output, err := runWaxsealWithDir(t, tmpDir, "check", "metadata", "--repo="+tmpDir)
 		if err != nil {
 			t.Logf("validate warnings: %v\nOutput: %s", err, output)
 		}
@@ -163,7 +163,7 @@ func TestE2E_WorkflowSecretLifecycle(t *testing.T) {
 
 	// Verify secret starts as active
 	t.Run("secret starts active", func(t *testing.T) {
-		output, err := runWaxsealWithDir(t, tmpDir, "list", "--repo="+tmpDir)
+		output, err := runWaxsealWithDir(t, tmpDir, "meta", "list", "secrets", "--repo="+tmpDir)
 		if err != nil {
 			t.Fatalf("list: %v", err)
 		}
@@ -198,7 +198,7 @@ func TestE2E_WorkflowSecretLifecycle(t *testing.T) {
 
 	// List should show retired status
 	t.Run("list shows retired", func(t *testing.T) {
-		output, err := runWaxsealWithDir(t, tmpDir, "list", "--repo="+tmpDir)
+		output, err := runWaxsealWithDir(t, tmpDir, "meta", "list", "secrets", "--repo="+tmpDir)
 		if err != nil {
 			t.Logf("list: %v\nOutput: %s", err, output)
 		}
@@ -234,9 +234,9 @@ func TestE2E_WorkflowCertRotation(t *testing.T) {
 		t.Log("✓ cert rotation simulated")
 	})
 
-	// Step 3: Run reseal --all (which now includes cert rotation check)
+	// Step 3: Run reseal (default = all, includes cert rotation check)
 	t.Run("reseal with cert check", func(t *testing.T) {
-		output, err := runWaxsealWithDir(t, tmpDir, "reseal", "--all", "--skip-cert-check", "--repo="+tmpDir, "--dry-run")
+		output, err := runWaxsealWithDir(t, tmpDir, "reseal", "--skip-cert-check", "--repo="+tmpDir, "--dry-run")
 		if err != nil {
 			t.Logf("reseal: %v\nOutput: %s", err, output)
 		}
@@ -278,7 +278,7 @@ func TestE2E_WorkflowNewSecretLifecycle(t *testing.T) {
 	// Step 1: Add a new secret (dry run)
 	t.Run("step 1: add dry run", func(t *testing.T) {
 		output, err := runWaxsealWithDir(t, tmpDir,
-			"add", "new-api-secret",
+			"addkey", "new-api-secret",
 			"--namespace=default",
 			"--key=api_key:random",
 			"--dry-run",
@@ -295,7 +295,7 @@ func TestE2E_WorkflowNewSecretLifecycle(t *testing.T) {
 
 	// Step 2: Show returns error for non-existent secret
 	t.Run("step 2: show non-existent", func(t *testing.T) {
-		output, err := runWaxsealWithDir(t, tmpDir, "show", "new-api-secret", "--repo="+tmpDir)
+		output, err := runWaxsealWithDir(t, tmpDir, "meta", "showkey", "new-api-secret", "--repo="+tmpDir)
 		if err == nil {
 			t.Error("expected error for non-existent secret")
 		}
@@ -350,7 +350,7 @@ spec:
 
 	// Step 4: Show displays new secret
 	t.Run("step 4: show secret", func(t *testing.T) {
-		output, err := runWaxsealWithDir(t, tmpDir, "show", "new-api-secret", "--repo="+tmpDir)
+		output, err := runWaxsealWithDir(t, tmpDir, "meta", "showkey", "new-api-secret", "--repo="+tmpDir)
 		if err != nil {
 			t.Fatalf("show failed: %v\nOutput: %s", err, output)
 		}
@@ -365,7 +365,7 @@ spec:
 
 	// Step 5: Show with JSON output
 	t.Run("step 5: show json", func(t *testing.T) {
-		output, err := runWaxsealWithDir(t, tmpDir, "show", "new-api-secret", "--json", "--repo="+tmpDir)
+		output, err := runWaxsealWithDir(t, tmpDir, "meta", "showkey", "new-api-secret", "--json", "--repo="+tmpDir)
 		if err != nil {
 			t.Fatalf("show --json failed: %v\nOutput: %s", err, output)
 		}
@@ -378,7 +378,7 @@ spec:
 	// Step 6: Update dry run
 	t.Run("step 6: update dry run", func(t *testing.T) {
 		output, err := runWaxsealWithDir(t, tmpDir,
-			"update", "new-api-secret", "api_key",
+			"updatekey", "new-api-secret", "api_key",
 			"--generate-random",
 			"--dry-run",
 			"--repo="+tmpDir,
@@ -394,7 +394,7 @@ spec:
 
 	// Step 7: List includes our secret
 	t.Run("step 7: list includes new secret", func(t *testing.T) {
-		output, err := runWaxsealWithDir(t, tmpDir, "list", "--repo="+tmpDir)
+		output, err := runWaxsealWithDir(t, tmpDir, "meta", "list", "secrets", "--repo="+tmpDir)
 		if err != nil {
 			t.Logf("list: %v\nOutput: %s", err, output)
 		}

@@ -145,7 +145,7 @@ keys:
 	os.WriteFile(filepath.Join(tmpDir, ".waxseal/metadata/ghost-secret.yaml"), []byte(metadata), 0o644)
 
 	// Validate should report missing manifest
-	output, err := runWaxsealWithDir(t, tmpDir, "validate", "--repo="+tmpDir)
+	output, err := runWaxsealWithDir(t, tmpDir, "check", "metadata", "--repo="+tmpDir)
 	if err == nil {
 		t.Log("validate passed (may be warning-only mode)")
 	}
@@ -200,7 +200,7 @@ spec:
 	os.WriteFile(filepath.Join(tmpDir, "apps/mismatch/sealed-secret.yaml"), []byte(manifest), 0o644)
 
 	// Validate should report key mismatch
-	output, _ := runWaxsealWithDir(t, tmpDir, "validate", "--repo="+tmpDir)
+	output, _ := runWaxsealWithDir(t, tmpDir, "check", "metadata", "--repo="+tmpDir)
 	_ = output
 	t.Log("✓ Key mismatch detected in validation")
 }
@@ -521,7 +521,7 @@ spec:
 	os.WriteFile(filepath.Join(tmpDir, "apps/test/sealed-secret.yaml"), []byte(manifest), 0o644)
 
 	// Validate should reject "latest"
-	output, err := runWaxsealWithDir(t, tmpDir, "validate", "--repo="+tmpDir)
+	output, err := runWaxsealWithDir(t, tmpDir, "check", "metadata", "--repo="+tmpDir)
 	_ = err
 	if strings.Contains(output, "latest") || strings.Contains(output, "numeric") {
 		t.Log("✓ 'latest' version rejected as expected")
@@ -574,7 +574,7 @@ spec:
 	os.WriteFile(filepath.Join(tmpDir, "apps/test/sealed-secret.yaml"), []byte(manifest), 0o644)
 
 	// Validate should detect scope mismatch
-	output, _ := runWaxsealWithDir(t, tmpDir, "validate", "--repo="+tmpDir)
+	output, _ := runWaxsealWithDir(t, tmpDir, "check", "metadata", "--repo="+tmpDir)
 	_ = output
 	t.Log("✓ Scope mismatch test completed")
 }
