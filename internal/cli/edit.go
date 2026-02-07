@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/shermanhuman/waxseal/internal/core"
 	"github.com/shermanhuman/waxseal/internal/files"
+	"github.com/shermanhuman/waxseal/internal/logging"
 	"github.com/spf13/cobra"
 )
 
@@ -68,6 +69,17 @@ func init() {
 	editCmd.AddCommand(editAddkeyCmd)
 	editCmd.AddCommand(editUpdatekeyCmd)
 	editCmd.AddCommand(editRetirekeyCmd)
+
+	// Preflight: metadata must exist for edit and all subcommands.
+	// GSM auth is checked too since addkey/updatekey need it.
+	addMetadataCheck(editCmd)
+	addMetadataCheck(editAddkeyCmd)
+	addMetadataCheck(editUpdatekeyCmd)
+	addMetadataCheck(editRetirekeyCmd)
+	addPreflightChecks(editCmd, authNeeds{gsm: true})
+	addPreflightChecks(editAddkeyCmd, authNeeds{gsm: true})
+	addPreflightChecks(editUpdatekeyCmd, authNeeds{gsm: true})
+	addPreflightChecks(editRetirekeyCmd, authNeeds{gsm: true})
 }
 
 // ── Shared helpers ─────────────────────────────────────────────────────────
@@ -75,7 +87,10 @@ func init() {
 // pickSecret presents a TUI secret picker and returns the selected metadata.
 // Returns nil, nil if no secrets are registered.
 func pickSecret(title string, filter func(*core.SecretMetadata) bool) (*core.SecretMetadata, error) {
-	allSecrets, _ := files.LoadAllMetadataCollectErrors(repoPath)
+	allSecrets, loadErrs := files.LoadAllMetadataCollectErrors(repoPath)
+	for _, err := range loadErrs {
+		logging.Warn("skipping malformed metadata", "error", err)
+	}
 	if len(allSecrets) == 0 {
 		return nil, nil
 	}
@@ -150,6 +165,8 @@ func pickAction(metadata *core.SecretMetadata) (string, error) {
 }
 
 // dispatch calls the underlying command for the chosen action.
+// Note: preflight checks (GSM auth, metadata) are on editCmd itself,
+// so they fire before dispatch is reached.
 func dispatch(action string, metadata *core.SecretMetadata) error {
 	switch action {
 	case "addkey":
@@ -234,8 +251,16 @@ func runEditWithAction(action string) error {
 	}
 	if metadata == nil {
 		if action == "addkey" {
-			fmt.Println("No secrets registered. Creating a new one...")
-			return addCmd.RunE(addCmd, []string{"new-secret"})
+			// Prompt for secret name instead of hardcoding
+			var name string
+			err := huh.NewInput().
+				Title("No secrets registered. Enter a name for the new secret:").
+				Value(&name).
+				Run()
+			if err != nil || strings.TrimSpace(name) == "" {
+				return fmt.Errorf("cancelled")
+			}
+			return addCmd.RunE(addCmd, []string{strings.TrimSpace(name)})
 		}
 		return fmt.Errorf("no eligible secrets for %s", action)
 	}
