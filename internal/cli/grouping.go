@@ -7,6 +7,7 @@ func init() {
 	// ── Primary help: visible commands with group labels ────────────
 
 	// Key Management
+	editCmd.GroupID = groupKeyMgmt
 	rotateCmd.GroupID = groupKeyMgmt
 
 	// Operations

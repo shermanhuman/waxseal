@@ -61,6 +61,7 @@ internal/
     check.go            # 'check' parent + cert/expiry/metadata/gsm/cluster subcommands
     meta.go             # 'meta' parent + list secrets/keys, showkey
     rotate.go           # 'rotate' command + serializeMetadata
+    edit.go             # 'edit' wizard (TUI secret/action picker, delegates to addkey/updatekey/retirekey)
     add.go              # 'addkey' (hidden, advanced)
     update.go           # 'updatekey' (hidden, advanced)
     retire.go           # 'retirekey' (hidden, advanced)
@@ -80,14 +81,18 @@ testdata/
   infra-repo/           # Test fixture repo structure
 ```
 
-## CLI Command Tree (v0.3.0)
+## CLI Command Tree (v0.4.0)
 
 Primary commands (shown in `waxseal --help`):
 
 ```
 waxseal
+├── edit            # Key Management — interactive add/update/retire wizard
+│   ├── addkey      #   Jump to add-key flow
+│   ├── updatekey   #   Jump to update-key flow
+│   └── retirekey   #   Jump to retire-key flow
 ├── rotate          # Key Management — rotate secret values
-├── reseal          # Operations — reseal from GSM
+├── reseal          # Operations — reseal all from GSM (default = all)
 ├── check           # Operations — health checks
 │   ├── cert        # Certificate expiry
 │   ├── expiry      # Secret expiration

@@ -184,15 +184,17 @@ waxseal
 
 ## Implementation Order
 
-1. Restructure `check`: merge `certcheck.go` + `validate.go` into subcommands under `check`
-2. Create `meta` parent, move `list` → `meta list secrets`, `show` → `meta showkey`, add `meta list keys`
-3. Rename `add` → `addkey`, `update` → `updatekey`, `retire` → `retirekey`
-4. Move `bootstrap` → `gsm bootstrap`
-5. Hide advanced commands, `completion` from primary help
-6. Create `help advanced` command
-7. Create `edit` interactive wizard
-8. Refactor `addkey`: support adding key to existing secret as primary path
-9. Refactor `updatekey`: remove `--create` flag
-10. Update root.go help template for grouped sections
-11. Update all tests
-12. Update README
+- [x] 1. Restructure `check`: merge `certcheck.go` + `validate.go` into subcommands under `check`
+- [x] 2. Create `meta` parent, move `list` → `meta list secrets`, `show` → `meta showkey`, add `meta list keys`
+- [x] 3. Rename `add` → `addkey`, `update` → `updatekey`, `retire` → `retirekey`
+- [x] 4. Move `bootstrap` → `gsm bootstrap`
+- [x] 5. Hide advanced commands, `completion` from primary help
+- [x] 6. Create `help advanced` command
+- [x] 7. Create `edit` interactive wizard
+- [x] 8. ~~Refactor `addkey`: support adding key to existing secret~~ — `edit` delegates to addkey directly
+- [x] 9. ~~Refactor `updatekey`: remove `--create` flag~~ — flag doesn't exist, no-op
+- [x] 10. Update root.go help template for grouped sections
+- [x] 11. Update all tests (unit + E2E)
+- [x] 12. Update AGENTS.md
+- [x] 13. Simplify `reseal` (default=all, auto cert check, remove --new-cert)
+- [x] 14. Fix `golang.org/x/oauth2` lint (go mod tidy)
