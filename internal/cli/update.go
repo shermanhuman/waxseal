@@ -16,8 +16,8 @@ import (
 )
 
 var updateCmd = &cobra.Command{
-	Use:   "update <shortName> <keyName>",
-	Short: "Update a secret key's value",
+	Use:   "updatekey <shortName> <keyName>",
+	Short: "Update an existing key's value",
 	Long: `Update a secret key's value in GSM and reseal the SealedSecret.
 
 This command:
@@ -54,6 +54,7 @@ func init() {
 	updateCmd.Flags().BoolVar(&updateGenerateRandom, "generate-random", false, "Generate a random value")
 	updateCmd.Flags().IntVar(&updateRandomLength, "random-length", 32, "Length of generated random value (bytes)")
 	updateCmd.Flags().BoolVar(&updateCreateKey, "create", false, "Create the key if it doesn't exist")
+	addPreflightChecks(updateCmd, authNeeds{gsm: true, kubeseal: true})
 }
 
 func runUpdate(cmd *cobra.Command, args []string) error {

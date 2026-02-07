@@ -58,6 +58,7 @@ var rotateGenerated bool
 func init() {
 	rootCmd.AddCommand(rotateCmd)
 	rotateCmd.Flags().BoolVar(&rotateGenerated, "generated", false, "Rotate all keys with mode=generated")
+	addPreflightChecks(rotateCmd, authNeeds{gsm: true, kubeseal: true})
 }
 
 func runRotate(cmd *cobra.Command, args []string) error {

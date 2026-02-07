@@ -20,7 +20,7 @@ var (
 
 // Version information (can be overridden at build time via ldflags)
 var (
-	Version   = "0.2.0"
+	Version   = "0.3.0"
 	Commit    = "dev"
 	BuildDate = "unknown"
 )
@@ -35,11 +35,52 @@ Source of truth:
   - All plaintext secret values live in Google Secret Manager (GSM)
   - Git stores SealedSecret manifests (ciphertext) and metadata
 
-Primary commands:
-  - waxseal reseal --all    Non-interactive ciphertext refresh
-  - waxseal rotate          Value rotation with operator guidance
-  - waxseal setup           Interactive setup wizard`,
+Run 'waxseal help advanced' for non-interactive / scripting commands.`,
 	Version: Version,
+}
+
+// Command group IDs
+const (
+	groupKeyMgmt      = "key-management"
+	groupOps          = "operations"
+	groupMeta         = "metadata"
+	groupInstallation = "installation"
+)
+
+// advancedCmd shows the advanced help output.
+var advancedCmd = &cobra.Command{
+	Use:   "advanced",
+	Short: "Show advanced commands",
+	Long: `Show advanced commands for scripting, CI, and power-user workflows.
+
+These commands are fully functional but hidden from the primary help
+to keep the default output focused on daily operations.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println("Advanced Commands:")
+		fmt.Println()
+		fmt.Println("Key Management (non-interactive):")
+		fmt.Printf("  %-20s %s\n", "addkey", "Add a key to a secret (or create a new secret)")
+		fmt.Printf("  %-20s %s\n", "updatekey", "Update an existing key's value")
+		fmt.Printf("  %-20s %s\n", "retirekey", "Mark a key as retired")
+		fmt.Println()
+		fmt.Println("Validation (individual checks):")
+		fmt.Printf("  %-20s %s\n", "check cert", "Certificate health only")
+		fmt.Printf("  %-20s %s\n", "check expiry", "Secret expiration only")
+		fmt.Printf("  %-20s %s\n", "check metadata", "Config/schema/hygiene validation")
+		fmt.Printf("  %-20s %s\n", "check gsm", "Verify GSM secret versions exist")
+		fmt.Printf("  %-20s %s\n", "check cluster", "Compare metadata vs live cluster keys")
+		fmt.Println()
+		fmt.Println("Discovery & Bootstrap:")
+		fmt.Printf("  %-20s %s\n", "discover", "Scan repo for SealedSecret manifests")
+		fmt.Printf("  %-20s %s\n", "gsm bootstrap", "Push secrets from cluster to GSM")
+		fmt.Printf("  %-20s %s\n", "gsm gcp-bootstrap", "Initialize GCP infrastructure")
+		fmt.Println()
+		fmt.Println("Reminders:")
+		fmt.Printf("  %-20s %s\n", "reminders sync", "Sync calendar/task reminders")
+		fmt.Printf("  %-20s %s\n", "reminders list", "List upcoming expirations")
+		fmt.Printf("  %-20s %s\n", "reminders clear", "Clear reminders for retired secrets")
+		fmt.Printf("  %-20s %s\n", "reminders setup", "Configure reminder providers")
+	},
 }
 
 func init() {
@@ -53,6 +94,17 @@ func init() {
 Commit: ` + Commit + `
 Built:  ` + BuildDate + `
 `)
+
+	// Command groups for organized help output
+	rootCmd.AddGroup(
+		&cobra.Group{ID: groupKeyMgmt, Title: "Key Management:"},
+		&cobra.Group{ID: groupOps, Title: "Operations:"},
+		&cobra.Group{ID: groupMeta, Title: "Metadata:"},
+		&cobra.Group{ID: groupInstallation, Title: "Installation:"},
+	)
+
+	// Add "help advanced" command
+	rootCmd.AddCommand(advancedCmd)
 }
 
 // Execute runs the root command.
@@ -71,11 +123,14 @@ func Execute() error {
 // requiresMetadata returns true if the command needs .waxseal/metadata to exist.
 func requiresMetadata(cmdName string) bool {
 	commands := map[string]bool{
-		"list":     true,
-		"validate": true,
-		"reseal":   true,
-		"rotate":   true,
-		"retire":   true,
+		"list":      true,
+		"secrets":   true,
+		"keys":      true,
+		"showkey":   true,
+		"check":     true,
+		"reseal":    true,
+		"rotate":    true,
+		"retirekey": true,
 	}
 	return commands[cmdName]
 }

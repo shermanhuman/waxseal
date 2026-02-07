@@ -15,8 +15,8 @@ import (
 )
 
 var addCmd = &cobra.Command{
-	Use:   "add <shortName>",
-	Short: "Create a new secret",
+	Use:   "addkey <shortName>",
+	Short: "Add a key to a secret (or create a new secret)",
 	Long: `Create a new secret with metadata, GSM entries, and SealedSecret manifest.
 
 This command:
@@ -71,6 +71,7 @@ func init() {
 	addCmd.Flags().StringVar(&addScope, "scope", "strict", "Sealing scope (strict, namespace-wide, cluster-wide)")
 	addCmd.Flags().StringVar(&addSecretType, "type", "Opaque", "Secret type (Opaque, kubernetes.io/tls, etc.)")
 	addCmd.Flags().IntVar(&addRandomLength, "random-length", 32, "Length of generated random values (bytes)")
+	addPreflightChecks(addCmd, authNeeds{gsm: true, kubeseal: true})
 }
 
 func runAdd(cmd *cobra.Command, args []string) error {

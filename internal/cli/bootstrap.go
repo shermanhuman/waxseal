@@ -53,8 +53,9 @@ Exit codes:
 var bootstrapKubeconfig string
 
 func init() {
-	rootCmd.AddCommand(bootstrapCmd)
+	// bootstrapCmd is added to gsmCmd in gcp_bootstrap.go
 	bootstrapCmd.Flags().StringVar(&bootstrapKubeconfig, "kubeconfig", "", "Path to kubeconfig file (default: $KUBECONFIG or ~/.kube/config)")
+	addPreflightChecks(bootstrapCmd, authNeeds{gsm: true, kubectl: true})
 }
 
 func runBootstrap(cmd *cobra.Command, args []string) error {

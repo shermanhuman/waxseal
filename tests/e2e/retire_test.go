@@ -18,7 +18,7 @@ func TestE2E_Retire(t *testing.T) {
 		defer os.RemoveAll(tmpDir)
 
 		// Retire the secret
-		output, err := runWaxsealWithDir(t, tmpDir, "retire", "my-app-secrets", "--repo="+tmpDir, "--yes")
+		output, err := runWaxsealWithDir(t, tmpDir, "retirekey", "my-app-secrets", "--repo="+tmpDir, "--yes")
 		if err != nil {
 			t.Fatalf("retire: %v\nOutput: %s", err, output)
 		}
@@ -42,7 +42,7 @@ func TestE2E_Retire(t *testing.T) {
 		defer os.RemoveAll(tmpDir)
 
 		// Retire with reason
-		output, err := runWaxsealWithDir(t, tmpDir, "retire", "my-app-secrets",
+		output, err := runWaxsealWithDir(t, tmpDir, "retirekey", "my-app-secrets",
 			"--repo="+tmpDir,
 			"--yes",
 			"--reason=Migrated to new service")
@@ -66,7 +66,7 @@ func TestE2E_Retire(t *testing.T) {
 		defer os.RemoveAll(tmpDir)
 
 		// Retire with replacement
-		output, err := runWaxsealWithDir(t, tmpDir, "retire", "old-secret",
+		output, err := runWaxsealWithDir(t, tmpDir, "retirekey", "old-secret",
 			"--repo="+tmpDir,
 			"--yes",
 			"--replaced-by=new-secret")
@@ -97,7 +97,7 @@ func TestE2E_Retire(t *testing.T) {
 		}
 
 		// Retire with delete
-		output, err := runWaxsealWithDir(t, tmpDir, "retire", "my-app-secrets",
+		output, err := runWaxsealWithDir(t, tmpDir, "retirekey", "my-app-secrets",
 			"--repo="+tmpDir,
 			"--yes",
 			"--delete-manifest")
@@ -122,7 +122,7 @@ func TestE2E_Retire(t *testing.T) {
 		originalData, _ := os.ReadFile(metadataPath)
 
 		// Retire with dry run
-		output, err := runWaxsealWithDir(t, tmpDir, "retire", "my-app-secrets",
+		output, err := runWaxsealWithDir(t, tmpDir, "retirekey", "my-app-secrets",
 			"--repo="+tmpDir,
 			"--yes",
 			"--dry-run")
@@ -144,7 +144,7 @@ func TestE2E_Retire(t *testing.T) {
 		defer os.RemoveAll(tmpDir)
 
 		// Try to retire non-existent secret
-		_, err := runWaxsealWithDir(t, tmpDir, "retire", "does-not-exist",
+		_, err := runWaxsealWithDir(t, tmpDir, "retirekey", "does-not-exist",
 			"--repo="+tmpDir,
 			"--yes")
 
@@ -160,10 +160,10 @@ func TestE2E_Retire(t *testing.T) {
 		defer os.RemoveAll(tmpDir)
 
 		// First retire
-		runWaxsealWithDir(t, tmpDir, "retire", "my-app-secrets", "--repo="+tmpDir, "--yes")
+		runWaxsealWithDir(t, tmpDir, "retirekey", "my-app-secrets", "--repo="+tmpDir, "--yes")
 
 		// Second retire - should warn or succeed gracefully
-		output, err := runWaxsealWithDir(t, tmpDir, "retire", "my-app-secrets",
+		output, err := runWaxsealWithDir(t, tmpDir, "retirekey", "my-app-secrets",
 			"--repo="+tmpDir,
 			"--yes")
 

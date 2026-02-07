@@ -26,6 +26,9 @@ var (
 
 	// ErrRetired indicates an operation was attempted on a retired secret.
 	ErrRetired = errors.New("secret is retired")
+
+	// ErrUnauthenticated indicates the caller's credentials are missing or expired.
+	ErrUnauthenticated = errors.New("unauthenticated")
 )
 
 // WrapNotFound wraps an error with ErrNotFound context.
@@ -88,4 +91,18 @@ func IsPermissionDenied(err error) bool {
 // IsAlreadyExists checks if an error is an already exists error.
 func IsAlreadyExists(err error) bool {
 	return errors.Is(err, ErrAlreadyExists)
+}
+
+// WrapUnauthenticated wraps an error with ErrUnauthenticated context.
+func WrapUnauthenticated(resource string, err error) error {
+	hint := "run 'gcloud auth application-default login' to re-authenticate"
+	if err == nil {
+		return fmt.Errorf("%s: %w — %s", resource, ErrUnauthenticated, hint)
+	}
+	return fmt.Errorf("%s: %w — %s: %v", resource, ErrUnauthenticated, hint, err)
+}
+
+// IsUnauthenticated checks if an error is an unauthenticated error.
+func IsUnauthenticated(err error) bool {
+	return errors.Is(err, ErrUnauthenticated)
 }

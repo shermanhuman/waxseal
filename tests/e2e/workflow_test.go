@@ -175,7 +175,7 @@ func TestE2E_WorkflowSecretLifecycle(t *testing.T) {
 
 	// Retire the secret
 	t.Run("retire secret", func(t *testing.T) {
-		output, err := runWaxsealWithDir(t, tmpDir, "retire", secretName,
+		output, err := runWaxsealWithDir(t, tmpDir, "retirekey", secretName,
 			"--repo="+tmpDir, "--yes", "--reason=End of life")
 		if err != nil {
 			t.Fatalf("retire: %v\nOutput: %s", err, output)

@@ -11,14 +11,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var gcpCmd = &cobra.Command{
-	Use:   "gcp",
-	Short: "GCP infrastructure management",
-	Long:  `Commands for managing GCP infrastructure for WaxSeal.`,
+var gsmCmd = &cobra.Command{
+	Use:   "gsm",
+	Short: "GSM infrastructure management",
+	Long:  `Commands for managing Google Secret Manager infrastructure for WaxSeal.`,
 }
 
-var gcpBootstrapCmd = &cobra.Command{
-	Use:   "bootstrap",
+var gsmGCPBootstrapCmd = &cobra.Command{
+	Use:   "gcp-bootstrap",
 	Short: "Initialize GCP infrastructure for WaxSeal",
 	Long: `Interactive wizard to set up GCP project with Secret Manager API and
 required IAM permissions.
@@ -39,8 +39,9 @@ Use --dry-run to preview what would be done.`,
 }
 
 func init() {
-	rootCmd.AddCommand(gcpCmd)
-	gcpCmd.AddCommand(gcpBootstrapCmd)
+	rootCmd.AddCommand(gsmCmd)
+	gsmCmd.AddCommand(gsmGCPBootstrapCmd)
+	gsmCmd.AddCommand(bootstrapCmd)
 }
 
 func runGCPBootstrap(cmd *cobra.Command, args []string) error {

@@ -275,7 +275,7 @@ func TestE2E_Edge_RetireNonExistentSecret(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	// Try to retire a secret that doesn't exist
-	output, err := runWaxsealWithDir(t, tmpDir, "retire", "nonexistent-secret", "--repo="+tmpDir, "--yes")
+	output, err := runWaxsealWithDir(t, tmpDir, "retirekey", "nonexistent-secret", "--repo="+tmpDir, "--yes")
 	if err == nil {
 		t.Error("expected error for non-existent secret")
 	}
@@ -292,10 +292,10 @@ func TestE2E_Edge_RetireAlreadyRetired(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	// Retire once
-	runWaxsealWithDir(t, tmpDir, "retire", "my-app-secrets", "--repo="+tmpDir, "--yes")
+	runWaxsealWithDir(t, tmpDir, "retirekey", "my-app-secrets", "--repo="+tmpDir, "--yes")
 
 	// Retire again
-	output, err := runWaxsealWithDir(t, tmpDir, "retire", "my-app-secrets", "--repo="+tmpDir, "--yes")
+	output, err := runWaxsealWithDir(t, tmpDir, "retirekey", "my-app-secrets", "--repo="+tmpDir, "--yes")
 	if err == nil {
 		// May succeed idempotently or warn
 		t.Log("✓ Double retire handled idempotently")

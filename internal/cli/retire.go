@@ -12,8 +12,8 @@ import (
 )
 
 var retireCmd = &cobra.Command{
-	Use:   "retire <shortName>",
-	Short: "Mark a secret as retired",
+	Use:   "retirekey <shortName>",
+	Short: "Mark a key as retired",
 	Long: `Mark a secret as retired and optionally remove its manifest.
 
 Retirement is a two-phase process:

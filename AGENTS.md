@@ -54,8 +54,17 @@ go build -ldflags "-X github.com/shermanhuman/waxseal/internal/cli.Version=$VERS
 cmd/waxseal/main.go     # Thin entry point
 internal/
   cli/                  # Cobra commands, user interaction
+    root.go             # Root command, global flags, command groups, version
+    grouping.go         # GroupIDs and Hidden flags (help layout)
     resolve.go          # Shared CLI plumbing (resolveConfig, resolveStore, etc.)
     style.go            # Output formatting, ANSI helpers, text utilities
+    check.go            # 'check' parent + cert/expiry/metadata/gsm/cluster subcommands
+    meta.go             # 'meta' parent + list secrets/keys, showkey
+    rotate.go           # 'rotate' command + serializeMetadata
+    add.go              # 'addkey' (hidden, advanced)
+    update.go           # 'updatekey' (hidden, advanced)
+    retire.go           # 'retirekey' (hidden, advanced)
+    gcp_bootstrap.go    # 'gsm' parent + gcp-bootstrap, bootstrap
   core/                 # Domain types (errors, metadata, generate), no I/O
   config/               # Config loading/validation
   files/                # Atomic writes, YAML validators, metadata I/O helpers
@@ -71,22 +80,60 @@ testdata/
   infra-repo/           # Test fixture repo structure
 ```
 
+## CLI Command Tree (v0.3.0)
+
+Primary commands (shown in `waxseal --help`):
+
+```
+waxseal
+├── rotate          # Key Management — rotate secret values
+├── reseal          # Operations — reseal from GSM
+├── check           # Operations — health checks
+│   ├── cert        # Certificate expiry
+│   ├── expiry      # Secret expiration
+│   ├── metadata    # Config/schema/hygiene
+│   ├── gsm         # Verify GSM versions exist
+│   └── cluster     # Compare metadata vs live cluster
+├── meta            # Metadata viewers
+│   ├── list
+│   │   ├── secrets # List all registered secrets
+│   │   └── keys    # List keys within a secret
+│   └── showkey     # Detailed metadata for one secret
+├── setup           # Installation — interactive wizard
+└── advanced        # Prints hidden command reference
+```
+
+Advanced commands (shown via `waxseal advanced`):
+
+```
+waxseal
+├── addkey          # Non-interactive secret creation
+├── updatekey       # Non-interactive key update
+├── retirekey       # Mark a key as retired
+├── discover        # Scan repo for SealedSecret manifests
+├── gsm
+│   ├── bootstrap       # Push cluster secrets → GSM metadata
+│   └── gcp-bootstrap   # Initialize GCP infrastructure
+└── reminders
+    ├── sync / list / clear / setup
+```
+
 ## Package Responsibilities
 
-| Package      | Responsibility                                                          |
-| ------------ | ----------------------------------------------------------------------- |
-| `cli/`       | Cobra commands, user interaction, output formatting                     |
-| `core/`      | Domain types (SecretMetadata, errors, generate), **no I/O**             |
-| `config/`    | Config loading, validation, defaults                                    |
-| `files/`     | Atomic writes, YAML validators, metadata I/O helpers                    |
-| `gcp/`       | Pure GCP shell wrappers (gcloud, billing, orgs) — no CLI dependency     |
-| `seal/`      | KubesealSealer (uses kubeseal binary), CertSealer, SealedSecret builder |
-| `store/`     | Store interface, FakeStore, GSM impl, `SanitizeGSMName`/`FormatSecretID`|
-| `template/`  | Computed key templates, cycle detection, connection string detection     |
-| `reminder/`  | Calendar provider interface, Google Calendar                            |
-| `reseal/`    | Orchestration (fetch → compute → seal → write)                          |
-| `state/`     | CLI state persistence (atomic writes via `files.AtomicWriter`)          |
-| `logging/`   | Redacted type, safe structured logging                                  |
+| Package     | Responsibility                                                           |
+| ----------- | ------------------------------------------------------------------------ |
+| `cli/`      | Cobra commands, user interaction, output formatting                      |
+| `core/`     | Domain types (SecretMetadata, errors, generate), **no I/O**              |
+| `config/`   | Config loading, validation, defaults                                     |
+| `files/`    | Atomic writes, YAML validators, metadata I/O helpers                     |
+| `gcp/`      | Pure GCP shell wrappers (gcloud, billing, orgs) — no CLI dependency      |
+| `seal/`     | KubesealSealer (uses kubeseal binary), CertSealer, SealedSecret builder  |
+| `store/`    | Store interface, FakeStore, GSM impl, `SanitizeGSMName`/`FormatSecretID` |
+| `template/` | Computed key templates, cycle detection, connection string detection     |
+| `reminder/` | Calendar provider interface, Google Calendar                             |
+| `reseal/`   | Orchestration (fetch → compute → seal → write)                           |
+| `state/`    | CLI state persistence (atomic writes via `files.AtomicWriter`)           |
+| `logging/`  | Redacted type, safe structured logging                                   |
 
 ## CLI Architecture
 

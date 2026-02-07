@@ -59,6 +59,7 @@ func init() {
 	resealCmd.Flags().BoolVar(&resealAll, "all", false, "Reseal all active secrets")
 	resealCmd.Flags().StringVar(&resealNewCert, "new-cert", "", "Path to new certificate file (forces cert update)")
 	resealCmd.Flags().BoolVar(&resealSkipCertCheck, "skip-cert-check", false, "Skip cluster cert rotation check (offline/CI)")
+	addPreflightChecks(resealCmd, authNeeds{gsm: true, kubeseal: true})
 	addMetadataCheck(resealCmd)
 }
 

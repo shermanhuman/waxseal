@@ -82,6 +82,9 @@ func init() {
 	remindersCmd.AddCommand(remindersSetupCmd)
 
 	remindersListCmd.Flags().IntVar(&remindersListDays, "days", 90, "Show expirations within this many days")
+
+	addPreflightChecks(remindersSyncCmd, authNeeds{gsm: true})
+	addPreflightChecks(remindersClearCmd, authNeeds{gsm: true})
 }
 
 func runRemindersSync(cmd *cobra.Command, args []string) error {

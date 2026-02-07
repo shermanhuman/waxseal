@@ -199,6 +199,8 @@ func wrapGRPCError(err error, resource string, operation string) error {
 			return core.WrapNotFound(resource, err)
 		case codes.PermissionDenied:
 			return core.WrapPermissionDenied(resource, err)
+		case codes.Unauthenticated:
+			return core.WrapUnauthenticated(resource, err)
 		case codes.AlreadyExists:
 			return fmt.Errorf("%s: %w: %v", resource, core.ErrAlreadyExists, err)
 		case codes.InvalidArgument:

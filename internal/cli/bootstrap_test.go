@@ -14,10 +14,13 @@ func TestRequiresMetadata(t *testing.T) {
 		want bool
 	}{
 		{"list", true},
-		{"validate", true},
+		{"check", true},
 		{"reseal", true},
 		{"rotate", true},
-		{"retire", true},
+		{"retirekey", true},
+		{"secrets", true},
+		{"keys", true},
+		{"showkey", true},
 		{"setup", false},
 		{"discover", false},
 		{"reminders", false},
