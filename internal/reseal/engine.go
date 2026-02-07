@@ -4,7 +4,6 @@ package reseal
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -45,18 +44,9 @@ type Result struct {
 // ResealOne reseals a single secret by its short name.
 func (e *Engine) ResealOne(ctx context.Context, shortName string) (*Result, error) {
 	// Load metadata
-	metadataPath := filepath.Join(e.repoDir, ".waxseal", "metadata", shortName+".yaml")
-	data, err := os.ReadFile(metadataPath)
+	metadata, err := files.LoadMetadata(e.repoDir, shortName)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, core.WrapNotFound(shortName, err)
-		}
-		return nil, fmt.Errorf("read metadata: %w", err)
-	}
-
-	metadata, err := core.ParseMetadata(data)
-	if err != nil {
-		return nil, fmt.Errorf("parse metadata: %w", err)
+		return nil, err
 	}
 
 	// Check if retired
@@ -69,45 +59,23 @@ func (e *Engine) ResealOne(ctx context.Context, shortName string) (*Result, erro
 
 // ResealAll reseals all active secrets.
 func (e *Engine) ResealAll(ctx context.Context) ([]*Result, error) {
-	metadataDir := filepath.Join(e.repoDir, ".waxseal", "metadata")
-	entries, err := os.ReadDir(metadataDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, core.WrapNotFound(metadataDir, err)
-		}
-		return nil, fmt.Errorf("read metadata directory: %w", err)
+	allSecrets, loadErrs := files.LoadAllMetadataCollectErrors(e.repoDir)
+	if len(allSecrets) == 0 && len(loadErrs) > 0 {
+		// All files failed — likely directory not found
+		return nil, loadErrs[0]
 	}
 
 	var results []*Result
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
-			continue
-		}
 
-		shortName := strings.TrimSuffix(entry.Name(), ".yaml")
+	// Record load errors as results
+	for _, err := range loadErrs {
+		results = append(results, &Result{Error: err})
+	}
 
-		// Check if retired before attempting reseal
-		metadataPath := filepath.Join(metadataDir, entry.Name())
-		data, err := os.ReadFile(metadataPath)
-		if err != nil {
-			results = append(results, &Result{
-				ShortName: shortName,
-				Error:     err,
-			})
-			continue
-		}
-		metadata, err := core.ParseMetadata(data)
-		if err != nil {
-			results = append(results, &Result{
-				ShortName: shortName,
-				Error:     err,
-			})
-			continue
-		}
-
+	for _, metadata := range allSecrets {
 		// Skip retired secrets silently
 		if metadata.IsRetired() {
-			logging.Info("skipping retired secret", "shortName", shortName)
+			logging.Info("skipping retired secret", "shortName", metadata.ShortName)
 			continue
 		}
 
@@ -115,7 +83,7 @@ func (e *Engine) ResealAll(ctx context.Context) ([]*Result, error) {
 		if err != nil {
 			// Record error but continue with other secrets
 			results = append(results, &Result{
-				ShortName: shortName,
+				ShortName: metadata.ShortName,
 				Error:     err,
 			})
 			continue
@@ -220,7 +188,17 @@ func (e *Engine) resealFromMetadata(ctx context.Context, metadata *core.SecretMe
 	}
 
 	// Build the SealedSecret manifest
-	manifest := e.buildManifest(metadata, encryptedData)
+	ss := seal.NewSealedSecret(
+		metadata.SealedSecret.Name,
+		metadata.SealedSecret.Namespace,
+		metadata.SealedSecret.Scope,
+		metadata.SealedSecret.Type,
+		encryptedData,
+	)
+	manifest, err := ss.ToYAML()
+	if err != nil {
+		return nil, fmt.Errorf("serialize manifest for %s: %w", metadata.ShortName, err)
+	}
 
 	// Write the manifest
 	manifestPath := metadata.ManifestPath
@@ -241,7 +219,7 @@ func (e *Engine) resealFromMetadata(ctx context.Context, metadata *core.SecretMe
 	}
 
 	writer := files.NewAtomicWriter(files.YAMLKindValidator("SealedSecret"))
-	if err := writer.Write(manifestPath, []byte(manifest)); err != nil {
+	if err := writer.Write(manifestPath, manifest); err != nil {
 		return nil, fmt.Errorf("write manifest: %w", err)
 	}
 
@@ -297,59 +275,4 @@ func (e *Engine) evaluateComputed(config *core.ComputedConfig, keyValues map[str
 
 	// Execute template
 	return tmpl.Execute(values)
-}
-
-func (e *Engine) buildManifest(metadata *core.SecretMetadata, encryptedData map[string]string) string {
-	var sb strings.Builder
-
-	sb.WriteString("apiVersion: bitnami.com/v1alpha1\n")
-	sb.WriteString("kind: SealedSecret\n")
-	sb.WriteString("metadata:\n")
-	sb.WriteString(fmt.Sprintf("  name: %s\n", metadata.SealedSecret.Name))
-	sb.WriteString(fmt.Sprintf("  namespace: %s\n", metadata.SealedSecret.Namespace))
-
-	// Add scope annotation if not strict (using controller's annotation format)
-	if metadata.SealedSecret.Scope == "namespace-wide" {
-		sb.WriteString("  annotations:\n")
-		sb.WriteString("    sealedsecrets.bitnami.com/namespace-wide: \"true\"\n")
-	} else if metadata.SealedSecret.Scope == "cluster-wide" {
-		sb.WriteString("  annotations:\n")
-		sb.WriteString("    sealedsecrets.bitnami.com/cluster-wide: \"true\"\n")
-	}
-
-	sb.WriteString("spec:\n")
-	sb.WriteString("  encryptedData:\n")
-
-	// Sort keys for deterministic output
-	keys := make([]string, 0, len(encryptedData))
-	for k := range encryptedData {
-		keys = append(keys, k)
-	}
-	sortStrings(keys)
-
-	for _, key := range keys {
-		sb.WriteString(fmt.Sprintf("    %s: %s\n", key, encryptedData[key]))
-	}
-
-	// Add template if there's a specific type
-	if metadata.SealedSecret.Type != "" && metadata.SealedSecret.Type != "Opaque" {
-		sb.WriteString("  template:\n")
-		sb.WriteString(fmt.Sprintf("    type: %s\n", metadata.SealedSecret.Type))
-		sb.WriteString("    metadata:\n")
-		sb.WriteString(fmt.Sprintf("      name: %s\n", metadata.SealedSecret.Name))
-		sb.WriteString(fmt.Sprintf("      namespace: %s\n", metadata.SealedSecret.Namespace))
-	}
-
-	return sb.String()
-}
-
-// Simple string sort without importing sort package
-func sortStrings(s []string) {
-	for i := 0; i < len(s); i++ {
-		for j := i + 1; j < len(s); j++ {
-			if s[i] > s[j] {
-				s[i], s[j] = s[j], s[i]
-			}
-		}
-	}
 }

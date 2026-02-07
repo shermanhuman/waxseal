@@ -1,4 +1,4 @@
-package reminders
+package reminder
 
 import (
 	"context"

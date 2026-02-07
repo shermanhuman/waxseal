@@ -1,20 +1,14 @@
 package cli
 
 import (
-	"crypto/rand"
-	"encoding/base64"
-	"encoding/hex"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
-	"github.com/shermanhuman/waxseal/internal/config"
 	"github.com/shermanhuman/waxseal/internal/core"
+	"github.com/shermanhuman/waxseal/internal/files"
 	"github.com/shermanhuman/waxseal/internal/reseal"
-	"github.com/shermanhuman/waxseal/internal/seal"
 	"github.com/shermanhuman/waxseal/internal/state"
-	"github.com/shermanhuman/waxseal/internal/store"
 	"github.com/shermanhuman/waxseal/internal/template"
 	"github.com/spf13/cobra"
 )
@@ -76,45 +70,28 @@ func runRotate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Load config
-	configFile := configPath
-	if !filepath.IsAbs(configFile) {
-		configFile = filepath.Join(repoPath, configFile)
-	}
-	cfg, err := config.Load(configFile)
+	cfg, err := resolveConfig()
 	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+		return err
 	}
 
 	// Load metadata
-	metadataPath := filepath.Join(repoPath, ".waxseal", "metadata", shortName+".yaml")
-	data, err := os.ReadFile(metadataPath)
+	metadata, err := files.LoadMetadata(repoPath, shortName)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("secret %q not found", shortName)
-		}
-		return fmt.Errorf("read metadata: %w", err)
+		return err
 	}
-	metadata, err := core.ParseMetadata(data)
-	if err != nil {
-		return fmt.Errorf("parse metadata: %w", err)
-	}
+	metadataPath := files.MetadataPath(repoPath, shortName)
 
 	if metadata.IsRetired() {
 		return fmt.Errorf("cannot rotate retired secret %q", shortName)
 	}
 
 	// Create store
-	var secretStore store.Store
-	if cfg.Store.Kind == "gsm" {
-		gsmStore, err := store.NewGSMStore(ctx, cfg.Store.ProjectID)
-		if err != nil {
-			return fmt.Errorf("create GSM store: %w", err)
-		}
-		defer gsmStore.Close()
-		secretStore = gsmStore
-	} else {
-		return fmt.Errorf("unsupported store kind: %s", cfg.Store.Kind)
+	secretStore, closeStore, err := resolveStore(ctx, cfg)
+	if err != nil {
+		return err
 	}
+	defer closeStore()
 
 	// Find keys to rotate
 	var keysToRotate []core.KeyMetadata
@@ -188,7 +165,7 @@ func runRotate(cmd *cobra.Command, args []string) error {
 				}
 
 				// Generate new secret value
-				secretBytes, err := generateValue(key.Rotation.Generator)
+				secretBytes, err := core.GenerateValue(key.Rotation.Generator)
 				if err != nil {
 					return fmt.Errorf("generate value for %s: %w", key.KeyName, err)
 				}
@@ -231,7 +208,7 @@ func runRotate(cmd *cobra.Command, args []string) error {
 			}
 
 			// Regular GSM key generation
-			newValue, err = generateValue(key.Rotation.Generator)
+			newValue, err = core.GenerateValue(key.Rotation.Generator)
 			if err != nil {
 				return fmt.Errorf("generate value for %s: %w", key.KeyName, err)
 			}
@@ -413,12 +390,8 @@ func runRotate(cmd *cobra.Command, args []string) error {
 	// Reseal
 	fmt.Println("\nResealing...")
 
-	certPath := cfg.Cert.RepoCertPath
-	if !filepath.IsAbs(certPath) {
-		certPath = filepath.Join(repoPath, certPath)
-	}
 	// Use kubeseal binary for encryption (guarantees controller compatibility)
-	sealer := seal.NewKubesealSealer(certPath)
+	sealer := resolveSealer(cfg)
 
 	engine := reseal.NewEngine(secretStore, sealer, repoPath, dryRun)
 	result, err := engine.ResealOne(ctx, shortName)
@@ -441,54 +414,12 @@ func runRotate(cmd *cobra.Command, args []string) error {
 
 // recordRotateState adds a rotation record to state.yaml.
 func recordRotateState(shortName, keyName string) error {
-	s, err := state.Load(repoPath)
-	if err != nil {
-		return err
-	}
-	s.AddRotation(shortName, keyName, "rotate", "")
-	return s.Save(repoPath)
-}
-
-func generateValue(gen *core.GeneratorConfig) ([]byte, error) {
-	if gen == nil {
-		return nil, fmt.Errorf("no generator config")
-	}
-
-	byteCount := gen.Bytes
-	if byteCount == 0 {
-		byteCount = 32 // Default to 32 bytes
-	}
-
-	// Generate random bytes
-	randomBytes := make([]byte, byteCount)
-	if _, err := rand.Read(randomBytes); err != nil {
-		return nil, fmt.Errorf("read random: %w", err)
-	}
-
-	// Encode based on kind
-	switch gen.Kind {
-	case "randomBase64":
-		return []byte(base64.StdEncoding.EncodeToString(randomBytes)), nil
-	case "randomHex":
-		return []byte(hex.EncodeToString(randomBytes)), nil
-	case "randomBytes":
-		return randomBytes, nil
-	default:
-		return nil, fmt.Errorf("unsupported generator kind: %s", gen.Kind)
-	}
+	return withState(func(s *state.State) {
+		s.AddRotation(shortName, keyName, "rotate", "")
+	})
 }
 
 // truncateStr shortens a string to maxLen characters, adding "..." if truncated.
-func truncateStr(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	if maxLen <= 3 {
-		return s[:maxLen]
-	}
-	return s[:maxLen-3] + "..."
-}
-
 // displayOperatorHints prints operator hints for manual rotation.
 // Per plan: hints content is stored in GSM, metadata only has the reference.
 func displayOperatorHints(hints *core.OperatorHints, keyName string) {

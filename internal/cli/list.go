@@ -2,11 +2,10 @@ package cli
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/shermanhuman/waxseal/internal/core"
+	"github.com/shermanhuman/waxseal/internal/files"
 	"github.com/spf13/cobra"
 )
 
@@ -29,34 +28,13 @@ func runList(cmd *cobra.Command, args []string) error {
 	output, _ := cmd.Flags().GetString("output")
 
 	// Load all metadata
-	metadataDir := filepath.Join(repoPath, ".waxseal", "metadata")
-	entries, err := os.ReadDir(metadataDir)
+	secrets, err := files.LoadAllMetadata(repoPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if core.IsNotFound(err) {
 			fmt.Println("No secrets registered. Run 'waxseal discover' first.")
 			return nil
 		}
-		return fmt.Errorf("read metadata directory: %w", err)
-	}
-
-	var secrets []*core.SecretMetadata
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
-			continue
-		}
-
-		path := filepath.Join(metadataDir, entry.Name())
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return fmt.Errorf("read %s: %w", path, err)
-		}
-
-		m, err := core.ParseMetadata(data)
-		if err != nil {
-			return fmt.Errorf("parse %s: %w", path, err)
-		}
-
-		secrets = append(secrets, m)
+		return err
 	}
 
 	if len(secrets) == 0 {
@@ -105,10 +83,10 @@ func printListTable(secrets []*core.SecretMetadata) error {
 		}
 
 		fmt.Printf("%-25s %-10s %-6d %-30s %-20s\n",
-			truncate(s.ShortName, 25),
+			truncateStr(s.ShortName, 25),
 			status,
 			len(s.Keys),
-			truncate(strings.Join(modeList, ", "), 30),
+			truncateStr(strings.Join(modeList, ", "), 30),
 			expiry,
 		)
 	}
@@ -138,11 +116,4 @@ func printListJSON(secrets []*core.SecretMetadata) error {
 	}
 	fmt.Println("]")
 	return nil
-}
-
-func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen-3] + "..."
 }

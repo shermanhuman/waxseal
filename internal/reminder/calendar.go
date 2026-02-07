@@ -1,5 +1,5 @@
-// Package reminders provides calendar integration for expiry alerts.
-package reminders
+// package reminder provides calendar integration for expiry alerts.
+package reminder
 
 import (
 	"context"

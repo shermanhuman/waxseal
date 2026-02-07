@@ -1,15 +1,12 @@
 apiVersion: bitnami.com/v1alpha1
 kind: SealedSecret
 metadata:
+  annotations:
+    sealedsecrets.bitnami.com/scope: namespace-wide
   name: docker-registry
   namespace: infra
-  annotations:
-    sealedsecrets.bitnami.com/namespace-wide: "true"
 spec:
   encryptedData:
     .dockerconfigjson: SEALED:infra/docker-registry/.dockerconfigjson=docker-config-value
   template:
     type: kubernetes.io/dockerconfigjson
-    metadata:
-      name: docker-registry
-      namespace: infra

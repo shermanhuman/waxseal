@@ -4,14 +4,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/huh"
-	"github.com/shermanhuman/waxseal/internal/config"
 	"github.com/shermanhuman/waxseal/internal/core"
-	"github.com/shermanhuman/waxseal/internal/reminders"
+	"github.com/shermanhuman/waxseal/internal/files"
+	"github.com/shermanhuman/waxseal/internal/reminder"
 	"github.com/spf13/cobra"
 )
 
@@ -87,13 +88,9 @@ func runRemindersSync(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
 	// Load config
-	configFile := configPath
-	if !filepath.IsAbs(configFile) {
-		configFile = filepath.Join(repoPath, configFile)
-	}
-	cfg, err := config.Load(configFile)
+	cfg, err := resolveConfig()
 	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+		return err
 	}
 
 	// Check if reminders are enabled
@@ -152,11 +149,11 @@ reminders:
 	}
 
 	// Create providers based on config
-	var providers []reminders.Provider
+	var providers []reminder.Provider
 
 	switch cfg.Reminders.Provider {
 	case "tasks", "": // Tasks is default
-		p, err := reminders.NewGoogleTasksProvider(ctx, cfg.Reminders.TasklistID, cfg.Reminders.LeadTimeDays)
+		p, err := reminder.NewGoogleTasksProvider(ctx, cfg.Reminders.TasklistID, cfg.Reminders.LeadTimeDays)
 		if err != nil {
 			return fmt.Errorf("create tasks provider: %w", err)
 		}
@@ -164,7 +161,7 @@ reminders:
 		providers = append(providers, p)
 
 	case "calendar":
-		p, err := reminders.NewGoogleCalendarProvider(ctx, cfg.Reminders.CalendarID, cfg.Reminders.LeadTimeDays)
+		p, err := reminder.NewGoogleCalendarProvider(ctx, cfg.Reminders.CalendarID, cfg.Reminders.LeadTimeDays)
 		if err != nil {
 			return fmt.Errorf("create calendar provider: %w", err)
 		}
@@ -172,11 +169,11 @@ reminders:
 		providers = append(providers, p)
 
 	case "both":
-		tp, err := reminders.NewGoogleTasksProvider(ctx, cfg.Reminders.TasklistID, cfg.Reminders.LeadTimeDays)
+		tp, err := reminder.NewGoogleTasksProvider(ctx, cfg.Reminders.TasklistID, cfg.Reminders.LeadTimeDays)
 		if err != nil {
 			return fmt.Errorf("create tasks provider: %w", err)
 		}
-		cp, err := reminders.NewGoogleCalendarProvider(ctx, cfg.Reminders.CalendarID, cfg.Reminders.LeadTimeDays)
+		cp, err := reminder.NewGoogleCalendarProvider(ctx, cfg.Reminders.CalendarID, cfg.Reminders.LeadTimeDays)
 		if err != nil {
 			return fmt.Errorf("create calendar provider: %w", err)
 		}
@@ -221,13 +218,9 @@ func runRemindersClear(cmd *cobra.Command, args []string) error {
 	shortName := args[0]
 
 	// Load config
-	configFile := configPath
-	if !filepath.IsAbs(configFile) {
-		configFile = filepath.Join(repoPath, configFile)
-	}
-	cfg, err := config.Load(configFile)
+	cfg, err := resolveConfig()
 	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+		return err
 	}
 
 	if cfg.Reminders == nil || !cfg.Reminders.Enabled {
@@ -240,29 +233,29 @@ func runRemindersClear(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create providers based on config
-	var providers []reminders.Provider
+	var providers []reminder.Provider
 
 	switch cfg.Reminders.Provider {
 	case "tasks", "": // Tasks is default
-		p, err := reminders.NewGoogleTasksProvider(ctx, cfg.Reminders.TasklistID, cfg.Reminders.LeadTimeDays)
+		p, err := reminder.NewGoogleTasksProvider(ctx, cfg.Reminders.TasklistID, cfg.Reminders.LeadTimeDays)
 		if err != nil {
 			return fmt.Errorf("create tasks provider: %w", err)
 		}
 		providers = append(providers, p)
 
 	case "calendar":
-		p, err := reminders.NewGoogleCalendarProvider(ctx, cfg.Reminders.CalendarID, cfg.Reminders.LeadTimeDays)
+		p, err := reminder.NewGoogleCalendarProvider(ctx, cfg.Reminders.CalendarID, cfg.Reminders.LeadTimeDays)
 		if err != nil {
 			return fmt.Errorf("create calendar provider: %w", err)
 		}
 		providers = append(providers, p)
 
 	case "both":
-		tp, err := reminders.NewGoogleTasksProvider(ctx, cfg.Reminders.TasklistID, cfg.Reminders.LeadTimeDays)
+		tp, err := reminder.NewGoogleTasksProvider(ctx, cfg.Reminders.TasklistID, cfg.Reminders.LeadTimeDays)
 		if err != nil {
 			return fmt.Errorf("create tasks provider: %w", err)
 		}
-		cp, err := reminders.NewGoogleCalendarProvider(ctx, cfg.Reminders.CalendarID, cfg.Reminders.LeadTimeDays)
+		cp, err := reminder.NewGoogleCalendarProvider(ctx, cfg.Reminders.CalendarID, cfg.Reminders.LeadTimeDays)
 		if err != nil {
 			return fmt.Errorf("create calendar provider: %w", err)
 		}
@@ -287,36 +280,7 @@ func runRemindersClear(cmd *cobra.Command, args []string) error {
 }
 
 func loadAllMetadata() ([]*core.SecretMetadata, error) {
-	metadataDir := filepath.Join(repoPath, ".waxseal", "metadata")
-	entries, err := os.ReadDir(metadataDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("metadata directory not found: %s", metadataDir)
-		}
-		return nil, fmt.Errorf("read metadata directory: %w", err)
-	}
-
-	var secrets []*core.SecretMetadata
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
-			continue
-		}
-
-		path := filepath.Join(metadataDir, entry.Name())
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil, fmt.Errorf("read %s: %w", path, err)
-		}
-
-		m, err := core.ParseMetadata(data)
-		if err != nil {
-			return nil, fmt.Errorf("parse %s: %w", path, err)
-		}
-
-		secrets = append(secrets, m)
-	}
-
-	return secrets, nil
+	return files.LoadAllMetadata(repoPath)
 }
 
 func hasExpiry(s *core.SecretMetadata) bool {
@@ -378,14 +342,16 @@ func runRemindersList(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Sort by expiry date (inline bubble sort)
-	for i := 0; i < len(expiring); i++ {
-		for j := i + 1; j < len(expiring); j++ {
-			if expiring[i].expiresAt > expiring[j].expiresAt {
-				expiring[i], expiring[j] = expiring[j], expiring[i]
-			}
+	// Sort by expiry date
+	slices.SortFunc(expiring, func(a, b expiringKey) int {
+		if a.expiresAt < b.expiresAt {
+			return -1
 		}
-	}
+		if a.expiresAt > b.expiresAt {
+			return 1
+		}
+		return 0
+	})
 
 	fmt.Printf("Secrets expiring within %d days:\n\n", remindersListDays)
 	fmt.Printf("%-25s %-20s %-12s %s\n", "SECRET", "KEY", "DAYS", "EXPIRES")

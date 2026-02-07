@@ -37,22 +37,6 @@ func TestE2E_Validate(t *testing.T) {
 		t.Log("✓ validate fails for missing config")
 	})
 
-	t.Run("validate warns about expiring secrets", func(t *testing.T) {
-		tmpDir := setupRepoWithExpiringSoon(t)
-		defer os.RemoveAll(tmpDir)
-
-		output, err := runWaxsealWithDir(t, tmpDir, "validate", "--repo="+tmpDir, "--soon-days=365")
-		// May pass but with warnings
-		_ = err
-
-		if strings.Contains(strings.ToLower(output), "expir") {
-			t.Log("✓ validate warns about expiring secrets")
-		} else {
-			t.Logf("Output: %s", output)
-			t.Log("✓ validate completed")
-		}
-	})
-
 	t.Run("validate checks manifest paths", func(t *testing.T) {
 		tmpDir := setupRepoWithMissingManifest(t)
 		defer os.RemoveAll(tmpDir)
@@ -122,34 +106,43 @@ func TestE2E_List(t *testing.T) {
 	})
 }
 
-// TestE2E_CertCheck tests the `waxseal cert-check` command
-func TestE2E_CertCheck(t *testing.T) {
+// TestE2E_Check tests the `waxseal check` command
+func TestE2E_Check(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping E2E test in short mode")
 	}
 
-	t.Run("cert-check shows certificate info", func(t *testing.T) {
+	t.Run("check --cert shows certificate info", func(t *testing.T) {
 		tmpDir := setupRepoWithValidCert(t)
 		defer os.RemoveAll(tmpDir)
 
-		output, err := runWaxsealWithDir(t, tmpDir, "cert-check", "--repo="+tmpDir)
+		output, err := runWaxsealWithDir(t, tmpDir, "check", "--cert", "--repo="+tmpDir)
 		if err != nil {
-			t.Fatalf("cert-check: %v\nOutput: %s", err, output)
+			t.Fatalf("check --cert: %v\nOutput: %s", err, output)
 		}
 
-		// Should show certificate information
 		if !strings.Contains(strings.ToLower(output), "valid") &&
 			!strings.Contains(strings.ToLower(output), "expir") &&
 			!strings.Contains(strings.ToLower(output), "certificate") {
 			t.Logf("Output: %s", output)
 		}
 
-		t.Log("✓ cert-check shows certificate info")
+		t.Log("✓ check --cert shows certificate info")
 	})
 
-	t.Run("cert-check warns about expiring cert", func(t *testing.T) {
-		// This would need a cert expiring soon - skip for now
-		t.Log("✓ cert-check warning test (skipped - needs expiring cert)")
+	t.Run("check --expiry warns about expiring secrets", func(t *testing.T) {
+		tmpDir := setupRepoWithExpiringSoon(t)
+		defer os.RemoveAll(tmpDir)
+
+		output, err := runWaxsealWithDir(t, tmpDir, "check", "--expiry", "--warn-days=365", "--repo="+tmpDir)
+		_ = err
+
+		if strings.Contains(strings.ToLower(output), "expir") {
+			t.Log("✓ check --expiry warns about expiring secrets")
+		} else {
+			t.Logf("Output: %s", output)
+			t.Log("✓ check --expiry completed")
+		}
 	})
 }
 

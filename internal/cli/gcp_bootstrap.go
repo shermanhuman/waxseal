@@ -1,16 +1,13 @@
 package cli
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
-	"time"
 
+	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/huh/spinner"
+	"github.com/shermanhuman/waxseal/internal/gcp"
 	"github.com/spf13/cobra"
 )
 
@@ -23,7 +20,8 @@ var gcpCmd = &cobra.Command{
 var gcpBootstrapCmd = &cobra.Command{
 	Use:   "bootstrap",
 	Short: "Initialize GCP infrastructure for WaxSeal",
-	Long: `Set up GCP project with Secret Manager API and required IAM permissions.
+	Long: `Interactive wizard to set up GCP project with Secret Manager API and
+required IAM permissions.
 
 This command:
   1. Enables required APIs (Secret Manager, optionally Calendar)
@@ -36,55 +34,18 @@ Prerequisites:
   - Project Owner or equivalent permissions
   - Billing account linked (for API enablement)
 
-Examples:
-  # Bootstrap existing project
-  waxseal gcp bootstrap --project-id my-project
-
-  # Create new project and bootstrap
-  waxseal gcp bootstrap --project-id my-project --create-project --billing-account-id 01XXXX-XXXXXX-XXXXXX
-
-  # Preview what would be done
-  waxseal gcp bootstrap --project-id my-project --dry-run
-
-  # Enable calendar reminders API
-  waxseal gcp bootstrap --project-id my-project --enable-reminders-api`,
+Use --dry-run to preview what would be done.`,
 	RunE: runGCPBootstrap,
 }
-
-var (
-	gcpProjectID        string
-	gcpCreateProject    bool
-	gcpBillingAccountID string
-	gcpFolderID         string
-	gcpOrgID            string
-	gcpGitHubRepo       string
-	gcpDefaultBranchRef string
-	gcpEnableReminders  bool
-	gcpSecretsPrefix    string
-	gcpServiceAccountID string
-)
 
 func init() {
 	rootCmd.AddCommand(gcpCmd)
 	gcpCmd.AddCommand(gcpBootstrapCmd)
-
-	gcpBootstrapCmd.Flags().StringVar(&gcpProjectID, "project-id", "", "GCP project ID (required)")
-	gcpBootstrapCmd.Flags().BoolVar(&gcpCreateProject, "create-project", false, "Create the project if it doesn't exist")
-	gcpBootstrapCmd.Flags().StringVar(&gcpBillingAccountID, "billing-account-id", "", "Billing account ID (required with --create-project)")
-	gcpBootstrapCmd.Flags().StringVar(&gcpFolderID, "folder-id", "", "Folder ID for project organization")
-	gcpBootstrapCmd.Flags().StringVar(&gcpOrgID, "org-id", "", "Organization ID for project")
-	gcpBootstrapCmd.Flags().StringVar(&gcpGitHubRepo, "github-repo", "", "GitHub repository for Workload Identity (owner/repo)")
-	gcpBootstrapCmd.Flags().StringVar(&gcpDefaultBranchRef, "default-branch-ref", "refs/heads/main", "Default branch ref for Workload Identity")
-	gcpBootstrapCmd.Flags().BoolVar(&gcpEnableReminders, "enable-reminders-api", false, "Enable Google Calendar API for reminders")
-	gcpBootstrapCmd.Flags().StringVar(&gcpSecretsPrefix, "secrets-prefix", "waxseal", "Prefix for service account and secrets")
-	gcpBootstrapCmd.Flags().StringVar(&gcpServiceAccountID, "service-account-id", "", "Service account ID (default: <prefix>-sa)")
-
-	gcpBootstrapCmd.MarkFlagRequired("project-id")
 }
 
 func runGCPBootstrap(cmd *cobra.Command, args []string) error {
 	// Check for gcloud
-	if err := CheckGcloudInstalled(); err != nil {
+	if err := gcp.CheckGcloudInstalled(); err != nil {
 		return err
 	}
 
@@ -98,39 +59,250 @@ func runGCPBootstrap(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Validate flags
-	if gcpCreateProject && gcpBillingAccountID == "" {
-		return fmt.Errorf("--billing-account-id is required when --create-project is set")
+	// --- Interactive prompts ---
+
+	// 1. Project setup: create or use existing?
+	var setupChoice string
+	err := huh.NewSelect[string]().
+		Title("How do you want to set up GCP?").
+		Options(
+			huh.NewOption("Use an existing GCP project", "existing"),
+			huh.NewOption("Create a new GCP project", "create"),
+		).
+		Value(&setupChoice).
+		Run()
+	if err != nil {
+		return err
 	}
 
-	saID := gcpServiceAccountID
-	if saID == "" {
-		saID = gcpSecretsPrefix + "-sa"
-	}
-	saEmail := fmt.Sprintf("%s@%s.iam.gserviceaccount.com", saID, gcpProjectID)
+	var projectID string
+	var createProject bool
+	var billingAccountID string
+	var folderID string
+	var orgID string
 
+	if setupChoice == "create" {
+		createProject = true
+
+		// Prompt project ID
+		err = huh.NewInput().
+			Title("Project ID").
+			Description("Globally unique GCP project identifier").
+			Value(&projectID).
+			Run()
+		if err != nil {
+			return err
+		}
+		if projectID == "" {
+			return fmt.Errorf("project ID is required")
+		}
+
+		// Organization (optional)
+		orgs, _ := gcp.GetOrganizations()
+		if len(orgs) > 0 {
+			var options []huh.Option[string]
+			for _, o := range orgs {
+				id := strings.TrimPrefix(o.Name, "organizations/")
+				label := fmt.Sprintf("%s (%s)", o.DisplayName, id)
+				options = append(options, huh.NewOption(label, id))
+			}
+			options = append(options, huh.NewOption("No Organization (standalone)", ""))
+			err = huh.NewSelect[string]().
+				Title("Organization").
+				Description("Where to create the project").
+				Options(options...).
+				Value(&orgID).
+				Run()
+			if err != nil {
+				return err
+			}
+		}
+
+		// Billing account (required for new projects)
+		accounts, _ := gcp.GetBillingAccounts()
+		var billingOptions []huh.Option[string]
+		for _, acc := range accounts {
+			if acc.Open {
+				id := strings.TrimPrefix(acc.Name, "billingAccounts/")
+				label := fmt.Sprintf("%s (%s)", acc.DisplayName, id)
+				billingOptions = append(billingOptions, huh.NewOption(label, id))
+			}
+		}
+
+		if len(billingOptions) > 0 {
+			billingOptions = append(billingOptions, huh.NewOption("Enter manually...", "manual"))
+			err = huh.NewSelect[string]().
+				Title("Billing Account").
+				Description("Required for API enablement").
+				Options(billingOptions...).
+				Value(&billingAccountID).
+				Run()
+			if err != nil {
+				return err
+			}
+		}
+
+		if billingAccountID == "" || billingAccountID == "manual" {
+			billingAccountID = ""
+			err = huh.NewInput().
+				Title("Billing Account ID").
+				Description("Format: XXXXXX-XXXXXX-XXXXXX").
+				Value(&billingAccountID).
+				Run()
+			if err != nil {
+				return err
+			}
+		}
+
+		if billingAccountID == "" {
+			return fmt.Errorf("billing account is required to create a project")
+		}
+	} else {
+		// Existing project — get project list or manual entry
+		projects, _ := gcp.GetProjects()
+		if len(projects) > 0 {
+			var options []huh.Option[string]
+			for _, p := range projects {
+				label := fmt.Sprintf("%s (%s)", p.Name, p.ProjectID)
+				options = append(options, huh.NewOption(label, p.ProjectID))
+			}
+			options = append(options, huh.NewOption("Enter manually...", "manual"))
+
+			sel := huh.NewSelect[string]().
+				Title("GCP Project").
+				Options(options...).
+				Value(&projectID).
+				Filtering(true)
+			if len(options) > 5 {
+				sel.Height(8)
+			}
+			if err := sel.Run(); err != nil {
+				return err
+			}
+		}
+
+		if projectID == "" || projectID == "manual" {
+			projectID = ""
+			err = huh.NewInput().
+				Title("Project ID").
+				Description("Your existing GCP project ID").
+				Value(&projectID).
+				Run()
+			if err != nil {
+				return err
+			}
+		}
+
+		if projectID == "" {
+			return fmt.Errorf("project ID is required")
+		}
+	}
+
+	// 2. Service account
+	prefix := "waxseal"
+	saID := prefix + "-sa"
+	err = huh.NewInput().
+		Title("Service Account ID").
+		Description("Service account for WaxSeal operations").
+		Value(&saID).
+		Run()
+	if err != nil {
+		return err
+	}
+	saEmail := fmt.Sprintf("%s@%s.iam.gserviceaccount.com", saID, projectID)
+
+	// 3. Enable reminders API?
+	var enableReminders bool
+	err = huh.NewConfirm().
+		Title("Enable Google Calendar API for reminders?").
+		Description("Allows WaxSeal to create expiry reminders in Google Calendar").
+		Value(&enableReminders).
+		Run()
+	if err != nil {
+		return err
+	}
+
+	// 4. Workload Identity for GitHub Actions?
+	var githubRepo string
+	var setupWIF bool
+	err = huh.NewConfirm().
+		Title("Set up Workload Identity for GitHub Actions?").
+		Description("Enables keyless authentication from GitHub Actions CI/CD").
+		Value(&setupWIF).
+		Run()
+	if err != nil {
+		return err
+	}
+	if setupWIF {
+		err = huh.NewInput().
+			Title("GitHub Repository").
+			Description("Format: owner/repo").
+			Value(&githubRepo).
+			Run()
+		if err != nil {
+			return err
+		}
+	}
+
+	// --- Summary ---
+	fmt.Println()
 	fmt.Printf("WaxSeal GCP Bootstrap\n")
-	fmt.Printf("=====================\n")
-	fmt.Printf("Project:         %s\n", gcpProjectID)
-	fmt.Printf("Service Account: %s\n", saEmail)
-	if gcpEnableReminders {
-		fmt.Printf("Reminders API:   enabled\n")
+	fmt.Printf("═════════════════════\n")
+	fmt.Printf("  Project:         %s\n", projectID)
+	if createProject {
+		fmt.Printf("  Create project:  yes\n")
 	}
-	if gcpGitHubRepo != "" {
-		fmt.Printf("GitHub Repo:     %s\n", gcpGitHubRepo)
+	fmt.Printf("  Service Account: %s\n", saEmail)
+	if enableReminders {
+		fmt.Printf("  Reminders API:   enabled\n")
+	}
+	if githubRepo != "" {
+		fmt.Printf("  GitHub Repo:     %s\n", githubRepo)
 	}
 	fmt.Println()
+
+	// Execute
+	return executeGCPBootstrap(bootstrapParams{
+		projectID:        projectID,
+		createProject:    createProject,
+		billingAccountID: billingAccountID,
+		folderID:         folderID,
+		orgID:            orgID,
+		saID:             saID,
+		enableReminders:  enableReminders,
+		githubRepo:       githubRepo,
+		prefix:           prefix,
+	})
+}
+
+// bootstrapParams holds the parameters for GCP bootstrap execution.
+// Used by both the interactive `gcp bootstrap` command and `setup`.
+type bootstrapParams struct {
+	projectID        string
+	createProject    bool
+	billingAccountID string
+	folderID         string
+	orgID            string
+	saID             string
+	enableReminders  bool
+	githubRepo       string
+	prefix           string
+}
+
+// executeGCPBootstrap runs the GCP bootstrap gcloud commands.
+func executeGCPBootstrap(p bootstrapParams) error {
+	saEmail := fmt.Sprintf("%s@%s.iam.gserviceaccount.com", p.saID, p.projectID)
 
 	// Build commands
 	var commands []gcloudCommand
 
 	// 1. Create project (optional)
-	if gcpCreateProject {
-		createArgs := []string{"projects", "create", gcpProjectID}
-		if gcpFolderID != "" {
-			createArgs = append(createArgs, "--folder="+gcpFolderID)
-		} else if gcpOrgID != "" {
-			createArgs = append(createArgs, "--organization="+gcpOrgID)
+	if p.createProject {
+		createArgs := []string{"projects", "create", p.projectID}
+		if p.folderID != "" {
+			createArgs = append(createArgs, "--folder="+p.folderID)
+		} else if p.orgID != "" {
+			createArgs = append(createArgs, "--organization="+p.orgID)
 		}
 		commands = append(commands, gcloudCommand{
 			desc: "Create project",
@@ -140,25 +312,25 @@ func runGCPBootstrap(cmd *cobra.Command, args []string) error {
 		// Link billing
 		commands = append(commands, gcloudCommand{
 			desc: "Link billing account",
-			args: []string{"billing", "projects", "link", gcpProjectID, "--billing-account=" + gcpBillingAccountID},
+			args: []string{"billing", "projects", "link", p.projectID, "--billing-account=" + p.billingAccountID},
 		})
 	}
 
 	// 2. Enable APIs
 	apis := []string{"secretmanager.googleapis.com"}
-	if gcpEnableReminders {
+	if p.enableReminders {
 		apis = append(apis, "calendar-json.googleapis.com")
 	}
 	commands = append(commands, gcloudCommand{
 		desc: "Enable APIs",
-		args: append([]string{"services", "enable", "--project=" + gcpProjectID}, apis...),
+		args: append([]string{"services", "enable", "--project=" + p.projectID}, apis...),
 	})
 
 	// 3. Create service account
 	commands = append(commands, gcloudCommand{
 		desc: "Create service account",
-		args: []string{"iam", "service-accounts", "create", saID,
-			"--project=" + gcpProjectID,
+		args: []string{"iam", "service-accounts", "create", p.saID,
+			"--project=" + p.projectID,
 			"--display-name=WaxSeal Service Account",
 			"--description=Service account for WaxSeal SealedSecrets management"},
 	})
@@ -166,28 +338,25 @@ func runGCPBootstrap(cmd *cobra.Command, args []string) error {
 	// 4. Grant Secret Manager Admin role
 	commands = append(commands, gcloudCommand{
 		desc: "Grant Secret Manager Admin",
-		args: []string{"projects", "add-iam-policy-binding", gcpProjectID,
+		args: []string{"projects", "add-iam-policy-binding", p.projectID,
 			"--member=serviceAccount:" + saEmail,
 			"--role=roles/secretmanager.admin"},
 	})
 
 	// 5. Grant Calendar access (if enabled)
-	if gcpEnableReminders {
-		// Note: Calendar API requires domain-wide delegation for service accounts
-		// This just grants the ability to use the API
+	if p.enableReminders {
 		fmt.Println("Note: Calendar API enabled. Configure domain-wide delegation for reminders.")
 	}
 
 	// 6. Set up Workload Identity for GitHub Actions (optional)
-	if gcpGitHubRepo != "" {
-		// Create Workload Identity Pool
-		poolID := gcpSecretsPrefix + "-github-pool"
-		providerID := gcpSecretsPrefix + "-github-provider"
+	if p.githubRepo != "" {
+		poolID := p.prefix + "-github-pool"
+		providerID := p.prefix + "-github-provider"
 
 		commands = append(commands, gcloudCommand{
 			desc: "Create Workload Identity Pool",
 			args: []string{"iam", "workload-identity-pools", "create", poolID,
-				"--project=" + gcpProjectID,
+				"--project=" + p.projectID,
 				"--location=global",
 				"--display-name=GitHub Actions Pool"},
 		})
@@ -195,7 +364,7 @@ func runGCPBootstrap(cmd *cobra.Command, args []string) error {
 		commands = append(commands, gcloudCommand{
 			desc: "Create OIDC Provider",
 			args: []string{"iam", "workload-identity-pools", "providers", "create-oidc", providerID,
-				"--project=" + gcpProjectID,
+				"--project=" + p.projectID,
 				"--location=global",
 				"--workload-identity-pool=" + poolID,
 				"--display-name=GitHub Actions",
@@ -204,13 +373,12 @@ func runGCPBootstrap(cmd *cobra.Command, args []string) error {
 			},
 		})
 
-		// Bind service account to workload identity
 		poolPath := fmt.Sprintf("principalSet://iam.googleapis.com/projects/%s/locations/global/workloadIdentityPools/%s/attribute.repository/%s",
-			gcpProjectID, poolID, gcpGitHubRepo)
+			p.projectID, poolID, p.githubRepo)
 		commands = append(commands, gcloudCommand{
 			desc: "Bind service account to Workload Identity",
 			args: []string{"iam", "service-accounts", "add-iam-policy-binding", saEmail,
-				"--project=" + gcpProjectID,
+				"--project=" + p.projectID,
 				"--member=" + poolPath,
 				"--role=roles/iam.workloadIdentityUser"},
 		})
@@ -227,22 +395,17 @@ func runGCPBootstrap(cmd *cobra.Command, args []string) error {
 				Title(fmt.Sprintf("%s...", c.desc)).
 				Type(spinner.Dots).
 				Action(func() {
-					runErr = runGcloud(c.args...)
+					runErr = gcp.RunGcloud(c.args...)
 				}).
 				Run()
 
 			if runErr != nil {
 				errMsg := strings.ToLower(runErr.Error())
-				// If it's an "already exists" error (local idempotency), we can proceed
-				// "Project '...' already exists." -> We likely own it.
 				if strings.Contains(errMsg, "already exists") {
 					printSuccess("%s (already done)", c.desc)
 				} else if strings.Contains(errMsg, "already in use") {
-					// "Project ID ... is already in use by another project." -> Global conflict.
-					// We return a specific error so init.go can handle it.
 					return fmt.Errorf("project_collision")
 				} else {
-					// Critical failure - stop execution
 					return fmt.Errorf("step '%s' failed: %v", c.desc, runErr)
 				}
 			} else {
@@ -255,11 +418,7 @@ func runGCPBootstrap(cmd *cobra.Command, args []string) error {
 	if dryRun {
 		fmt.Println("[DRY RUN] Would complete GCP bootstrap")
 	} else {
-		printSuccess("GCP bootstrap complete for project %s", gcpProjectID)
-		fmt.Println()
-		fmt.Println("Next steps:")
-		fmt.Printf("  1. Run 'waxseal setup --project-id %s'\n", gcpProjectID)
-		fmt.Println("  2. Run 'waxseal discover' to find existing SealedSecrets")
+		printSuccess("GCP bootstrap complete for project %s", p.projectID)
 	}
 
 	return nil
@@ -268,18 +427,6 @@ func runGCPBootstrap(cmd *cobra.Command, args []string) error {
 type gcloudCommand struct {
 	desc string
 	args []string
-}
-
-func CheckGcloudInstalled() error {
-	_, err := exec.LookPath("gcloud")
-	if err != nil {
-		return fmt.Errorf(`gcloud CLI not found in PATH
-
-WaxSeal uses gcloud to manage GCP infrastructure. 
-Please install the Google Cloud SDK:
-  https://cloud.google.com/sdk/docs/install`)
-	}
-	return nil
 }
 
 func CheckKubesealInstalled() error {
@@ -294,68 +441,56 @@ func CheckKubesealInstalled() error {
 }
 
 func EnsureGcloudADC(scopes ...string) error {
-	// Simple check for ADC credentials file.
-	// This isn't perfect but covers the 90% case for local dev.
-	home, _ := os.UserHomeDir()
-	adcPath := filepath.Join(home, "AppData", "Roaming", "gcloud", "application_default_credentials.json")
-	if os.Getenv("OS") != "Windows_NT" {
-		adcPath = filepath.Join(home, ".config", "gcloud", "application_default_credentials.json")
+	if gcp.ADCExists() {
+		return nil
 	}
 
-	if _, err := os.Stat(adcPath); os.IsNotExist(err) {
-		fmt.Println("Application Default Credentials (ADC) missing.")
-		fmt.Println("  (Note: This is separate from 'gcloud auth login'. ADC is required for WaxSeal to call APIs.)")
+	fmt.Println("Application Default Credentials (ADC) missing.")
+	fmt.Println("  (Note: This is separate from 'gcloud auth login'. ADC is required for WaxSeal to call APIs.)")
 
-		if len(scopes) > 0 {
-			fmt.Println("Additional access scopes required: " + strings.Join(scopes, ", "))
-		} else {
-			fmt.Println("WaxSeal needs these credentials to talk to Secret Manager.")
-		}
+	if len(scopes) > 0 {
+		fmt.Println("Additional access scopes required: " + strings.Join(scopes, ", "))
+	} else {
+		fmt.Println("WaxSeal needs these credentials to talk to Secret Manager.")
+	}
 
-		ok, err := confirm("Run 'gcloud auth application-default login' now?")
-		if err != nil {
-			return err
-		}
-		if !ok {
-			printWarning("Without ADC, 'reseal' and 'rotate' will fail unless GOOGLE_APPLICATION_CREDENTIALS is set.")
-			return nil
-		}
+	ok, err := confirm("Run 'gcloud auth application-default login' now?")
+	if err != nil {
+		return err
+	}
+	if !ok {
+		printWarning("Without ADC, 'reseal' and 'rotate' will fail unless GOOGLE_APPLICATION_CREDENTIALS is set.")
+		return nil
+	}
 
-		fmt.Println("Launching browser for authentication...")
-		// Show calendar-specific guidance only when calendar scopes are requested
-		hasCalendarScope := false
-		for _, s := range scopes {
-			if strings.Contains(s, "calendar") {
-				hasCalendarScope = true
-				break
-			}
+	fmt.Println("Launching browser for authentication...")
+	hasCalendarScope := false
+	for _, s := range scopes {
+		if strings.Contains(s, "calendar") {
+			hasCalendarScope = true
+			break
 		}
-		if hasCalendarScope {
-			fmt.Println("👉 Please sign in with the Google Account that owns the calendar you want to use.")
-		}
-		fmt.Println()
-		fmt.Println("Running 'gcloud auth application-default login'...")
+	}
+	if hasCalendarScope {
+		fmt.Println("Please sign in with the Google Account that owns the calendar you want to use.")
+	}
+	fmt.Println()
+	fmt.Println("Running 'gcloud auth application-default login'...")
 
-		args := []string{"auth", "application-default", "login"}
-		if len(scopes) > 0 {
-			args = append(args, "--scopes="+strings.Join(scopes, ","))
-		}
+	args := []string{"auth", "application-default", "login"}
+	if len(scopes) > 0 {
+		args = append(args, "--scopes="+strings.Join(scopes, ","))
+	}
 
-		if err := runGcloud(args...); err != nil {
-			printWarning("ADC login failed: %v", err)
-		}
+	if err := gcp.RunGcloud(args...); err != nil {
+		printWarning("ADC login failed: %v", err)
 	}
 	return nil
 }
 
 func EnsureGcloudAuth() error {
 	for {
-		// Check if already authenticated by checking for an active account
-		cmd := exec.Command("gcloud", "config", "get-value", "account")
-		output, _ := cmd.Output()
-		account := strings.TrimSpace(string(output))
-
-		if account != "" && account != "(unset)" {
+		if account := gcp.ActiveAccount(); account != "" {
 			return nil
 		}
 
@@ -369,98 +504,12 @@ func EnsureGcloudAuth() error {
 		}
 
 		fmt.Println("Running 'gcloud auth login'...")
-		if err := runGcloud("auth", "login"); err != nil {
+		if err := gcp.RunGcloud("auth", "login"); err != nil {
 			printWarning("gcloud login failed: %v", err)
 			fmt.Println("Please try again or authenticate manually.")
 			continue
 		}
 
-		// Verify again after login
 		fmt.Println("Verifying authentication...")
 	}
-}
-
-func runGcloud(args ...string) error {
-	return runGcloudWithTimeout(5*time.Minute, args...)
-}
-
-func runGcloudWithTimeout(timeout time.Duration, args ...string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "gcloud", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-
-	err := cmd.Run()
-	if ctx.Err() == context.DeadlineExceeded {
-		return fmt.Errorf("command timed out after %v - browser may not have opened correctly", timeout)
-	}
-	return err
-}
-
-type GCPBillingAccount struct {
-	Name        string `json:"name"`        // e.g. billingAccounts/01XXXX-XXXXXX-XXXXXX
-	DisplayName string `json:"displayName"` // e.g. My Billing Account
-	Open        bool   `json:"open"`
-}
-
-// GetBillingAccounts returns a list of available billing accounts for the current user
-func GetBillingAccounts() ([]GCPBillingAccount, error) {
-	// Ensure we have JSON output
-	cmd := exec.Command("gcloud", "billing", "accounts", "list", "--format=json")
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("failed to list billing accounts: %w", err)
-	}
-
-	var accounts []GCPBillingAccount
-	if err := json.Unmarshal(output, &accounts); err != nil {
-		return nil, fmt.Errorf("failed to parse billing accounts: %w", err)
-	}
-
-	return accounts, nil
-}
-
-// GetProjects returns a list of available GCP projects
-func GetProjects() ([]GCPProject, error) {
-	cmd := exec.Command("gcloud", "projects", "list", "--format=json", "--limit=50")
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("failed to list projects: %w", err)
-	}
-
-	var projects []GCPProject
-	if err := json.Unmarshal(output, &projects); err != nil {
-		return nil, fmt.Errorf("failed to parse projects: %w", err)
-	}
-
-	return projects, nil
-}
-
-type GCPProject struct {
-	ProjectID string `json:"projectId"`
-	Name      string `json:"name"`
-}
-
-type GCPOrganization struct {
-	Name        string `json:"name"`        // organizations/123456789
-	DisplayName string `json:"displayName"` // example.com
-}
-
-// GetOrganizations returns a list of available GCP organizations
-func GetOrganizations() ([]GCPOrganization, error) {
-	cmd := exec.Command("gcloud", "organizations", "list", "--format=json")
-	output, err := cmd.Output()
-	if err != nil {
-		// If command fails (e.g. no permissions), just return empty
-		return nil, nil
-	}
-
-	var orgs []GCPOrganization
-	if err := json.Unmarshal(output, &orgs); err != nil {
-		return nil, err
-	}
-	return orgs, nil
 }

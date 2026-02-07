@@ -54,14 +54,18 @@ go build -ldflags "-X github.com/shermanhuman/waxseal/internal/cli.Version=$VERS
 cmd/waxseal/main.go     # Thin entry point
 internal/
   cli/                  # Cobra commands, user interaction
-  core/                 # Domain types (errors, metadata), no I/O
+    resolve.go          # Shared CLI plumbing (resolveConfig, resolveStore, etc.)
+    style.go            # Output formatting, ANSI helpers, text utilities
+  core/                 # Domain types (errors, metadata, generate), no I/O
   config/               # Config loading/validation
-  files/                # Atomic writes, YAML validators
-  seal/                 # Sealer interface, SealedSecret parsing
-  store/                # Store interface (GSM), FakeStore
-  template/             # Computed key templates, cycle detection
+  files/                # Atomic writes, YAML validators, metadata I/O helpers
+  gcp/                  # Pure GCP shell wrappers (gcloud, billing, orgs)
+  seal/                 # Sealer interface, SealedSecret parsing/building
+  store/                # Store interface (GSM), FakeStore, ID formatting
+  template/             # Computed key templates, cycle detection, pattern detection
   reseal/               # Orchestration engine
-  reminders/            # Calendar provider interface
+  reminder/             # Calendar provider interface
+  state/                # CLI state persistence
   logging/              # Redacted type, safe structured logging
 testdata/
   infra-repo/           # Test fixture repo structure
@@ -72,14 +76,16 @@ testdata/
 | Package      | Responsibility                                                          |
 | ------------ | ----------------------------------------------------------------------- |
 | `cli/`       | Cobra commands, user interaction, output formatting                     |
-| `core/`      | Domain types (SecretMetadata, errors), **no I/O**                       |
+| `core/`      | Domain types (SecretMetadata, errors, generate), **no I/O**             |
 | `config/`    | Config loading, validation, defaults                                    |
-| `files/`     | Atomic writes, YAML validators                                          |
-| `seal/`      | KubesealSealer (uses kubeseal binary), CertSealer, SealedSecret parsing |
-| `store/`     | Store interface, FakeStore for testing, GSM implementation              |
-| `template/`  | Computed key templates, cycle detection                                 |
-| `reminders/` | Calendar provider interface, Google Calendar                            |
+| `files/`     | Atomic writes, YAML validators, metadata I/O helpers                    |
+| `gcp/`       | Pure GCP shell wrappers (gcloud, billing, orgs) — no CLI dependency     |
+| `seal/`      | KubesealSealer (uses kubeseal binary), CertSealer, SealedSecret builder |
+| `store/`     | Store interface, FakeStore, GSM impl, `SanitizeGSMName`/`FormatSecretID`|
+| `template/`  | Computed key templates, cycle detection, connection string detection     |
+| `reminder/`  | Calendar provider interface, Google Calendar                            |
 | `reseal/`    | Orchestration (fetch → compute → seal → write)                          |
+| `state/`     | CLI state persistence (atomic writes via `files.AtomicWriter`)          |
 | `logging/`   | Redacted type, safe structured logging                                  |
 
 ## CLI Architecture

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/shermanhuman/waxseal/internal/files"
 	"sigs.k8s.io/yaml"
 )
 
@@ -17,7 +18,7 @@ import (
 // Stored in .waxseal/state.yaml.
 type State struct {
 	// LastCertFingerprint is the SHA256 fingerprint of the last used controller cert.
-	// Used to detect cert rotations and warn/prompt for reencrypt.
+	// Used to detect cert rotations during reseal --all.
 	LastCertFingerprint string `json:"lastCertFingerprintSha256,omitempty"`
 
 	// Rotations is an audit trail of secret rotations.
@@ -81,7 +82,8 @@ func (s *State) Save(repoPath string) error {
 		return err
 	}
 
-	return os.WriteFile(path, data, 0o644)
+	writer := files.NewAtomicWriter()
+	return writer.Write(path, data)
 }
 
 // AddRotation adds a rotation record to the state.

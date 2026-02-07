@@ -1,15 +1,12 @@
 package cli
 
 import (
-	"crypto/rand"
-	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/huh"
-	"github.com/shermanhuman/waxseal/internal/config"
 	"github.com/shermanhuman/waxseal/internal/core"
 	"github.com/shermanhuman/waxseal/internal/files"
 	"github.com/shermanhuman/waxseal/internal/seal"
@@ -81,19 +78,15 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	shortName := args[0]
 
 	// Check if already exists
-	metadataPath := filepath.Join(repoPath, ".waxseal", "metadata", shortName+".yaml")
-	if _, err := os.Stat(metadataPath); err == nil {
+	if files.MetadataExists(repoPath, shortName) {
 		return fmt.Errorf("secret %q already exists", shortName)
 	}
+	metadataPath := files.MetadataPath(repoPath, shortName)
 
 	// Load config for project ID
-	cfgFile := configPath
-	if !filepath.IsAbs(cfgFile) {
-		cfgFile = filepath.Join(repoPath, cfgFile)
-	}
-	cfg, err := config.Load(cfgFile)
+	cfg, err := resolveConfig()
 	if err != nil {
-		return fmt.Errorf("load config (run 'waxseal setup' first): %w", err)
+		return fmt.Errorf("run 'waxseal setup' first: %w", err)
 	}
 
 	// Collect input (interactive or flags)
@@ -124,13 +117,13 @@ func runAdd(cmd *cobra.Command, args []string) error {
 			if parts := strings.SplitN(k, ":", 2); len(parts) > 1 && parts[1] == "random" {
 				// name:random → generated key
 				keyName = parts[0]
+				generator = &core.GeneratorConfig{Kind: "randomBase64", Bytes: addRandomLength}
 				var err error
-				value, err = generateRandomBytes(addRandomLength)
+				value, err = core.GenerateValue(generator)
 				if err != nil {
 					return fmt.Errorf("generate value for key %q: %w", keyName, err)
 				}
 				rotationMode = "generated"
-				generator = &core.GeneratorConfig{Kind: "randomBase64", Bytes: addRandomLength}
 			} else {
 				// name → static key, prompt for value securely
 				keyName = k
@@ -178,8 +171,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	}
 	var keysToCreate []keyToCreate
 	for _, k := range keys {
-		gsmResource := fmt.Sprintf("projects/%s/secrets/%s-%s",
-			cfg.Store.ProjectID, shortName, sanitizeGSMName(k.keyName))
+		gsmResource := store.SecretResource(cfg.Store.ProjectID, store.FormatSecretID(shortName, k.keyName))
 		keysToCreate = append(keysToCreate, keyToCreate{
 			keyName:     k.keyName,
 			value:       k.value,
@@ -209,11 +201,11 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create GSM secrets
-	gsmStore, err := store.NewGSMStore(ctx, cfg.Store.ProjectID)
+	gsmStore, closeStore, err := resolveStore(ctx, cfg)
 	if err != nil {
-		return fmt.Errorf("create GSM store: %w", err)
+		return err
 	}
-	defer gsmStore.Close()
+	defer closeStore()
 
 	// Build lookup for rotation config per key
 	keysByName := make(map[string]addKeyInput, len(keys))
@@ -271,8 +263,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	os.MkdirAll(filepath.Dir(manifestFullPath), 0o755)
 
 	// Use kubeseal binary for encryption (guarantees controller compatibility)
-	certPath := filepath.Join(repoPath, cfg.Cert.RepoCertPath)
-	sealer := seal.NewKubesealSealer(certPath)
+	sealer := resolveSealer(cfg)
 
 	// Seal each key and build SealedSecret
 	encryptedData := make(map[string]string)
@@ -285,7 +276,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	// Build SealedSecret manifest
-	sealedSecret := buildSealedSecretManifest(shortName, namespace, scope, secretType, encryptedData)
+	sealedSecret := seal.NewSealedSecret(shortName, namespace, scope, secretType, encryptedData)
 	sealed, err := sealedSecret.ToYAML()
 	if err != nil {
 		return fmt.Errorf("serialize SealedSecret: %w", err)
@@ -391,12 +382,12 @@ func runAddInteractive(shortName, projectID string) (namespace, manifestPath, sc
 		var generator *core.GeneratorConfig
 		switch valueSource {
 		case "random":
-			value, err = generateRandomBytes(32)
+			generator = &core.GeneratorConfig{Kind: "randomBase64", Bytes: 32}
+			value, err = core.GenerateValue(generator)
 			if err != nil {
 				return namespace, manifestPath, scope, secretType, nil, fmt.Errorf("generate random value: %w", err)
 			}
 			rotationMode = "generated"
-			generator = &core.GeneratorConfig{Kind: "randomBase64", Bytes: 32}
 			fmt.Printf("  Generated random value for %s\n", keyName)
 		case "enter":
 			var valueStr string
@@ -442,46 +433,4 @@ func runAddInteractive(shortName, projectID string) (namespace, manifestPath, sc
 	}
 
 	return
-}
-
-func generateRandomBytes(length int) ([]byte, error) {
-	bytes := make([]byte, length)
-	if _, err := rand.Read(bytes); err != nil {
-		return nil, fmt.Errorf("generate random bytes: %w", err)
-	}
-	// Return as base64 encoded
-	encoded := base64.StdEncoding.EncodeToString(bytes)
-	return []byte(encoded), nil
-}
-
-// buildSealedSecretManifest creates a SealedSecret structure.
-func buildSealedSecretManifest(name, namespace, scope, secretType string, encryptedData map[string]string) *seal.SealedSecret {
-	ss := &seal.SealedSecret{
-		APIVersion: "bitnami.com/v1alpha1",
-		Kind:       "SealedSecret",
-		Metadata: seal.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-		Spec: seal.SealedSecretSpec{
-			EncryptedData: encryptedData,
-		},
-	}
-
-	// Add scope annotation if not strict (strict is default)
-	if scope != "strict" && scope != "" {
-		if ss.Metadata.Annotations == nil {
-			ss.Metadata.Annotations = make(map[string]string)
-		}
-		ss.Metadata.Annotations[seal.AnnotationScope] = scope
-	}
-
-	// Add template with type if not Opaque
-	if secretType != "" && secretType != "Opaque" {
-		ss.Spec.Template = &seal.SecretTemplateSpec{
-			Type: secretType,
-		}
-	}
-
-	return ss
 }

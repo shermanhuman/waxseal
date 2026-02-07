@@ -6,40 +6,41 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
-	"github.com/shermanhuman/waxseal/internal/config"
-	"github.com/shermanhuman/waxseal/internal/core"
+	"github.com/shermanhuman/waxseal/internal/files"
 	"github.com/shermanhuman/waxseal/internal/store"
 	"github.com/spf13/cobra"
 )
 
 var validateCmd = &cobra.Command{
 	Use:   "validate",
-	Short: "Validate repo and metadata consistency",
-	Long: `Validate the waxseal configuration and metadata.
+	Short: "Validate repo structure and metadata consistency",
+	Long: `Validate the waxseal configuration and metadata (structural, CI-friendly).
 
 Checks:
   - Config file exists and is valid
   - Metadata files are valid
   - Manifest paths exist
   - GSM versions are numeric (no aliases)
-  - Expiration status (expired = fail, expiring soon = warn)
+  - Operator hints and computed key hygiene
+
+For expiration and certificate checks, use 'waxseal check'.
+
+Opt-in live checks:
+  --cluster   Compare metadata against live cluster state
+  --gsm       Verify GSM secrets exist
 
 Exit codes:
-  0 - Success
-  2 - Validation failed
-  >2 - Runtime error`,
+  0 - Validation passed
+  2 - Validation failed`,
 	RunE: runValidate,
 }
 
-var validateSoonDays int
 var validateCluster bool
 var validateGSM bool
 
 func init() {
 	rootCmd.AddCommand(validateCmd)
-	validateCmd.Flags().IntVar(&validateSoonDays, "soon-days", 30, "Days threshold for 'expiring soon' warnings")
 	validateCmd.Flags().BoolVar(&validateCluster, "cluster", false, "Compare against live cluster state")
 	validateCmd.Flags().BoolVar(&validateGSM, "gsm", false, "Verify GSM secrets exist")
 }
@@ -71,37 +72,18 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Check metadata
-	metadataDir := filepath.Join(repoPath, ".waxseal", "metadata")
-	entries, err := os.ReadDir(metadataDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			fmt.Fprintf(os.Stderr, "ERROR: metadata directory not found: %s\n", metadataDir)
-			os.Exit(2)
-		}
-		return fmt.Errorf("read metadata directory: %w", err)
+	secrets, loadErrs := files.LoadAllMetadataCollectErrors(repoPath)
+	if len(secrets) == 0 && len(loadErrs) > 0 {
+		fmt.Fprintf(os.Stderr, "ERROR: %v\n", loadErrs[0])
+		os.Exit(2)
+	}
+	for _, err := range loadErrs {
+		fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
+		hasErrors = true
 	}
 
 	var secretCount int
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
-			continue
-		}
-
-		path := filepath.Join(metadataDir, entry.Name())
-		data, err := os.ReadFile(path)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "ERROR: read %s: %v\n", path, err)
-			hasErrors = true
-			continue
-		}
-
-		m, err := core.ParseMetadata(data)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "ERROR: invalid metadata %s: %v\n", entry.Name(), err)
-			hasErrors = true
-			continue
-		}
-
+	for _, m := range secrets {
 		// Check manifest exists
 		manifestPath := m.ManifestPath
 		if !filepath.IsAbs(manifestPath) {
@@ -110,17 +92,6 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		if _, err := os.Stat(manifestPath); os.IsNotExist(err) {
 			fmt.Fprintf(os.Stderr, "ERROR: manifest not found: %s (referenced by %s)\n", m.ManifestPath, m.ShortName)
 			hasErrors = true
-		}
-
-		// Check expiration
-		if m.IsRetired() {
-			// Retired secrets don't need expiration checks
-		} else if m.IsExpired() {
-			fmt.Fprintf(os.Stderr, "ERROR: %s has expired keys\n", m.ShortName)
-			hasErrors = true
-		} else if m.ExpiresWithinDays(validateSoonDays) {
-			fmt.Fprintf(os.Stderr, "WARNING: %s has keys expiring within %d days\n", m.ShortName, validateSoonDays)
-			hasWarnings = true
 		}
 
 		// Validate GSM versions are numeric
@@ -165,13 +136,9 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	// Cluster validation (if --cluster flag set)
 	if validateCluster || validateGSM {
 		// Load config for GSM
-		cfgFile := configPath
-		if !filepath.IsAbs(cfgFile) {
-			cfgFile = filepath.Join(repoPath, cfgFile)
-		}
-		cfg, err := config.Load(cfgFile)
+		cfg, err := resolveConfig()
 		if err != nil {
-			return fmt.Errorf("load config: %w", err)
+			return err
 		}
 
 		ctx := context.Background()
@@ -193,18 +160,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		}
 		fmt.Println()
 
-		for _, entry := range entries {
-			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
-				continue
-			}
-
-			path := filepath.Join(metadataDir, entry.Name())
-			data, _ := os.ReadFile(path)
-			m, err := core.ParseMetadata(data)
-			if err != nil {
-				continue
-			}
-
+		for _, m := range secrets {
 			if m.IsRetired() {
 				continue
 			}
@@ -323,15 +279,6 @@ func parseConfig(data []byte) (interface{}, error) {
 		return nil, fmt.Errorf("missing store field")
 	}
 	return data, nil
-}
-
-// Helper to check expiration
-func isExpired(expiresAt string) bool {
-	t, err := time.Parse(time.RFC3339, expiresAt)
-	if err != nil {
-		return false
-	}
-	return t.Before(time.Now())
 }
 
 // containsInternalHostname checks if a value contains patterns suggesting

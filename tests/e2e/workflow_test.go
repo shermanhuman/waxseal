@@ -234,13 +234,13 @@ func TestE2E_WorkflowCertRotation(t *testing.T) {
 		t.Log("✓ cert rotation simulated")
 	})
 
-	// Step 3: Run reencrypt
-	t.Run("reencrypt with new cert", func(t *testing.T) {
-		output, err := runWaxsealWithDir(t, tmpDir, "reencrypt", "--repo="+tmpDir, "--dry-run")
+	// Step 3: Run reseal --all (which now includes cert rotation check)
+	t.Run("reseal with cert check", func(t *testing.T) {
+		output, err := runWaxsealWithDir(t, tmpDir, "reseal", "--all", "--skip-cert-check", "--repo="+tmpDir, "--dry-run")
 		if err != nil {
-			t.Logf("reencrypt: %v\nOutput: %s", err, output)
+			t.Logf("reseal: %v\nOutput: %s", err, output)
 		}
-		t.Log("✓ reencrypt completed (dry run)")
+		t.Log("✓ reseal completed (dry run)")
 	})
 
 	t.Log("✓ Cert rotation workflow completed")

@@ -4,15 +4,16 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/huh"
-	"github.com/shermanhuman/waxseal/internal/config"
+
 	"github.com/shermanhuman/waxseal/internal/seal"
+	"github.com/shermanhuman/waxseal/internal/store"
+	tmpl "github.com/shermanhuman/waxseal/internal/template"
 	"github.com/spf13/cobra"
 )
 
@@ -45,14 +46,9 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("create metadata directory: %w", err)
 	}
 
-	// Load config to get project ID
-	configFile := configPath
-	if !filepath.IsAbs(configFile) {
-		configFile = filepath.Join(repoPath, configFile)
-	}
-
+	// Load config to get project ID (optional — may not exist yet)
 	var projectID string
-	cfg, err := config.Load(configFile)
+	cfg, err := resolveConfig()
 	if err == nil && cfg.Store.ProjectID != "" {
 		projectID = cfg.Store.ProjectID
 	}
@@ -275,114 +271,6 @@ func fetchSecretFromCluster(namespace, name string) (map[string]string, error) {
 
 // detectConnectionStringTemplate analyzes a value and suggests a template if it looks like a connection string.
 // Returns: isTemplate, template string, extracted values map
-func detectConnectionStringTemplate(value string, allKeys []string) (isTemplate bool, template string, values map[string]string) {
-	// Check if it looks like a URL-based connection string
-	if !strings.Contains(value, "://") {
-		return false, "", nil
-	}
-
-	parsed, err := url.Parse(value)
-	if err != nil {
-		return false, "", nil
-	}
-
-	// Common database/service connection string schemes
-	schemes := []string{
-		// SQL Databases
-		"postgresql", "postgres", "mysql", "mariadb", "sqlserver", "mssql",
-		// NoSQL Databases
-		"mongodb", "mongodb+srv", "couchbase", "couchdb", "cockroachdb",
-		// Key-Value / Cache
-		"redis", "rediss", "memcached",
-		// Message Queues
-		"amqp", "amqps", "nats", "tls", "kafka",
-		// Search
-		"elasticsearch", "opensearch",
-		// Other
-		"clickhouse", "cassandra", "scylla", "neo4j", "bolt",
-	}
-	isDBConnection := false
-	for _, s := range schemes {
-		if strings.EqualFold(parsed.Scheme, s) {
-			isDBConnection = true
-			break
-		}
-	}
-	if !isDBConnection {
-		return false, "", nil
-	}
-
-	// Extract values and build template
-	values = make(map[string]string)
-	template = value
-
-	// Extract username and password (password becomes {{secret}})
-	if parsed.User != nil {
-		if username := parsed.User.Username(); username != "" {
-			values["username"] = username
-			template = strings.Replace(template, username, "{{username}}", 1)
-		}
-		if password, ok := parsed.User.Password(); ok && password != "" {
-			// Password is the secret - use {{secret}} as standard variable
-			template = strings.Replace(template, password, "{{secret}}", 1)
-		}
-	}
-
-	// Extract host and port
-	if parsed.Host != "" {
-		host := parsed.Hostname()
-		port := parsed.Port()
-
-		if host != "" {
-			values["host"] = host
-			// Replace host in template carefully (it may appear after @)
-			template = strings.Replace(template, host, "{{host}}", 1)
-		}
-		if port != "" {
-			values["port"] = port
-			template = strings.Replace(template, ":"+port, ":{{port}}", 1)
-		}
-	}
-
-	// Extract database name from path
-	if parsed.Path != "" && parsed.Path != "/" {
-		database := strings.TrimPrefix(parsed.Path, "/")
-		if database != "" {
-			values["database"] = database
-			template = strings.Replace(template, "/"+database, "/{{database}}", 1)
-		}
-	}
-
-	return true, template, values
-}
-
-// suggestKeyType analyzes a key's value and suggests if it should be templated.
-// Returns: suggestedType, suggestedTemplate, extractedValues
-func suggestKeyType(keyName string, value string, allKeys []string) (suggestedType string, suggestedTemplate string, extractedValues map[string]string) {
-	// Check for common templated key names
-	templateKeyPatterns := []string{"url", "uri", "connection", "dsn"}
-	keyLower := strings.ToLower(keyName)
-	mightBeTemplated := false
-	for _, pattern := range templateKeyPatterns {
-		if strings.Contains(keyLower, pattern) {
-			mightBeTemplated = true
-			break
-		}
-	}
-
-	if !mightBeTemplated {
-		return "standalone", "", nil
-	}
-
-	// Try to detect if it's a connection string
-	isTemplate, template, values := detectConnectionStringTemplate(value, allKeys)
-	if isTemplate {
-		return "templated", template, values
-	}
-
-	return "standalone", "", nil
-}
-
 func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) ([]keyConfig, error) {
 	keys := ds.sealedSecret.GetEncryptedKeys()
 	configs := make([]keyConfig, 0, len(keys))
@@ -449,7 +337,7 @@ func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) ([]k
 
 		// Generate default GSM resource using manifest filename + secret name
 		manifestBase := strings.TrimSuffix(filepath.Base(ds.path), filepath.Ext(ds.path))
-		defaultGSM := fmt.Sprintf("projects/%s/secrets/%s-%s", projectID, manifestBase, sanitizeGSMName(keyName))
+		defaultGSM := store.SecretResource(projectID, store.FormatSecretID(manifestBase, keyName))
 
 		// Auto-detect if this looks like a templated key
 		var keyType, rotationURL, expiry, template string
@@ -457,7 +345,7 @@ func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) ([]k
 		keyType = "standalone" // default
 		if secretData != nil {
 			if value, ok := secretData[keyName]; ok {
-				suggestedType, suggestedTemplate, values := suggestKeyType(keyName, value, keys)
+				suggestedType, suggestedTemplate, values := tmpl.SuggestKeyType(keyName, value, keys)
 				keyType = suggestedType
 				template = suggestedTemplate
 				extractedValues = values
@@ -575,9 +463,11 @@ func generateMetadataStub(ds discoveredSecret, shortName, projectID string, keyC
 	if keyConfigs == nil {
 		keyConfigs = make([]keyConfig, 0)
 		for _, keyName := range ss.GetEncryptedKeys() {
-			gsmResource := fmt.Sprintf("projects/%s/secrets/%s-%s", projectID, shortName, sanitizeGSMName(keyName))
-			if projectID == "" {
-				gsmResource = fmt.Sprintf("projects/<PROJECT>/secrets/%s-%s", shortName, sanitizeGSMName(keyName))
+			var gsmResource string
+			if projectID != "" {
+				gsmResource = store.SecretResource(projectID, store.FormatSecretID(shortName, keyName))
+			} else {
+				gsmResource = "projects/<PROJECT>/secrets/" + store.FormatSecretID(shortName, keyName)
 			}
 			keyConfigs = append(keyConfigs, keyConfig{
 				keyName:      keyName,
@@ -600,19 +490,29 @@ func generateMetadataStub(ds discoveredSecret, shortName, projectID string, keyC
     source:
       kind: computed
     computed:
+      # kind: template (Go template with {{.varName}} placeholders)
       kind: template
       template: "%s"
-      inputs: [] # TODO: map variables here
+      # inputs: list of keyNames whose values fill template variables
+      inputs: [] # TODO: map variables to template placeholders
 `, kc.keyName, kc.template))
 		} else {
 			// GSM
 			keys.WriteString(fmt.Sprintf(`  - keyName: %s
     source:
+      # kind: gsm (value stored in Google Secret Manager) | computed (derived from other keys)
       kind: gsm
     gsm:
+      # secretResource: full GSM resource path (projects/<PROJECT>/secrets/<NAME>)
       secretResource: "%s"
+      # version: numeric GSM version (never use 'latest')
       version: "1"
     rotation:
+      # mode: generated | external | manual | unknown
+      #   generated — waxseal generates and stores the value
+      #   external  — vendor rotates; operator stores new value in GSM
+      #   manual    — operator-provided value stored in GSM
+      #   unknown   — fill in later
       mode: %s
 `, kc.keyName, kc.gsmResource, kc.rotationMode))
 
@@ -647,14 +547,34 @@ func generateMetadataStub(ds discoveredSecret, shortName, projectID string, keyC
 		}
 	}
 
-	return fmt.Sprintf(`shortName: %s
+	return fmt.Sprintf(`# See: https://github.com/shermanhuman/waxseal/docs/metadata-reference
+# This metadata stub was generated by 'waxseal discover --non-interactive'.
+# Fill in GSM references and rotation modes before running 'waxseal reseal'.
+
+# shortName: unique identifier for this secret (used in CLI commands)
+shortName: %s
+# manifestPath: path to the SealedSecret manifest in the repo (relative to repo root)
 manifestPath: %s
 sealedSecret:
   name: %s
   namespace: %s
+  # scope: strict | namespace-wide | cluster-wide
   scope: %s
+  # type: Opaque | kubernetes.io/tls | kubernetes.io/dockerconfigjson
   type: %s
+# status: active | retired
 status: active
 keys:
-%s`, shortName, ds.path, ss.Metadata.Name, ss.Metadata.Namespace, ss.GetScope(), ss.GetSecretType(), keys.String())
+%s
+# --- Computed key example (uncomment and adapt as needed) ---
+# - keyName: DATABASE_URL
+#   source:
+#     kind: computed
+#   computed:
+#     kind: template
+#     template: "postgres://{{.username}}:{{.password}}@db-host:5432/mydb"
+#     inputs:
+#       - keyName: username
+#       - keyName: password
+`, shortName, ds.path, ss.Metadata.Name, ss.Metadata.Namespace, ss.GetScope(), ss.GetSecretType(), keys.String())
 }

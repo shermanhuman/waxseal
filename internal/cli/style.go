@@ -77,6 +77,19 @@ func printDim(format string, a ...any) {
 	fmt.Printf("%s%s%s\n", styleDim, msg, styleReset)
 }
 
+// ── Text helpers ────────────────────────────────────────────────────────────
+
+// truncateStr truncates s to maxLen, appending "..." if shortened.
+func truncateStr(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	if maxLen <= 3 {
+		return s[:maxLen]
+	}
+	return s[:maxLen-3] + "..."
+}
+
 // ── Confirmation helper ─────────────────────────────────────────────────────
 
 // confirm prompts the user with a huh Confirm widget.

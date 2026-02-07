@@ -90,14 +90,13 @@ waxseal reseal --all --dry-run
 | `add`             | Create a new secret (GSM + metadata + manifest)      |
 | `update`          | Update a secret key's value                          |
 | `list`            | List registered secrets with status and expiry       |
-| `validate`        | Validate repo and metadata consistency (CI-friendly) |
+| `validate`        | Validate repo structure and metadata (CI-friendly)   |
+| `check`           | Check operational health (cert expiry, rotation due) |
 | `reseal`          | Reseal secrets from GSM to SealedSecret manifests    |
 | `rotate`          | Rotate secret values and reseal                      |
 | `retire`          | Mark a secret as retired and optionally delete       |
-| `reencrypt`       | Re-encrypt all secrets with new cluster certificate  |
 | `bootstrap`       | Push existing cluster secrets to GSM                 |
-| `cert-check`      | Check sealing certificate expiry                     |
-| `gcp bootstrap`   | Set up GCP infrastructure for WaxSeal                |
+| `gcp bootstrap`   | Interactive GCP infrastructure setup                 |
 | `reminders sync`  | Sync expiry reminders to calendar/tasks              |
 | `reminders clear` | Remove reminders for a secret                        |
 | `reminders list`  | List secrets with upcoming expiry                    |
@@ -289,17 +288,21 @@ Retired secrets are skipped during `reseal --all` operations.
 
 ## Re-encrypting After Cert Rotation
 
-When the SealedSecrets controller certificate rotates:
+When the SealedSecrets controller certificate rotates, `reseal --all` detects the
+change automatically:
 
 ```bash
-# Fetch new cert from cluster and re-encrypt all secrets
-waxseal reencrypt
+# Reseal all secrets (auto-detects cert rotation)
+waxseal reseal --all
 
 # Use a specific new certificate file
-waxseal reencrypt --new-cert /path/to/new-cert.pem
+waxseal reseal --all --new-cert /path/to/new-cert.pem
+
+# Skip cert check for offline/CI use
+waxseal reseal --all --skip-cert-check
 
 # Preview what would be done
-waxseal reencrypt --dry-run
+waxseal reseal --all --dry-run
 ```
 
 ## Bootstrapping Existing Secrets
@@ -316,46 +319,53 @@ waxseal bootstrap my-app-secrets --dry-run
 
 This reads the secret from the cluster and pushes values to GSM.
 
-## Certificate Expiry Checking
+## Health Checks
 
-Monitor your sealing certificate:
+Monitor certificate and secret expiration:
 
 ```bash
-# Check certificate expiry
-waxseal cert-check
+# Check both cert and secret expiry
+waxseal check
 
-# Warn if expiring within 90 days
-waxseal cert-check --warn-days 90
+# Check only certificate expiry
+waxseal check --cert
 
-# Fail in CI if expiring soon
-waxseal cert-check --fail-on-warning
+# Check only secret expiration
+waxseal check --expiry
+
+# Warn if anything expires within 90 days
+waxseal check --warn-days 90
+
+# Fail in CI if warnings exist
+waxseal check --fail-on-warning
 ```
 
 Exit codes:
 
-- `0` - Certificate valid
-- `1` - Certificate expired
-- `2` - Certificate expiring soon (with `--fail-on-warning`)
+- `0` - All checks passed
+- `1` - Expired certificate or secrets
+- `2` - Expiring soon (with `--fail-on-warning`)
 
 ## GCP Infrastructure Setup
 
 Set up GCP project for WaxSeal:
 
 ```bash
-# Bootstrap existing project
-waxseal gcp bootstrap --project-id my-project
-
-# Create new project with billing
-waxseal gcp bootstrap --project-id my-project --create-project \
-  --billing-account-id 01XXXX-XXXXXX
-
-# Set up Workload Identity for GitHub Actions
-waxseal gcp bootstrap --project-id my-project \
-  --github-repo owner/repo
+# Interactive wizard (prompts for project, billing, service account, etc.)
+waxseal gcp bootstrap
 
 # Preview what would be done
-waxseal gcp bootstrap --project-id my-project --dry-run
+waxseal gcp bootstrap --dry-run
 ```
+
+The wizard walks through:
+
+- Creating or selecting a GCP project
+- Enabling Secret Manager API
+- Setting up billing
+- Creating a service account
+- Optionally enabling Calendar API for reminders
+- Optionally configuring Workload Identity for GitHub Actions
 
 ## Operator Hints
 
@@ -379,8 +389,11 @@ During `waxseal rotate`, hints are displayed to guide operators.
 
 ```yaml
 # GitHub Actions example
-- name: Validate waxseal
-  run: waxseal validate --soon-days=30
+- name: Validate waxseal structure
+  run: waxseal validate
+
+- name: Check expiration health
+  run: waxseal check --fail-on-warning --warn-days=30
 ```
 
 Exit codes:

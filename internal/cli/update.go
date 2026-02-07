@@ -2,15 +2,12 @@ package cli
 
 import (
 	"bufio"
-	"crypto/rand"
-	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/huh"
-	"github.com/shermanhuman/waxseal/internal/config"
 	"github.com/shermanhuman/waxseal/internal/core"
 	"github.com/shermanhuman/waxseal/internal/files"
 	"github.com/shermanhuman/waxseal/internal/seal"
@@ -65,29 +62,17 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	keyName := args[1]
 
 	// Load config first (needed for GSM resource generation)
-	cfgFile := configPath
-	if !filepath.IsAbs(cfgFile) {
-		cfgFile = filepath.Join(repoPath, cfgFile)
-	}
-	cfg, err := config.Load(cfgFile)
+	cfg, err := resolveConfig()
 	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+		return err
 	}
 
 	// Load metadata
-	metadataPath := filepath.Join(repoPath, ".waxseal", "metadata", shortName+".yaml")
-	data, err := os.ReadFile(metadataPath)
+	metadata, err := files.LoadMetadata(repoPath, shortName)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("secret %q not found", shortName)
-		}
-		return fmt.Errorf("read metadata: %w", err)
+		return err
 	}
-
-	metadata, err := core.ParseMetadata(data)
-	if err != nil {
-		return fmt.Errorf("parse metadata: %w", err)
-	}
+	metadataPath := files.MetadataPath(repoPath, shortName)
 
 	if metadata.IsRetired() {
 		return fmt.Errorf("cannot update retired secret %q", shortName)
@@ -211,19 +196,17 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		}
 	} else {
 		// Generate GSM resource for new key
-		gsmResource = fmt.Sprintf("projects/%s/secrets/%s-%s",
-			cfg.Store.ProjectID, shortName, sanitizeGSMName(keyName))
+		gsmResource = store.SecretResource(cfg.Store.ProjectID, store.FormatSecretID(shortName, keyName))
 	}
 
 	// Get new value
 	var newValue []byte
 	if updateGenerateRandom {
-		bytes := make([]byte, updateRandomLength)
-		if _, err := rand.Read(bytes); err != nil {
+		var err error
+		newValue, err = core.GenerateValue(&core.GeneratorConfig{Kind: "randomBase64", Bytes: updateRandomLength})
+		if err != nil {
 			return fmt.Errorf("generate random bytes: %w", err)
 		}
-		encoded := base64.StdEncoding.EncodeToString(bytes)
-		newValue = []byte(encoded)
 		fmt.Printf("Generated random value (%d bytes, base64 encoded)\n", updateRandomLength)
 	} else if updateFromStdin {
 		reader := bufio.NewReader(os.Stdin)
@@ -273,11 +256,11 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create new GSM version
-	gsmStore, err := store.NewGSMStore(ctx, cfg.Store.ProjectID)
+	gsmStore, closeStore, err := resolveStore(ctx, cfg)
 	if err != nil {
-		return fmt.Errorf("create GSM store: %w", err)
+		return err
 	}
-	defer gsmStore.Close()
+	defer closeStore()
 
 	newVersion, err := gsmStore.CreateSecretVersion(ctx, gsmResource, newValue)
 	if err != nil {
@@ -331,8 +314,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Use kubeseal binary for encryption (guarantees controller compatibility)
-	certPath := filepath.Join(repoPath, cfg.Cert.RepoCertPath)
-	sealer := seal.NewKubesealSealer(certPath)
+	sealer := resolveSealer(cfg)
 
 	// Seal the new value
 	scope := existingSS.GetScope()

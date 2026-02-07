@@ -3,6 +3,7 @@ package store
 
 import (
 	"context"
+	"strings"
 )
 
 // Store is the interface for secret storage backends.
@@ -43,4 +44,24 @@ func SecretResource(project, secretID string) string {
 // Format: projects/<project>/secrets/<secretId>/versions/<version>
 func SecretVersionResource(project, secretID, version string) string {
 	return SecretResource(project, secretID) + "/versions/" + version
+}
+
+// SanitizeGSMName converts a key name to a valid GSM secret name component.
+// GSM allows: letters, numbers, hyphens, underscores.
+// Other characters are replaced with hyphens; leading/trailing hyphens are trimmed.
+func SanitizeGSMName(name string) string {
+	result := strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '-' || r == '_' {
+			return r
+		}
+		return '-'
+	}, name)
+	return strings.Trim(result, "-")
+}
+
+// FormatSecretID builds a conventional GSM secret ID from a short name and key name.
+// The key name is sanitized for GSM compatibility.
+func FormatSecretID(shortName, keyName string) string {
+	return shortName + "-" + SanitizeGSMName(keyName)
 }

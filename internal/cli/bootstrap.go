@@ -5,12 +5,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/url"
-	"os"
 	"os/exec"
-	"path/filepath"
-	"strings"
 
-	"github.com/shermanhuman/waxseal/internal/config"
 	"github.com/shermanhuman/waxseal/internal/core"
 	"github.com/shermanhuman/waxseal/internal/files"
 	"github.com/shermanhuman/waxseal/internal/store"
@@ -74,22 +70,9 @@ func runBootstrap(cmd *cobra.Command, args []string) error {
 
 // bootstrapAll iterates over all discovered secrets and bootstraps each one.
 func bootstrapAll(ctx context.Context) error {
-	metadataDir := filepath.Join(repoPath, ".waxseal", "metadata")
-	entries, err := os.ReadDir(metadataDir)
+	secrets, err := files.ListMetadataNames(repoPath)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("no secrets discovered. Run 'waxseal discover' first")
-		}
-		return fmt.Errorf("read metadata directory: %w", err)
-	}
-
-	var secrets []string
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
-			continue
-		}
-		shortName := strings.TrimSuffix(e.Name(), ".yaml")
-		secrets = append(secrets, shortName)
+		return fmt.Errorf("no secrets discovered. Run 'waxseal discover' first: %w", err)
 	}
 
 	if len(secrets) == 0 {
@@ -116,33 +99,20 @@ func bootstrapAll(ctx context.Context) error {
 // bootstrapOne bootstraps a single secret.
 func bootstrapOne(ctx context.Context, shortName string) error {
 	// Load metadata
-	metadataPath := filepath.Join(repoPath, ".waxseal", "metadata", shortName+".yaml")
-	data, err := os.ReadFile(metadataPath)
+	metadata, err := files.LoadMetadata(repoPath, shortName)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("secret %q not found. Run 'waxseal discover' first", shortName)
-		}
-		return fmt.Errorf("read metadata: %w", err)
+		return err
 	}
-
-	metadata, err := core.ParseMetadata(data)
-	if err != nil {
-		return fmt.Errorf("parse metadata: %w", err)
-	}
+	metadataPath := files.MetadataPath(repoPath, shortName)
 
 	if metadata.IsRetired() {
 		return fmt.Errorf("secret %q is retired", shortName)
 	}
 
 	// Load config
-	configFile := configPath
-	if !filepath.IsAbs(configFile) {
-		configFile = filepath.Join(repoPath, configFile)
-	}
-
-	cfg, err := config.Load(configFile)
+	cfg, err := resolveConfig()
 	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+		return err
 	}
 
 	// Read secret from cluster
@@ -208,10 +178,9 @@ func bootstrapOne(ctx context.Context, shortName string) error {
 		}
 
 		// Generate GSM resource name
-		gsmResource := fmt.Sprintf("projects/%s/secrets/%s-%s",
+		gsmResource := store.SecretResource(
 			cfg.Store.ProjectID,
-			shortName,
-			sanitizeGSMName(keyName))
+			store.FormatSecretID(shortName, keyName))
 
 		keysToPush = append(keysToPush, keyToPush{
 			keyName:        keyName,
@@ -227,11 +196,11 @@ func bootstrapOne(ctx context.Context, shortName string) error {
 	}
 
 	// Create GSM store
-	gsmStore, err := store.NewGSMStore(ctx, cfg.Store.ProjectID)
+	gsmStore, closeStore, err := resolveStore(ctx, cfg)
 	if err != nil {
-		return fmt.Errorf("create GSM store: %w", err)
+		return err
 	}
-	defer gsmStore.Close()
+	defer closeStore()
 
 	// Push each key to GSM
 	for _, k := range keysToPush {
@@ -249,7 +218,7 @@ func bootstrapOne(ctx context.Context, shortName string) error {
 			}
 
 			// Detect template and extract values
-			isTemplate, templateStr, extractedValues := detectConnectionStringTemplate(valueStr, allKeys)
+			isTemplate, templateStr, extractedValues := template.DetectConnectionString(valueStr, allKeys)
 			if isTemplate {
 				// Get generator config if available
 				var genConfig *template.GeneratorConfig
@@ -408,20 +377,4 @@ func defaultReadSecretFromCluster(ctx context.Context, namespace, name string) (
 	}
 
 	return result, nil
-}
-
-// sanitizeGSMName converts a key name to a valid GSM secret name component.
-func sanitizeGSMName(name string) string {
-	// GSM allows: letters, numbers, hyphens, underscores
-	// Replace dots and other chars with hyphens
-	result := strings.Map(func(r rune) rune {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
-			(r >= '0' && r <= '9') || r == '-' || r == '_' {
-			return r
-		}
-		return '-'
-	}, name)
-
-	// Remove leading/trailing hyphens
-	return strings.Trim(result, "-")
 }
