@@ -304,12 +304,13 @@ go run ./scripts/release minor   # breaking changes (CLI flags, config schema, A
 go run ./scripts/release major   # ASK FIRST — reserved until software is stable
 ```
 
-Then push: `git push origin main && git push origin v<version>`
+The script bumps version, commits, and tags. Push triggers goreleaser on CI:
+`git push origin main && git push origin v<version>`
 
-### Rules
+### Rules (enforced by script)
 
 - **Default to patch.** Every fix, new feature, or improvement is a patch bump unless it breaks something.
 - **Minor = breaking changes.** Renamed/removed flags, changed config schema, altered command behavior that existing users must adapt to.
 - **Major = ask first.** Do not bump major without explicit approval. Major is reserved for a stability milestone (v1.0.0).
-- Never release without running `go test ./...` first.
-- Never release with a dirty working tree — commit everything before bumping.
+- Tests must pass (`go test ./...`) — script runs this automatically.
+- Working tree must be clean — script checks `git status`.
