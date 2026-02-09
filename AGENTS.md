@@ -293,3 +293,23 @@ secret := logging.Redacted("super-secret-value")
 logging.Info("processing", "value", secret)
 // Logs: "value=[REDACTED]"
 ```
+
+## Releases
+
+Version lives in `internal/cli/root.go`. Use the release script:
+
+```bash
+go run ./scripts/release patch   # default — bug fixes, small changes
+go run ./scripts/release minor   # breaking changes (CLI flags, config schema, API)
+go run ./scripts/release major   # ASK FIRST — reserved until software is stable
+```
+
+Then push: `git push origin main && git push origin v<version>`
+
+### Rules
+
+- **Default to patch.** Every fix, new feature, or improvement is a patch bump unless it breaks something.
+- **Minor = breaking changes.** Renamed/removed flags, changed config schema, altered command behavior that existing users must adapt to.
+- **Major = ask first.** Do not bump major without explicit approval. Major is reserved for a stability milestone (v1.0.0).
+- Never release without running `go test ./...` first.
+- Never release with a dirty working tree — commit everything before bumping.
