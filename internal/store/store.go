@@ -30,6 +30,10 @@ type Store interface {
 	// Useful for bootstrapping where you want to ensure data is stored.
 	CreateSecretVersion(ctx context.Context, secretResource string, data []byte) (string, error)
 
+	// DeleteSecret permanently deletes a secret and all its versions.
+	// Returns ErrNotFound if the secret doesn't exist.
+	DeleteSecret(ctx context.Context, secretResource string) error
+
 	// SecretExists checks if a secret exists.
 	SecretExists(ctx context.Context, secretResource string) (bool, error)
 }

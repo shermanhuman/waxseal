@@ -148,6 +148,19 @@ func (g *GSMStore) SecretExists(ctx context.Context, secretResource string) (boo
 	return true, nil
 }
 
+// DeleteSecret permanently deletes a secret and all its versions.
+func (g *GSMStore) DeleteSecret(ctx context.Context, secretResource string) error {
+	req := &secretmanagerpb.DeleteSecretRequest{
+		Name: secretResource,
+	}
+
+	if err := g.client.DeleteSecret(ctx, req); err != nil {
+		return wrapGRPCError(err, secretResource, "delete secret")
+	}
+
+	return nil
+}
+
 // SecretVersionExists checks if a specific version of a secret exists.
 // Returns (exists, stateEnabled, error).
 func (g *GSMStore) SecretVersionExists(ctx context.Context, secretResource string, version string) (bool, bool, error) {

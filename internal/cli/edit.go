@@ -237,7 +237,8 @@ func runEdit(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("Secret %q not found: %w", args[0], err)
 		}
 	} else {
-		metadata, shortName, err := pickSecret("Select a Secret to edit", nil, true)
+		var shortName string
+		metadata, shortName, err = pickSecret("Select a Secret to edit", nil, true)
 		if err != nil {
 			return err
 		}
@@ -375,7 +376,8 @@ func runCreateSecretWizard(ctx context.Context) error {
 				Placeholder("default").
 				Value(&input.namespace).
 				Validate(func(s string) error {
-					if strings.TrimSpace(s) == "" {
+					trimmed := strings.TrimSpace(s)
+					if trimmed == "" {
 						return fmt.Errorf("namespace is required")
 					}
 					return nil
@@ -410,8 +412,9 @@ func runCreateSecretWizard(ctx context.Context) error {
 		return fmt.Errorf("cancelled: %w", err)
 	}
 
-	// Apply defaults
+	// Apply defaults and trim whitespace
 	input.shortName = strings.TrimSpace(input.shortName)
+	input.namespace = strings.TrimSpace(input.namespace)
 	if input.manifestPath == "" {
 		input.manifestPath = fmt.Sprintf("apps/%s/sealed-secret.yaml", input.shortName)
 	}
@@ -586,14 +589,30 @@ func runCreateSecretWizard(ctx context.Context) error {
 	}
 	defer closeStore()
 
+	// Track created secrets for cleanup on failure
+	var createdSecrets []string
+	cleanup := func() {
+		if len(createdSecrets) == 0 {
+			return
+		}
+		printWarning("Cleaning up %d created GSM secret(s)...", len(createdSecrets))
+		for _, resource := range createdSecrets {
+			if delErr := gsmStore.DeleteSecret(ctx, resource); delErr != nil {
+				logging.Warn("failed to cleanup secret", "resource", resource, "error", delErr)
+			}
+		}
+	}
+
 	// Create GSM secrets
 	var keyMetadata []core.KeyMetadata
 	for _, k := range keys {
 		gsmResource := store.SecretResource(cfg.Store.ProjectID, store.FormatSecretID(input.shortName, k.keyName))
 		version, err := gsmStore.CreateSecretVersion(ctx, gsmResource, k.value)
 		if err != nil {
+			cleanup()
 			return fmt.Errorf("create GSM secret %s: %w", k.keyName, err)
 		}
+		createdSecrets = append(createdSecrets, gsmResource)
 		printSuccess("Created GSM secret: %s (version %s)", k.keyName, version)
 
 		keyMetadata = append(keyMetadata, core.KeyMetadata{

@@ -105,6 +105,19 @@ func (f *FakeStore) SecretExists(ctx context.Context, secretResource string) (bo
 	return ok, nil
 }
 
+// DeleteSecret permanently deletes a secret.
+func (f *FakeStore) DeleteSecret(ctx context.Context, secretResource string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if _, ok := f.secrets[secretResource]; !ok {
+		return core.WrapNotFound(secretResource, nil)
+	}
+
+	delete(f.secrets, secretResource)
+	return nil
+}
+
 // CreateSecretVersion creates a secret if needed and adds a version.
 func (f *FakeStore) CreateSecretVersion(ctx context.Context, secretResource string, data []byte) (string, error) {
 	// Try to add a version first

@@ -21,10 +21,13 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version: "1.25"
 
       - name: Install Syft
-        run: curl -sSfL https://get.anchore.io/syft | sh -s -- -b /usr/local/bin v1.41.2
+        run: |
+          curl -sSfL -o syft.tar.gz https://github.com/anchore/syft/releases/download/v1.41.2/syft_1.41.2_linux_amd64.tar.gz
+          tar -xzf syft.tar.gz -C /usr/local/bin syft
+          rm syft.tar.gz
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
