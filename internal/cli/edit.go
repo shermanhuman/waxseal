@@ -360,11 +360,12 @@ func runCreateSecretWizard(ctx context.Context) error {
 				Placeholder("my-app-secrets").
 				Value(&input.shortName).
 				Validate(func(s string) error {
-					if strings.TrimSpace(s) == "" {
+					trimmed := strings.TrimSpace(s)
+					if trimmed == "" {
 						return fmt.Errorf("name is required")
 					}
-					if files.MetadataExists(repoPath, s) {
-						return fmt.Errorf("Secret %q already exists", s)
+					if files.MetadataExists(repoPath, trimmed) {
+						return fmt.Errorf("Secret %q already exists", trimmed)
 					}
 					return nil
 				}),
@@ -450,11 +451,16 @@ func runCreateSecretWizard(ctx context.Context) error {
 		}
 
 		// Check for duplicate
+		duplicate := false
 		for _, k := range keys {
 			if k.keyName == keyName {
 				printWarning("Key %q already added, skipping", keyName)
-				continue
+				duplicate = true
+				break
 			}
+		}
+		if duplicate {
+			continue
 		}
 
 		// Value source

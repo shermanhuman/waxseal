@@ -23,6 +23,11 @@ jobs:
         with:
           go-version: "1.24"
 
+      - name: Set up Syft
+        uses: anchore/syft-action@v0.16.0
+        with:
+          version: latest
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
