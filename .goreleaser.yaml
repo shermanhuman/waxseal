@@ -2,10 +2,6 @@
 version: 2
 project_name: waxseal
 
-before:
-  hooks:
-    - go mod tidy
-
 builds:
   - id: waxseal-nix
     env:
@@ -50,7 +46,7 @@ checksum:
 sboms:
   - artifacts: archive
     documents:
-      - "{{ .ProjectName }}_{{ .Version }}_sbom.spdx.json"
+      - "{{ .ArtifactName }}.sbom.spdx.json"
 
 snapshot:
   version_template: "{{ .Tag }}-next"
