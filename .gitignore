@@ -1,0 +1,8 @@
+# Promptherder generated artifacts
+.promptherder/
+.agent/
+.agents/
+.antigravity/
+.github/prompts/
+.github/instructions/
+.github/copilot-instructions.md
