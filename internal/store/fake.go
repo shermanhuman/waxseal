@@ -28,7 +28,13 @@ func NewFakeStore() *FakeStore {
 }
 
 // AccessVersion retrieves a specific version of a secret.
+// Validates that version is numeric to match GSMStore behavior.
 func (f *FakeStore) AccessVersion(ctx context.Context, secretResource string, version string) ([]byte, error) {
+	// Validate numeric version (same as GSMStore)
+	if err := ValidateNumericVersion(version); err != nil {
+		return nil, err
+	}
+
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 

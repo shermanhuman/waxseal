@@ -35,6 +35,9 @@ func TestGSMPayloadIntegration(t *testing.T) {
 	secretName := fmt.Sprintf("test-payload-%d", time.Now().UnixNano())
 	secretResource := store.SecretResource(testProject, secretName)
 
+	// Track version across subtests (GSM requires numeric versions, not "latest")
+	var currentVersion string
+
 	t.Run("CreatePayload", func(t *testing.T) {
 		// Create a templated payload
 		payload, err := NewPayload(
@@ -68,12 +71,17 @@ func TestGSMPayloadIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateSecretVersion() error = %v", err)
 		}
+		currentVersion = version
 		t.Logf("Created GSM version: %s", version)
 	})
 
 	t.Run("ReadAndRotate", func(t *testing.T) {
-		// Read payload from GSM
-		data, err := gsmStore.AccessVersion(ctx, secretResource, "latest")
+		if currentVersion == "" {
+			t.Skip("Skipping: CreatePayload must run first")
+		}
+
+		// Read payload from GSM using numeric version (not "latest" alias)
+		data, err := gsmStore.AccessVersion(ctx, secretResource, currentVersion)
 		if err != nil {
 			t.Fatalf("AccessVersion() error = %v", err)
 		}
@@ -107,10 +115,10 @@ func TestGSMPayloadIntegration(t *testing.T) {
 		}
 		t.Logf("Added rotated version: %s", newVersion)
 
-		// Verify we can read the new version
-		data2, err := gsmStore.AccessVersion(ctx, secretResource, "latest")
+		// Verify we can read the new version using its numeric version
+		data2, err := gsmStore.AccessVersion(ctx, secretResource, newVersion)
 		if err != nil {
-			t.Fatalf("AccessVersion(latest) after rotation error = %v", err)
+			t.Fatalf("AccessVersion(%s) after rotation error = %v", newVersion, err)
 		}
 
 		payload2, _ := ParsePayload(data2)

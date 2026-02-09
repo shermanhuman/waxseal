@@ -74,11 +74,11 @@ waxseal bootstrap my-app-secrets
 # Reseal a single secret
 waxseal reseal my-app-secrets
 
-# Reseal all active secrets
-waxseal reseal --all
+# Reseal all active secrets (default when no shortName given)
+waxseal reseal
 
 # Dry run to see what would be done
-waxseal reseal --all --dry-run
+waxseal reseal --dry-run
 ```
 
 ## Commands
@@ -293,16 +293,13 @@ change automatically:
 
 ```bash
 # Reseal all secrets (auto-detects cert rotation)
-waxseal reseal --all
-
-# Use a specific new certificate file
-waxseal reseal --all --new-cert /path/to/new-cert.pem
+waxseal reseal
 
 # Skip cert check for offline/CI use
-waxseal reseal --all --skip-cert-check
+waxseal reseal --skip-cert-check
 
 # Preview what would be done
-waxseal reseal --all --dry-run
+waxseal reseal --dry-run
 ```
 
 ## Bootstrapping Existing Secrets
@@ -405,7 +402,7 @@ Exit codes:
 
 ```yaml
 - name: Reseal all secrets
-  run: waxseal reseal --all
+  run: waxseal reseal
   env:
     GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GCP_SA_KEY }}
 ```

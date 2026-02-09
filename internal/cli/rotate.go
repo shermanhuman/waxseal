@@ -154,8 +154,8 @@ func runRotate(cmd *cobra.Command, args []string) error {
 					continue
 				}
 
-				// Read existing payload from GSM
-				existingData, err := secretStore.AccessVersion(ctx, gsmResource, "latest")
+				// Read existing payload from GSM (use stored version, not "latest" alias)
+				existingData, err := secretStore.AccessVersion(ctx, gsmResource, key.Computed.GSM.Version)
 				if err != nil {
 					return fmt.Errorf("read existing payload for %s: %w", key.KeyName, err)
 				}
@@ -232,8 +232,8 @@ func runRotate(cmd *cobra.Command, args []string) error {
 					continue
 				}
 
-				// Read existing payload
-				existingData, err := secretStore.AccessVersion(ctx, gsmResource, "latest")
+				// Read existing payload (use stored version, not "latest" alias)
+				existingData, err := secretStore.AccessVersion(ctx, gsmResource, key.Computed.GSM.Version)
 				if err != nil {
 					return fmt.Errorf("read existing payload for %s: %w", key.KeyName, err)
 				}
