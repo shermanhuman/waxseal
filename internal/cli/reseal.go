@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 
+	"github.com/shermanhuman/waxseal/internal/config"
 	"github.com/shermanhuman/waxseal/internal/files"
 	"github.com/shermanhuman/waxseal/internal/reseal"
 	"github.com/shermanhuman/waxseal/internal/seal"
@@ -79,7 +80,7 @@ func runReseal(cmd *cobra.Command, args []string) error {
 
 	// Always check cert rotation unless skipped
 	if !resealSkipCertCheck {
-		certUpdated, err := checkAndUpdateCert(ctx, certPath)
+		certUpdated, err := checkAndUpdateCert(ctx, certPath, cfg.Controller)
 		if err != nil {
 			return err
 		}
@@ -182,7 +183,7 @@ func recordResealStateAll(shortNames []string) error {
 
 // checkAndUpdateCert checks if the cluster's sealing certificate has rotated
 // and updates the repo cert if needed. Returns true if the cert was updated.
-func checkAndUpdateCert(ctx context.Context, certPath string) (bool, error) {
+func checkAndUpdateCert(ctx context.Context, certPath string, controller config.ControllerConfig) (bool, error) {
 	// Load current certificate fingerprint
 	currentSealer, err := seal.NewCertSealerFromFile(certPath)
 	if err != nil {
@@ -195,7 +196,7 @@ func checkAndUpdateCert(ctx context.Context, certPath string) (bool, error) {
 	// Fetch certificate from the cluster
 	var newCertData []byte
 	err = withSpinner("Checking cluster certificate...", func() error {
-		newCertData, err = fetchCertFromCluster(ctx)
+		newCertData, err = fetchCertFromCluster(ctx, controller)
 		return err
 	})
 	if err != nil {
@@ -260,8 +261,19 @@ func checkAndUpdateCert(ctx context.Context, certPath string) (bool, error) {
 // This is a variable to allow test injection.
 var fetchCertFromCluster = defaultFetchCertFromCluster
 
-func defaultFetchCertFromCluster(ctx context.Context) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "kubeseal", "--fetch-cert")
+func defaultFetchCertFromCluster(ctx context.Context, controller config.ControllerConfig) ([]byte, error) {
+	controllerName := controller.ServiceName
+	if controllerName == "" {
+		controllerName = "sealed-secrets"
+	}
+	controllerNS := controller.Namespace
+	if controllerNS == "" {
+		controllerNS = "kube-system"
+	}
+	cmd := exec.CommandContext(ctx, "kubeseal",
+		"--fetch-cert",
+		"--controller-name="+controllerName,
+		"--controller-namespace="+controllerNS)
 	output, err := cmd.Output()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
