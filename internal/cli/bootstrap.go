@@ -328,7 +328,7 @@ func bootstrapOne(ctx context.Context, shortName string) error {
 	}
 
 	// Write updated metadata
-	updatedYAML := serializeMetadata(metadata)
+	updatedYAML := files.SerializeMetadata(metadata)
 	writer := files.NewAtomicWriter()
 	if err := writer.Write(metadataPath, []byte(updatedYAML)); err != nil {
 		return fmt.Errorf("write metadata: %w", err)

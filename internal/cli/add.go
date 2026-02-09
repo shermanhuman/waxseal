@@ -251,7 +251,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	// Save metadata
-	metadataYAML := serializeMetadata(metadata)
+	metadataYAML := files.SerializeMetadata(metadata)
 	os.MkdirAll(filepath.Dir(metadataPath), 0o755)
 	writer := files.NewAtomicWriter()
 	if err := writer.Write(metadataPath, []byte(metadataYAML)); err != nil {

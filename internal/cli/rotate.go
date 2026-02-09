@@ -380,7 +380,7 @@ func runRotate(cmd *cobra.Command, args []string) error {
 
 	// Write updated metadata
 	if !dryRun {
-		updatedMetadata := serializeMetadata(metadata)
+		updatedMetadata := files.SerializeMetadata(metadata)
 		if err := os.WriteFile(metadataPath, []byte(updatedMetadata), 0o644); err != nil {
 			return fmt.Errorf("write metadata: %w", err)
 		}
@@ -439,92 +439,4 @@ func displayOperatorHints(hints *core.OperatorHints, keyName string) {
 		fmt.Printf("  │ Consult documentation or team for rotation guidance.\n")
 	}
 	fmt.Printf("  └────────────────────────────\n\n")
-}
-
-func serializeMetadata(m *core.SecretMetadata) string {
-	var sb strings.Builder
-
-	sb.WriteString(fmt.Sprintf("shortName: %s\n", m.ShortName))
-	sb.WriteString(fmt.Sprintf("manifestPath: %s\n", m.ManifestPath))
-	sb.WriteString("sealedSecret:\n")
-	sb.WriteString(fmt.Sprintf("  name: %s\n", m.SealedSecret.Name))
-	sb.WriteString(fmt.Sprintf("  namespace: %s\n", m.SealedSecret.Namespace))
-	sb.WriteString(fmt.Sprintf("  scope: %s\n", m.SealedSecret.Scope))
-	if m.SealedSecret.Type != "" {
-		sb.WriteString(fmt.Sprintf("  type: %s\n", m.SealedSecret.Type))
-	}
-	if m.Status != "" {
-		sb.WriteString(fmt.Sprintf("status: %s\n", m.Status))
-	}
-	if m.RetiredAt != "" {
-		sb.WriteString(fmt.Sprintf("retiredAt: %s\n", m.RetiredAt))
-	}
-	if m.RetireReason != "" {
-		sb.WriteString(fmt.Sprintf("retireReason: %s\n", m.RetireReason))
-	}
-	if m.ReplacedBy != "" {
-		sb.WriteString(fmt.Sprintf("replacedBy: %s\n", m.ReplacedBy))
-	}
-
-	sb.WriteString("keys:\n")
-	for _, k := range m.Keys {
-		sb.WriteString(fmt.Sprintf("  - keyName: %s\n", k.KeyName))
-		sb.WriteString("    source:\n")
-		sb.WriteString(fmt.Sprintf("      kind: %s\n", k.Source.Kind))
-
-		if k.GSM != nil {
-			sb.WriteString("    gsm:\n")
-			sb.WriteString(fmt.Sprintf("      secretResource: %s\n", k.GSM.SecretResource))
-			sb.WriteString(fmt.Sprintf("      version: \"%s\"\n", k.GSM.Version))
-		}
-
-		if k.Rotation != nil {
-			sb.WriteString("    rotation:\n")
-			sb.WriteString(fmt.Sprintf("      mode: %s\n", k.Rotation.Mode))
-			if k.Rotation.Generator != nil {
-				sb.WriteString("      generator:\n")
-				sb.WriteString(fmt.Sprintf("        kind: %s\n", k.Rotation.Generator.Kind))
-				if k.Rotation.Generator.Bytes > 0 {
-					sb.WriteString(fmt.Sprintf("        bytes: %d\n", k.Rotation.Generator.Bytes))
-				}
-			}
-		}
-
-		if k.Expiry != nil {
-			sb.WriteString("    expiry:\n")
-			sb.WriteString(fmt.Sprintf("      expiresAt: \"%s\"\n", k.Expiry.ExpiresAt))
-		}
-
-		if k.OperatorHints != nil && k.OperatorHints.GSM != nil {
-			sb.WriteString("    operatorHints:\n")
-			sb.WriteString("      gsm:\n")
-			sb.WriteString(fmt.Sprintf("        secretResource: %s\n", k.OperatorHints.GSM.SecretResource))
-			sb.WriteString(fmt.Sprintf("        version: \"%s\"\n", k.OperatorHints.GSM.Version))
-			if k.OperatorHints.Format != "" {
-				sb.WriteString(fmt.Sprintf("      format: %s\n", k.OperatorHints.Format))
-			}
-		}
-
-		if k.Computed != nil {
-			sb.WriteString("    computed:\n")
-			sb.WriteString(fmt.Sprintf("      kind: %s\n", k.Computed.Kind))
-			sb.WriteString(fmt.Sprintf("      template: %q\n", k.Computed.Template))
-			if len(k.Computed.Inputs) > 0 {
-				sb.WriteString("      inputs:\n")
-				for _, input := range k.Computed.Inputs {
-					sb.WriteString(fmt.Sprintf("        - var: %s\n", input.Var))
-					sb.WriteString("          ref:\n")
-					sb.WriteString(fmt.Sprintf("            keyName: %s\n", input.Ref.KeyName))
-				}
-			}
-			if len(k.Computed.Params) > 0 {
-				sb.WriteString("      params:\n")
-				for pk, pv := range k.Computed.Params {
-					sb.WriteString(fmt.Sprintf("        %s: %q\n", pk, pv))
-				}
-			}
-		}
-	}
-
-	return sb.String()
 }

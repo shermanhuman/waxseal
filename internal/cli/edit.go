@@ -12,6 +12,7 @@ import (
 	"github.com/shermanhuman/waxseal/internal/logging"
 	"github.com/shermanhuman/waxseal/internal/seal"
 	"github.com/shermanhuman/waxseal/internal/store"
+	"github.com/shermanhuman/waxseal/internal/template"
 	"github.com/spf13/cobra"
 )
 
@@ -433,6 +434,12 @@ func runCreateSecretWizard(ctx context.Context) error {
 		value        []byte
 		rotationMode string
 		generator    *core.GeneratorConfig
+		// Computed key fields
+		isComputed     bool
+		tmplString     string            // Template string (e.g., "postgresql://{{username}}:{{secret}}@{{host}}/{{database}}")
+		tmplValues     map[string]string // Static values for the template
+		tmplSecret     string            // The secret value for {{secret}}
+		tmplGenerator  *template.GeneratorConfig
 	}
 	var keys []keyInput
 
@@ -473,6 +480,7 @@ func runCreateSecretWizard(ctx context.Context) error {
 			Options(
 				huh.NewOption("🎲 Generate random (32 bytes, base64)", "random"),
 				huh.NewOption("✏️  Enter value now (masked)", "enter"),
+				huh.NewOption("📐 Computed (templated connection string)", "computed"),
 			).
 			Value(&valueSource).
 			Run()
@@ -527,11 +535,157 @@ func runCreateSecretWizard(ctx context.Context) error {
 			}
 		}
 
+		// Computed key fields (only set when valueSource == "computed")
+		var isComputed bool
+		var tmplString string
+		var tmplValues map[string]string
+		var tmplSecret string
+		var tmplGenerator *template.GeneratorConfig
+
+		if valueSource == "computed" {
+			isComputed = true
+
+			// Prompt for full connection string
+			var connString string
+			err = huh.NewInput().
+				Title("Enter the full connection string").
+				Description("Password/secret portion will become {{secret}}").
+				Placeholder("postgresql://user:password@host:5432/database").
+				Value(&connString).
+				Validate(func(s string) error {
+					if s == "" {
+						return fmt.Errorf("connection string is required")
+					}
+					if !strings.Contains(s, "://") {
+						return fmt.Errorf("must be a URL-style connection string (e.g., postgresql://...)")
+					}
+					return nil
+				}).
+				Run()
+			if err != nil {
+				return err
+			}
+
+			// Auto-detect template and extract values
+			isTemplate, detected, extractedValues := template.DetectConnectionString(connString, nil)
+			if !isTemplate {
+				printWarning("Could not auto-detect connection string format. Using as-is with {{secret}} placeholder.")
+				// Try to find and replace a password-like segment
+				tmplString = connString
+				tmplValues = make(map[string]string)
+				tmplSecret = ""
+			} else {
+				tmplString = detected
+				tmplValues = extractedValues
+				fmt.Println()
+				printSuccess("Detected template:")
+				fmt.Printf("  %s\n", tmplString)
+				fmt.Println()
+				printDim("Extracted values:")
+				for k, v := range tmplValues {
+					fmt.Printf("  %s: %s\n", k, v)
+				}
+				fmt.Println()
+			}
+
+			// Secret handling
+			var secretSource string
+			err = huh.NewSelect[string]().
+				Title("How should the secret be managed?").
+				Description("The {{secret}} placeholder in the template").
+				Options(
+					huh.NewOption("🎲 Generate new random secret", "generate"),
+					huh.NewOption("✏️  Keep entered password as secret", "keep"),
+					huh.NewOption("✏️  Enter a different secret value", "enter"),
+				).
+				Value(&secretSource).
+				Run()
+			if err != nil {
+				return err
+			}
+
+			switch secretSource {
+			case "generate":
+				tmplGenerator = &template.GeneratorConfig{Kind: "randomBase64", Bytes: 32}
+				genValue, genErr := core.GenerateValue(&core.GeneratorConfig{
+					Kind:  tmplGenerator.Kind,
+					Bytes: tmplGenerator.Bytes,
+				})
+				if genErr != nil {
+					return fmt.Errorf("generate secret: %w", genErr)
+				}
+				tmplSecret = string(genValue)
+				rotationMode = "generated"
+				printSuccess("Generated new random secret for {{secret}}")
+			case "keep":
+				// Extract the password from the original connection string
+				// The password is the part that became {{secret}} in the template
+				// For postgresql://user:pass@host, password is between : and @
+				if strings.Contains(tmplString, "{{secret}}") {
+					parts := strings.SplitN(connString, "://", 2)
+					if len(parts) == 2 {
+						afterScheme := parts[1]
+						if atIdx := strings.Index(afterScheme, "@"); atIdx != -1 {
+							userPass := afterScheme[:atIdx]
+							if colonIdx := strings.Index(userPass, ":"); colonIdx != -1 {
+								tmplSecret = userPass[colonIdx+1:]
+							}
+						}
+					}
+				}
+				if tmplSecret == "" {
+					printWarning("Could not extract password from connection string")
+					var manualSecret string
+					err = huh.NewInput().
+						Title("Enter the secret value").
+						EchoMode(huh.EchoModePassword).
+						Value(&manualSecret).
+						Run()
+					if err != nil {
+						return err
+					}
+					tmplSecret = manualSecret
+				}
+				rotationMode = "external"
+			case "enter":
+				var manualSecret string
+				err = huh.NewInput().
+					Title("Enter the secret value").
+					EchoMode(huh.EchoModePassword).
+					Value(&manualSecret).
+					Validate(func(s string) error {
+						if s == "" {
+							return fmt.Errorf("secret cannot be empty")
+						}
+						return nil
+					}).
+					Run()
+				if err != nil {
+					return err
+				}
+				tmplSecret = manualSecret
+				rotationMode = "external"
+			}
+
+			// Create a template.Payload to compute final value (for preview/summary)
+			payload, payloadErr := template.NewPayload(tmplString, tmplValues, tmplSecret, tmplGenerator)
+			if payloadErr != nil {
+				return fmt.Errorf("create template payload: %w", payloadErr)
+			}
+			value = []byte(payload.Computed)
+			printSuccess("Computed key configured: %s", keyName)
+		}
+
 		keys = append(keys, keyInput{
-			keyName:      keyName,
-			value:        value,
-			rotationMode: rotationMode,
-			generator:    generator,
+			keyName:       keyName,
+			value:         value,
+			rotationMode:  rotationMode,
+			generator:     generator,
+			isComputed:    isComputed,
+			tmplString:    tmplString,
+			tmplValues:    tmplValues,
+			tmplSecret:    tmplSecret,
+			tmplGenerator: tmplGenerator,
 		})
 	}
 
@@ -564,6 +718,9 @@ func runCreateSecretWizard(ctx context.Context) error {
 		mode := k.rotationMode
 		if k.generator != nil {
 			mode = "generated"
+		}
+		if k.isComputed {
+			mode = "computed"
 		}
 		fmt.Printf("                 • %s (%s)\n", k.keyName, mode)
 	}
@@ -607,26 +764,69 @@ func runCreateSecretWizard(ctx context.Context) error {
 	var keyMetadata []core.KeyMetadata
 	for _, k := range keys {
 		gsmResource := store.SecretResource(cfg.Store.ProjectID, store.FormatSecretID(input.shortName, k.keyName))
-		version, err := gsmStore.CreateSecretVersion(ctx, gsmResource, k.value)
-		if err != nil {
-			cleanup()
-			return fmt.Errorf("create GSM secret %s: %w", k.keyName, err)
-		}
-		createdSecrets = append(createdSecrets, gsmResource)
-		printSuccess("Created GSM secret: %s (version %s)", k.keyName, version)
 
-		keyMetadata = append(keyMetadata, core.KeyMetadata{
-			KeyName: k.keyName,
-			Source:  core.SourceConfig{Kind: "gsm"},
-			GSM: &core.GSMRef{
-				SecretResource: gsmResource,
-				Version:        version,
-			},
-			Rotation: &core.RotationConfig{
-				Mode:      k.rotationMode,
-				Generator: k.generator,
-			},
-		})
+		var version string
+		var gsmErr error
+
+		if k.isComputed {
+			// For computed keys, store JSON payload in GSM
+			payload, payloadErr := template.NewPayload(k.tmplString, k.tmplValues, k.tmplSecret, k.tmplGenerator)
+			if payloadErr != nil {
+				cleanup()
+				return fmt.Errorf("create payload for %s: %w", k.keyName, payloadErr)
+			}
+			payloadJSON, marshalErr := payload.Marshal()
+			if marshalErr != nil {
+				cleanup()
+				return fmt.Errorf("marshal payload for %s: %w", k.keyName, marshalErr)
+			}
+			version, gsmErr = gsmStore.CreateSecretVersion(ctx, gsmResource, payloadJSON)
+			if gsmErr != nil {
+				cleanup()
+				return fmt.Errorf("create GSM secret %s: %w", k.keyName, gsmErr)
+			}
+			createdSecrets = append(createdSecrets, gsmResource)
+			printSuccess("Created computed GSM secret: %s (version %s)", k.keyName, version)
+
+			// Build computed key metadata
+			keyMetadata = append(keyMetadata, core.KeyMetadata{
+				KeyName: k.keyName,
+				Source:  core.SourceConfig{Kind: "computed"},
+				Rotation: &core.RotationConfig{
+					Mode: k.rotationMode,
+				},
+				Computed: &core.ComputedConfig{
+					Kind:     "template",
+					Template: k.tmplString,
+					GSM: &core.GSMRef{
+						SecretResource: gsmResource,
+						Version:        version,
+					},
+				},
+			})
+		} else {
+			// For regular keys, store raw value
+			version, gsmErr = gsmStore.CreateSecretVersion(ctx, gsmResource, k.value)
+			if gsmErr != nil {
+				cleanup()
+				return fmt.Errorf("create GSM secret %s: %w", k.keyName, gsmErr)
+			}
+			createdSecrets = append(createdSecrets, gsmResource)
+			printSuccess("Created GSM secret: %s (version %s)", k.keyName, version)
+
+			keyMetadata = append(keyMetadata, core.KeyMetadata{
+				KeyName: k.keyName,
+				Source:  core.SourceConfig{Kind: "gsm"},
+				GSM: &core.GSMRef{
+					SecretResource: gsmResource,
+					Version:        version,
+				},
+				Rotation: &core.RotationConfig{
+					Mode:      k.rotationMode,
+					Generator: k.generator,
+				},
+			})
+		}
 	}
 
 	// Create metadata
@@ -645,7 +845,7 @@ func runCreateSecretWizard(ctx context.Context) error {
 
 	// Save metadata
 	metadataPath := files.MetadataPath(repoPath, input.shortName)
-	metadataYAML := serializeMetadata(metadata)
+	metadataYAML := files.SerializeMetadata(metadata)
 	writer := files.NewAtomicWriter()
 	if err := writer.Write(metadataPath, []byte(metadataYAML)); err != nil {
 		return fmt.Errorf("write metadata: %w", err)

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/shermanhuman/waxseal/internal/core"
+	"github.com/shermanhuman/waxseal/internal/files"
 )
 
 func TestRetire_MarksSecretAsRetired(t *testing.T) {
@@ -133,7 +134,7 @@ func TestSerializeMetadata_IncludesRetirement(t *testing.T) {
 		},
 	}
 
-	yaml := serializeMetadata(m)
+	yaml := files.SerializeMetadata(m)
 
 	if !strings.Contains(yaml, "status: retired") {
 		t.Error("YAML should contain 'status: retired'")

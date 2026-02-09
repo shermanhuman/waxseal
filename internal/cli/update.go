@@ -294,7 +294,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		keyMeta.GSM.Version = newVersion
 		printSuccess("Updated metadata: version %s", newVersion)
 	}
-	metadataYAML := serializeMetadata(metadata)
+	metadataYAML := files.SerializeMetadata(metadata)
 	writer := files.NewAtomicWriter()
 	if err := writer.Write(metadataPath, []byte(metadataYAML)); err != nil {
 		return fmt.Errorf("write metadata: %w", err)
