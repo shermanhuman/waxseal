@@ -19,6 +19,26 @@ func main() {
 	}
 	bumpType := os.Args[1]
 
+	// Preflight: check for dirty working tree
+	fmt.Println("Checking working tree...")
+	statusOut, err := exec.Command("git", "status", "--porcelain").Output()
+	if err != nil {
+		fatal("Could not check git status: %v", err)
+	}
+	if len(strings.TrimSpace(string(statusOut))) > 0 {
+		fatal("Working tree is dirty. Commit or stash changes before releasing.\n%s", statusOut)
+	}
+
+	// Preflight: run tests
+	fmt.Println("Running tests...")
+	testCmd := exec.Command("go", "test", "./...")
+	testCmd.Stdout = os.Stdout
+	testCmd.Stderr = os.Stderr
+	if err := testCmd.Run(); err != nil {
+		fatal("Tests failed. Fix tests before releasing.")
+	}
+	fmt.Println("Tests passed.")
+
 	// 1. Read current version
 	content, err := os.ReadFile(versionFile)
 	if err != nil {
