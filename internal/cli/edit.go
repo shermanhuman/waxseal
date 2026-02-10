@@ -55,7 +55,7 @@ var editAddkeyCmd = &cobra.Command{
 	Use:   "addkey",
 	Short: "Interactive add-key wizard",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runEditWithAction("addkey")
+		return runEditWithAction(cmd.Context(), "addkey")
 	},
 }
 
@@ -63,7 +63,7 @@ var editUpdatekeyCmd = &cobra.Command{
 	Use:   "updatekey",
 	Short: "Interactive update-key wizard",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runEditWithAction("updatekey")
+		return runEditWithAction(cmd.Context(), "updatekey")
 	},
 }
 
@@ -71,7 +71,7 @@ var editRetirekeyCmd = &cobra.Command{
 	Use:   "retirekey",
 	Short: "Interactive retire-key wizard",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runEditWithAction("retirekey")
+		return runEditWithAction(cmd.Context(), "retirekey")
 	},
 }
 
@@ -187,8 +187,7 @@ func pickAction(metadata *core.SecretMetadata) (string, error) {
 // dispatch calls the underlying command for the chosen action.
 // Note: preflight checks (GSM auth, metadata) are on editCmd itself,
 // so they fire before dispatch is reached.
-func dispatch(action string, metadata *core.SecretMetadata) error {
-	ctx := context.Background()
+func dispatch(ctx context.Context, action string, metadata *core.SecretMetadata) error {
 	switch action {
 	case "addkey":
 		return addKeyToExistingSecret(ctx, metadata.ShortName)
@@ -262,11 +261,11 @@ func runEdit(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	return dispatch(action, metadata)
+	return dispatch(ctx, action, metadata)
 }
 
 // runEditWithAction is used by edit subcommands — picks a Secret, then runs the action.
-func runEditWithAction(action string) error {
+func runEditWithAction(ctx context.Context, action string) error {
 	filter := func(s *core.SecretMetadata) bool {
 		if action == "retirekey" {
 			return !s.IsRetired()
@@ -280,21 +279,14 @@ func runEditWithAction(action string) error {
 	}
 	if metadata == nil && shortName != createNewSecretMarker {
 		if action == "addkey" {
-			// Prompt for Secret name instead of hardcoding
-			var name string
-			err := huh.NewInput().
-				Title("No Secrets registered. Enter a name for the new Secret:").
-				Value(&name).
-				Run()
-			if err != nil || strings.TrimSpace(name) == "" {
-				return fmt.Errorf("cancelled")
-			}
-			return addCmd.RunE(addCmd, []string{strings.TrimSpace(name)})
+			// No secrets exist — offer to create one via the full wizard
+			fmt.Println("No Secrets registered. Creating a new one...")
+			return runCreateSecretWizard(ctx)
 		}
 		return fmt.Errorf("no eligible Secrets for %s", action)
 	}
 
-	return dispatch(action, metadata)
+	return dispatch(ctx, action, metadata)
 }
 
 // statusLabel returns a human-readable status label.
@@ -905,19 +897,8 @@ func runCreateSecretWizard(ctx context.Context) error {
 	printDim("Add at least one key. Press Enter with empty name to finish.")
 	fmt.Println()
 
-	type keyInput struct {
-		keyName      string
-		value        []byte
-		rotationMode string
-		generator    *core.GeneratorConfig
-		// Computed key fields
-		isComputed     bool
-		tmplString     string            // Template string (e.g., "postgresql://{{username}}:{{secret}}@{{host}}/{{database}}")
-		tmplValues     map[string]string // Static values for the template
-		tmplSecret     string            // The secret value for {{secret}}
-		tmplGenerator  *template.GeneratorConfig
-	}
-	var keys []keyInput
+	var keys []keyInputData
+	var existingKeyNames []string
 
 	for {
 		var keyName string
@@ -936,259 +917,16 @@ func runCreateSecretWizard(ctx context.Context) error {
 			break
 		}
 
-		// Check for duplicate
-		duplicate := false
-		for _, k := range keys {
-			if k.keyName == keyName {
-				printWarning("Key %q already added, skipping", keyName)
-				duplicate = true
-				break
-			}
+		keyData, keyErr := collectSingleKeyInput(keyName, existingKeyNames)
+		if keyErr != nil {
+			return keyErr
 		}
-		if duplicate {
-			continue
+		if keyData == nil {
+			continue // duplicate, already warned
 		}
 
-		// Value source
-		var valueSource string
-		err = huh.NewSelect[string]().
-			Title(fmt.Sprintf("Value for '%s'", keyName)).
-			Options(
-				huh.NewOption("🎲 Generate random (32 bytes, base64)", "random"),
-				huh.NewOption("✏️  Enter value now (masked)", "enter"),
-				huh.NewOption("📐 Computed (templated connection string)", "computed"),
-			).
-			Value(&valueSource).
-			Run()
-		if err != nil {
-			return err
-		}
-
-		var value []byte
-		var rotationMode string
-		var generator *core.GeneratorConfig
-
-		switch valueSource {
-		case "random":
-			generator = &core.GeneratorConfig{Kind: "randomBase64", Bytes: 32}
-			value, err = core.GenerateValue(generator)
-			if err != nil {
-				return fmt.Errorf("generate random value: %w", err)
-			}
-			rotationMode = "generated"
-			printSuccess("Generated random value for %s", keyName)
-
-		case "enter":
-			var valueStr string
-			err = huh.NewInput().
-				Title("Enter value").
-				EchoMode(huh.EchoModePassword).
-				Value(&valueStr).
-				Validate(func(s string) error {
-					if s == "" {
-						return fmt.Errorf("value cannot be empty")
-					}
-					return nil
-				}).
-				Run()
-			if err != nil {
-				return err
-			}
-			value = []byte(valueStr)
-
-			// Rotation mode for manual values
-			err = huh.NewSelect[string]().
-				Title(fmt.Sprintf("Rotation mode for '%s'", keyName)).
-				Description("How should this key be rotated in the future?").
-				Options(
-					huh.NewOption("Static — rarely changes, rotate manually", "static"),
-					huh.NewOption("External — managed externally (shows hints during rotate)", "external"),
-				).
-				Value(&rotationMode).
-				Run()
-			if err != nil {
-				return err
-			}
-		}
-
-		// Computed key fields (only set when valueSource == "computed")
-		var isComputed bool
-		var tmplString string
-		var tmplValues map[string]string
-		var tmplSecret string
-		var tmplGenerator *template.GeneratorConfig
-
-		if valueSource == "computed" {
-			isComputed = true
-
-			// Prompt for full connection string
-			var connString string
-			err = huh.NewInput().
-				Title("Enter the full connection string").
-				Description("Password/secret portion will become {{secret}}").
-				Placeholder("postgresql://user:password@host:5432/database").
-				Value(&connString).
-				Validate(func(s string) error {
-					if s == "" {
-						return fmt.Errorf("connection string is required")
-					}
-					if !strings.Contains(s, "://") {
-						return fmt.Errorf("must be a URL-style connection string (e.g., postgresql://...)")
-					}
-					return nil
-				}).
-				Run()
-			if err != nil {
-				return err
-			}
-
-			// Auto-detect template and extract values
-			isTemplate, detected, extractedValues := template.DetectConnectionString(connString, nil)
-			if !isTemplate {
-				printWarning("Could not auto-detect connection string format.")
-				printDim("Enter a template manually using {{secret}} for the rotatable part.")
-				fmt.Println()
-				var manualTemplate string
-				err = huh.NewInput().
-					Title("Template string").
-					Description("Use {{secret}} for the password/secret portion").
-					Placeholder(connString).
-					Value(&manualTemplate).
-					Validate(func(s string) error {
-						if s == "" {
-							return fmt.Errorf("template is required")
-						}
-						if !strings.Contains(s, "{{secret}}") {
-							return fmt.Errorf("template must contain {{secret}} placeholder")
-						}
-						return nil
-					}).
-					Run()
-				if err != nil {
-					return err
-				}
-				tmplString = manualTemplate
-				// Extract any other {{variables}} as params the user should fill in
-				tmplValues = make(map[string]string)
-				tmplSecret = ""
-			} else {
-				tmplString = detected
-				tmplValues = extractedValues
-				fmt.Println()
-				printSuccess("Detected template:")
-				fmt.Printf("  %s\n", tmplString)
-				fmt.Println()
-				printDim("Extracted values:")
-				sortedKeys := make([]string, 0, len(tmplValues))
-				for k := range tmplValues {
-					sortedKeys = append(sortedKeys, k)
-				}
-				sort.Strings(sortedKeys)
-				for _, k := range sortedKeys {
-					fmt.Printf("  %s: %s\n", k, tmplValues[k])
-				}
-				fmt.Println()
-			}
-
-			// Secret handling
-			var secretSource string
-			err = huh.NewSelect[string]().
-				Title("How should the secret be managed?").
-				Description("The {{secret}} placeholder in the template").
-				Options(
-					huh.NewOption("🎲 Generate new random secret", "generate"),
-					huh.NewOption("✏️  Keep entered password as secret", "keep"),
-					huh.NewOption("✏️  Enter a different secret value", "enter"),
-				).
-				Value(&secretSource).
-				Run()
-			if err != nil {
-				return err
-			}
-
-			switch secretSource {
-			case "generate":
-				tmplGenerator = &template.GeneratorConfig{Kind: "randomBase64", Bytes: 32}
-				genValue, genErr := core.GenerateValue(&core.GeneratorConfig{
-					Kind:  tmplGenerator.Kind,
-					Bytes: tmplGenerator.Bytes,
-				})
-				if genErr != nil {
-					return fmt.Errorf("generate secret: %w", genErr)
-				}
-				tmplSecret = string(genValue)
-				rotationMode = "generated"
-				printSuccess("Generated new random secret for {{secret}}")
-			case "keep":
-				// Extract the password from the original connection string
-				// The password is the part that became {{secret}} in the template
-				// For postgresql://user:pass@host, password is between : and @
-				if strings.Contains(tmplString, "{{secret}}") {
-					parts := strings.SplitN(connString, "://", 2)
-					if len(parts) == 2 {
-						afterScheme := parts[1]
-						if atIdx := strings.Index(afterScheme, "@"); atIdx != -1 {
-							userPass := afterScheme[:atIdx]
-							if colonIdx := strings.Index(userPass, ":"); colonIdx != -1 {
-								tmplSecret = userPass[colonIdx+1:]
-							}
-						}
-					}
-				}
-				if tmplSecret == "" {
-					printWarning("Could not extract password from connection string")
-					var manualSecret string
-					err = huh.NewInput().
-						Title("Enter the secret value").
-						EchoMode(huh.EchoModePassword).
-						Value(&manualSecret).
-						Run()
-					if err != nil {
-						return err
-					}
-					tmplSecret = manualSecret
-				}
-				rotationMode = "external"
-			case "enter":
-				var manualSecret string
-				err = huh.NewInput().
-					Title("Enter the secret value").
-					EchoMode(huh.EchoModePassword).
-					Value(&manualSecret).
-					Validate(func(s string) error {
-						if s == "" {
-							return fmt.Errorf("secret cannot be empty")
-						}
-						return nil
-					}).
-					Run()
-				if err != nil {
-					return err
-				}
-				tmplSecret = manualSecret
-				rotationMode = "external"
-			}
-
-			// Create a template.Payload to compute final value (for preview/summary)
-			payload, payloadErr := template.NewPayload(tmplString, tmplValues, tmplSecret, tmplGenerator)
-			if payloadErr != nil {
-				return fmt.Errorf("create template payload: %w", payloadErr)
-			}
-			value = []byte(payload.Computed)
-			printSuccess("Computed key configured: %s", keyName)
-		}
-
-		keys = append(keys, keyInput{
-			keyName:       keyName,
-			value:         value,
-			rotationMode:  rotationMode,
-			generator:     generator,
-			isComputed:    isComputed,
-			tmplString:    tmplString,
-			tmplValues:    tmplValues,
-			tmplSecret:    tmplSecret,
-			tmplGenerator: tmplGenerator,
-		})
+		keys = append(keys, *keyData)
+		existingKeyNames = append(existingKeyNames, keyName)
 	}
 
 	if len(keys) == 0 {
