@@ -20,7 +20,7 @@ var (
 
 // Version information (can be overridden at build time via ldflags)
 var (
-	Version   = "0.4.10"
+	Version   = "0.4.11"
 	Commit    = "dev"
 	BuildDate = "unknown"
 )
