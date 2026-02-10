@@ -83,24 +83,29 @@ waxseal reseal --dry-run
 
 ## Commands
 
-| Command           | Description                                          |
-| ----------------- | ---------------------------------------------------- |
-| `setup`           | Interactive setup wizard for a GitOps repository     |
-| `discover`        | Find SealedSecrets and create metadata stubs         |
-| `add`             | Create a new secret (GSM + metadata + manifest)      |
-| `update`          | Update a secret key's value                          |
-| `list`            | List registered secrets with status and expiry       |
-| `validate`        | Validate repo structure and metadata (CI-friendly)   |
-| `check`           | Check operational health (cert expiry, rotation due) |
-| `reseal`          | Reseal secrets from GSM to SealedSecret manifests    |
-| `rotate`          | Rotate secret values and reseal                      |
-| `retire`          | Mark a secret as retired and optionally delete       |
-| `bootstrap`       | Push existing cluster secrets to GSM                 |
-| `gcp bootstrap`   | Interactive GCP infrastructure setup                 |
-| `reminders sync`  | Sync expiry reminders to calendar/tasks              |
-| `reminders clear` | Remove reminders for a secret                        |
-| `reminders list`  | List secrets with upcoming expiry                    |
-| `reminders setup` | Configure reminder settings                          |
+### Primary Commands
+
+| Command    | Description                                             |
+| ---------- | ------------------------------------------------------- |
+| `setup`    | Interactive setup wizard for waxseal                    |
+| `edit`     | Interactive wizard for creating/updating/retiring keys  |
+| `rotate`   | Rotate secret values and reseal                         |
+| `reseal`   | Reseal secrets from GSM to SealedSecret manifests       |
+| `check`    | Health checks (cert, expiry, metadata, gsm, cluster)    |
+| `meta`     | View secret metadata (`meta list secrets`, `meta list keys`, `meta showkey`) |
+
+### Advanced Commands (Scripting/LLM)
+
+For non-interactive automation, use `waxseal advanced` to see:
+
+| Command       | Description                                     |
+| ------------- | ----------------------------------------------- |
+| `addkey`      | Create a new secret (non-interactive)           |
+| `updatekey`   | Update an existing key's value                  |
+| `retirekey`   | Mark a secret as retired                        |
+| `discover`    | Scan repo for SealedSecret manifests            |
+| `gsm bootstrap` | Push cluster secrets to GSM                   |
+| `reminders *` | Calendar/task reminder management               |
 
 ### Global Flags
 
@@ -205,6 +210,39 @@ keys:
         host: "db.example.com"
         db: "myapp"
 ```
+
+## Interactive Wizard (`edit`)
+
+The `edit` command provides an interactive TUI for managing secrets:
+
+```bash
+# Pick a secret (or create new), then pick an action
+waxseal edit
+
+# Jump to a specific secret
+waxseal edit my-app-secrets
+
+# Jump directly to an action
+waxseal edit addkey
+waxseal edit updatekey
+waxseal edit retirekey
+```
+
+### Creating a Secret
+
+The create wizard walks you through:
+1. Secret name and namespace
+2. Adding keys (static, generated random, or computed/templated)
+3. For computed keys: auto-detects connection string patterns
+4. Creates metadata, GSM secrets, and SealedSecret manifest
+
+### Key Types in the Wizard
+
+| Type | Description |
+| ---- | ----------- |
+| Static | You provide the value (masked input) |
+| Generated | Auto-generates random value (configurable length) |
+| Computed | Templated value like `DATABASE_URL` from other keys |
 
 ## Rotation Modes
 
