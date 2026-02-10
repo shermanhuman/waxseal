@@ -98,14 +98,14 @@ waxseal reseal --dry-run
 
 For non-interactive automation, use `waxseal advanced` to see:
 
-| Command       | Description                                     |
-| ------------- | ----------------------------------------------- |
-| `addkey`      | Create a new secret (non-interactive)           |
-| `updatekey`   | Update an existing key's value                  |
-| `retirekey`   | Mark a secret as retired                        |
-| `discover`    | Scan repo for SealedSecret manifests            |
-| `gsm bootstrap` | Push cluster secrets to GSM                   |
-| `reminders *` | Calendar/task reminder management               |
+| Command       | Description                                              |
+| ------------- | -------------------------------------------------------- |
+| `addkey`      | Create a new secret (non-interactive)                    |
+| `updatekey`   | Update key value or computed key params/template         |
+| `retirekey`   | Mark a secret as retired                                 |
+| `discover`    | Scan repo for SealedSecret manifests                     |
+| `gsm bootstrap` | Push cluster secrets to GSM                            |
+| `reminders *` | Calendar/task reminder management                        |
 
 ### Global Flags
 

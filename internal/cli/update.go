@@ -2,16 +2,20 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/huh"
+	"github.com/shermanhuman/waxseal/internal/config"
 	"github.com/shermanhuman/waxseal/internal/core"
 	"github.com/shermanhuman/waxseal/internal/files"
 	"github.com/shermanhuman/waxseal/internal/seal"
 	"github.com/shermanhuman/waxseal/internal/store"
+	"github.com/shermanhuman/waxseal/internal/template"
 	"github.com/spf13/cobra"
 )
 
@@ -25,18 +29,22 @@ This command:
   2. Updates the metadata with the new version number
   3. Reseals the SealedSecret manifest
 
+For computed (templated) keys, this command allows updating template
+parameters (host, port, username) or the template string itself.
+Use 'waxseal rotate' to update the secret portion.
+
 Examples:
   # Interactive mode (prompts for new value)
-  waxseal update my-app-secrets api_key
+  waxseal updatekey my-app-secrets api_key
 
   # Generate new random value
-  waxseal update my-app-secrets api_key --generate-random
+  waxseal updatekey my-app-secrets api_key --generate-random
 
   # From stdin
-  echo "new-value" | waxseal update my-app-secrets api_key --stdin
+  echo "new-value" | waxseal updatekey my-app-secrets api_key --stdin
 
   # Preview changes
-  waxseal update my-app-secrets api_key --generate-random --dry-run`,
+  waxseal updatekey my-app-secrets api_key --generate-random --dry-run`,
 	Args: cobra.ExactArgs(2),
 	RunE: runUpdate,
 }
@@ -147,6 +155,12 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 
 	if !createNewKey {
 		keyMeta = &metadata.Keys[keyIndex]
+
+		// Computed keys require special handling - delegate to the computed key update flow
+		if keyMeta.Source.Kind == "computed" {
+			return updateComputedKey(ctx, cfg, metadata, keyMeta, metadataPath)
+		}
+
 		if keyMeta.GSM == nil {
 			return fmt.Errorf("key %q has no GSM reference", keyName)
 		}
@@ -350,6 +364,247 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	fmt.Println("Next steps:")
 	fmt.Println("  1. Commit the updated files")
 	fmt.Println("  2. Apply to cluster or let GitOps sync")
+
+	return nil
+}
+
+// updateComputedKey handles updating a computed (templated) key.
+// This allows editing template parameters without changing the secret value.
+func updateComputedKey(ctx context.Context, cfg *config.Config, metadata *core.SecretMetadata, keyMeta *core.KeyMetadata, metadataPath string) error {
+	shortName := metadata.ShortName
+	keyName := keyMeta.KeyName
+
+	// Must have computed config
+	if keyMeta.Computed == nil || keyMeta.Computed.GSM == nil {
+		return fmt.Errorf("key %q is marked as computed but has no GSM reference — use 'waxseal rotate' instead", keyName)
+	}
+
+	// Get GSM store
+	gsmStore, closeStore, err := resolveStore(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer closeStore()
+
+	// Load existing payload from GSM
+	gsmRef := keyMeta.Computed.GSM
+	payloadBytes, err := gsmStore.AccessVersion(ctx, gsmRef.SecretResource, gsmRef.Version)
+	if err != nil {
+		return fmt.Errorf("load computed key payload: %w", err)
+	}
+
+	payload, err := template.ParsePayload(payloadBytes)
+	if err != nil {
+		return fmt.Errorf("parse computed key payload: %w", err)
+	}
+
+	fmt.Println()
+	fmt.Println(strings.Repeat("━", 64))
+	fmt.Printf("%s📐 Update Computed Key: %s/%s%s\n", styleBold, shortName, keyName, styleReset)
+	fmt.Println(strings.Repeat("━", 64))
+	fmt.Println()
+	fmt.Printf("Template: %s\n", payload.Template)
+	fmt.Println()
+
+	// Ask what to update
+	var updateChoice string
+	err = huh.NewSelect[string]().
+		Title("What do you want to update?").
+		Options(
+			huh.NewOption("📝 Update template parameters (host, port, username, etc.)", "params"),
+			huh.NewOption("📐 Update the template string", "template"),
+			huh.NewOption("🔄 Update the secret — use 'waxseal rotate' instead", "secret"),
+		).
+		Value(&updateChoice).
+		Run()
+	if err != nil {
+		return err
+	}
+
+	if updateChoice == "secret" {
+		fmt.Println()
+		printDim("To update the secret portion of a computed key, use:")
+		fmt.Printf("  waxseal rotate %s %s\n", shortName, keyName)
+		fmt.Println()
+		return nil
+	}
+
+	if updateChoice == "template" {
+		// Update the template string
+		var newTemplate string
+		err = huh.NewInput().
+			Title("New template string").
+			Description("Use {{secret}} for the rotatable portion, {{param}} for other values").
+			Placeholder(payload.Template).
+			Value(&newTemplate).
+			Validate(func(s string) error {
+				if s == "" {
+					return fmt.Errorf("template cannot be empty")
+				}
+				if !strings.Contains(s, "{{secret}}") {
+					return fmt.Errorf("template must contain {{secret}} placeholder")
+				}
+				return nil
+			}).
+			Run()
+		if err != nil {
+			return err
+		}
+		payload.Template = newTemplate
+	}
+
+	if updateChoice == "params" {
+		// Show current params and allow editing each
+		if len(payload.Values) == 0 {
+			fmt.Println("This computed key has no template parameters to update.")
+			fmt.Println("Only {{secret}} is used in the template.")
+			return nil
+		}
+
+		fmt.Println("Current parameters:")
+		sortedParams := make([]string, 0, len(payload.Values))
+		for k := range payload.Values {
+			sortedParams = append(sortedParams, k)
+		}
+		sort.Strings(sortedParams)
+		for _, k := range sortedParams {
+			fmt.Printf("  %s: %s\n", k, payload.Values[k])
+		}
+		fmt.Println()
+
+		// Ask which param to update
+		var paramOptions []huh.Option[string]
+		for _, k := range sortedParams {
+			paramOptions = append(paramOptions, huh.NewOption(fmt.Sprintf("%s = %s", k, payload.Values[k]), k))
+		}
+		paramOptions = append(paramOptions, huh.NewOption("(done updating)", ""))
+
+		for {
+			var paramToUpdate string
+			err = huh.NewSelect[string]().
+				Title("Select a parameter to update").
+				Options(paramOptions...).
+				Value(&paramToUpdate).
+				Run()
+			if err != nil {
+				return err
+			}
+
+			if paramToUpdate == "" {
+				break // done
+			}
+
+			var newValue string
+			err = huh.NewInput().
+				Title(fmt.Sprintf("New value for '%s'", paramToUpdate)).
+				Placeholder(payload.Values[paramToUpdate]).
+				Value(&newValue).
+				Validate(func(s string) error {
+					if s == "" {
+						return fmt.Errorf("value cannot be empty")
+					}
+					return nil
+				}).
+				Run()
+			if err != nil {
+				return err
+			}
+			payload.Values[paramToUpdate] = newValue
+
+			// Rebuild options with updated values
+			paramOptions = []huh.Option[string]{}
+			for _, k := range sortedParams {
+				paramOptions = append(paramOptions, huh.NewOption(fmt.Sprintf("%s = %s", k, payload.Values[k]), k))
+			}
+			paramOptions = append(paramOptions, huh.NewOption("(done updating)", ""))
+		}
+	}
+
+	// Recompute the value
+	newPayload, err := template.NewPayload(payload.Template, payload.Values, payload.Secret, payload.Generator)
+	if err != nil {
+		return fmt.Errorf("recompute payload: %w", err)
+	}
+
+	fmt.Println()
+	fmt.Println("Updated computed value:")
+	printDim("  (preview) %s", newPayload.Computed)
+	fmt.Println()
+
+	if dryRun {
+		printDim("[DRY RUN] Would update computed key — no changes made")
+		return nil
+	}
+
+	proceed, err := confirm("Save these changes?")
+	if err != nil || !proceed {
+		return fmt.Errorf("cancelled")
+	}
+
+	// Marshal and store new payload
+	payloadJSON, err := newPayload.Marshal()
+	if err != nil {
+		return fmt.Errorf("marshal payload: %w", err)
+	}
+
+	newVersion, err := gsmStore.CreateSecretVersion(ctx, gsmRef.SecretResource, payloadJSON)
+	if err != nil {
+		return fmt.Errorf("create GSM version: %w", err)
+	}
+	printSuccess("Created new GSM version: %s", newVersion)
+
+	// Update metadata
+	keyMeta.Computed.GSM.Version = newVersion
+	if updateChoice == "template" {
+		keyMeta.Computed.Template = newPayload.Template
+	}
+
+	metadataYAML := files.SerializeMetadata(metadata)
+	writer := files.NewAtomicWriter()
+	if err := writer.Write(metadataPath, []byte(metadataYAML)); err != nil {
+		return fmt.Errorf("write metadata: %w", err)
+	}
+	printSuccess("Updated metadata")
+
+	// Reseal the SealedSecret
+	manifestPath := filepath.Join(repoPath, metadata.ManifestPath)
+	existingManifest, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return fmt.Errorf("read manifest: %w", err)
+	}
+
+	existingSS, err := seal.ParseSealedSecret(existingManifest)
+	if err != nil {
+		return fmt.Errorf("parse manifest: %w", err)
+	}
+
+	sealer := resolveSealer(cfg)
+	scope := existingSS.GetScope()
+	encrypted, err := sealer.Seal(
+		metadata.SealedSecret.Name,
+		metadata.SealedSecret.Namespace,
+		keyName,
+		[]byte(newPayload.Computed),
+		scope,
+	)
+	if err != nil {
+		return fmt.Errorf("seal value: %w", err)
+	}
+
+	existingSS.Spec.EncryptedData[keyName] = encrypted
+	updatedYAML, err := existingSS.ToYAML()
+	if err != nil {
+		return fmt.Errorf("serialize manifest: %w", err)
+	}
+
+	if err := writer.Write(manifestPath, updatedYAML); err != nil {
+		return fmt.Errorf("write manifest: %w", err)
+	}
+	printSuccess("Updated manifest: %s", metadata.ManifestPath)
+
+	fmt.Println()
+	printSuccess("Computed key %s/%s updated!", shortName, keyName)
+	fmt.Println()
 
 	return nil
 }
