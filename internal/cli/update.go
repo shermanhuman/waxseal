@@ -458,6 +458,7 @@ func updateComputedKey(ctx context.Context, cfg *config.Config, metadata *core.S
 		if len(payload.Values) == 0 {
 			fmt.Println("This computed key has no template parameters to update.")
 			fmt.Println("Only {{secret}} is used in the template.")
+			printDim("Use 'waxseal rotate %s %s' to update the secret.", shortName, keyName)
 			return nil
 		}
 
