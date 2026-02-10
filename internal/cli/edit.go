@@ -366,13 +366,17 @@ func collectSingleKeyInput(keyName string, existingKeys []string) (*keyInputData
 
 	switch valueSource {
 	case "random":
-		generator = &core.GeneratorConfig{Kind: "randomBase64", Bytes: 32}
+		genKind, genErr := PromptGeneratorKind(keyName)
+		if genErr != nil {
+			return nil, genErr
+		}
+		generator = &core.GeneratorConfig{Kind: genKind, Bytes: 32}
 		value, err = core.GenerateValue(generator)
 		if err != nil {
 			return nil, fmt.Errorf("generate random value: %w", err)
 		}
 		rotationMode = "generated"
-		printSuccess("Generated random value for %s", keyName)
+		printSuccess("Generated random %s value for %s", genKind, keyName)
 
 	case "enter":
 		var valueStr string
@@ -503,17 +507,21 @@ func collectSingleKeyInput(keyName string, existingKeys []string) (*keyInputData
 
 		switch secretSource {
 		case "generate":
-			tmplGenerator = &template.GeneratorConfig{Kind: "randomBase64", Bytes: 32}
-			genValue, genErr := core.GenerateValue(&core.GeneratorConfig{
+			genKind, genErr := PromptGeneratorKind(keyName)
+			if genErr != nil {
+				return nil, genErr
+			}
+			tmplGenerator = &template.GeneratorConfig{Kind: genKind, Bytes: 32}
+			genValue, genErr2 := core.GenerateValue(&core.GeneratorConfig{
 				Kind:  tmplGenerator.Kind,
 				Bytes: tmplGenerator.Bytes,
 			})
-			if genErr != nil {
-				return nil, fmt.Errorf("generate secret: %w", genErr)
+			if genErr2 != nil {
+				return nil, fmt.Errorf("generate secret: %w", genErr2)
 			}
 			tmplSecret = string(genValue)
 			rotationMode = "generated"
-			printSuccess("Generated new random secret for {{secret}}")
+			printSuccess("Generated new random %s secret for {{secret}}", genKind)
 		case "keep":
 			// Extract the password from the original connection string
 			if strings.Contains(tmplString, "{{secret}}") {

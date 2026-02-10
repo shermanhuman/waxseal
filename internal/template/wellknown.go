@@ -42,6 +42,14 @@ var wellKnownGenerated = map[string]string{
 	// ── Ghost ──────────────────────────────────────────────────────────────
 	"ghost_database__connection__password": "ghost",
 
+	// ── Garage ─────────────────────────────────────────────────────────────
+	// Garage S3-compatible storage uses hex-based keys with GK prefix for access keys
+	// Access key format: GK + 24 hex chars (12 bytes)
+	// Secret key format: 64 hex chars (32 bytes)
+	"rpc-secret":    "garage",
+	"admin-token":   "garage",
+	"metrics-token": "garage",
+
 	// ── Gitea / Forgejo ────────────────────────────────────────────────────
 	"gitea__security__secret_key":     "gitea",
 	"gitea__security__internal_token": "gitea",

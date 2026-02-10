@@ -11,6 +11,7 @@ import (
 	"github.com/shermanhuman/waxseal/internal/files"
 	"github.com/shermanhuman/waxseal/internal/seal"
 	"github.com/shermanhuman/waxseal/internal/store"
+	"github.com/shermanhuman/waxseal/internal/template"
 	"github.com/spf13/cobra"
 )
 
@@ -29,8 +30,9 @@ except static key values, which are prompted for securely (never in shell
 history). Without --key flags, an interactive TUI wizard collects all input.
 
 Key formats:
-  --key=name             Static key (prompts for value securely)
-  --key=name:random      Generated random value (mode: generated)
+  --key=name                         Static key (prompts for value securely)
+  --key=name:random                  Generated random value (mode: generated)
+  --key=name:template=GK{{secret}}   Templated key with prefix (rotatable)
 
 Examples:
   # Interactive mode (no --key flags)
@@ -49,27 +51,38 @@ Examples:
     --namespace=default \
     --key=api_key:random \
     --key=db_password:random \
-    --random-length=64`,
+    --random-length=64
+
+  # Garage S3 credentials with prefixed access key
+  waxseal add garage-creds \
+    --namespace=default \
+    --key=access-key:template=GK{{secret}} \
+    --key=secret-key:random \
+    --generator=randomHex \
+    --random-length=12 \
+    --manifest-path=apps/infrastructure/garage/creds-sealed.yaml`,
 	Args: cobra.ExactArgs(1),
 	RunE: runAdd,
 }
 
 var (
-	addNamespace    string
-	addKeys         []string
-	addManifestPath string
-	addScope        string
-	addSecretType   string
-	addRandomLength int
+	addNamespace     string
+	addKeys          []string
+	addManifestPath  string
+	addScope         string
+	addSecretType    string
+	addRandomLength  int
+	addGeneratorKind string
 )
 
 func init() {
 	rootCmd.AddCommand(addCmd)
 	addCmd.Flags().StringVar(&addNamespace, "namespace", "", "Kubernetes namespace")
-	addCmd.Flags().StringSliceVar(&addKeys, "key", nil, "Key name (use name:random to auto-generate)")
+	addCmd.Flags().StringSliceVar(&addKeys, "key", nil, "Key name (use name:random or name:template=...)")
 	addCmd.Flags().StringVar(&addManifestPath, "manifest-path", "", "Path for SealedSecret manifest")
 	addCmd.Flags().StringVar(&addScope, "scope", "strict", "Sealing scope (strict, namespace-wide, cluster-wide)")
 	addCmd.Flags().StringVar(&addSecretType, "type", "Opaque", "Secret type (Opaque, kubernetes.io/tls, etc.)")
+	addCmd.Flags().StringVar(&addGeneratorKind, "generator", "randomBase64", "Generator kind (randomBase64, randomHex)")
 	addCmd.Flags().IntVar(&addRandomLength, "random-length", 32, "Length of generated random values (bytes)")
 	addPreflightChecks(addCmd, authNeeds{gsm: true, kubeseal: true})
 }
@@ -100,6 +113,11 @@ func runAdd(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("--namespace is required when using --key flags")
 		}
 
+		// Validate generator kind early
+		if err := ValidateGeneratorKind(addGeneratorKind); err != nil {
+			return err
+		}
+
 		namespace = addNamespace
 		scope = addScope
 		secretType = addSecretType
@@ -108,51 +126,78 @@ func runAdd(cmd *cobra.Command, args []string) error {
 			manifestPath = fmt.Sprintf("apps/%s/sealed-secret.yaml", shortName)
 		}
 
-		// Parse keys: name:random (generated) or name (static, prompts for value)
+		// Parse keys using shared helper
 		for _, k := range addKeys {
-			var keyName string
-			var value []byte
-			var rotationMode string
-			var generator *core.GeneratorConfig
-
-			if parts := strings.SplitN(k, ":", 2); len(parts) > 1 && parts[1] == "random" {
-				// name:random → generated key
-				keyName = parts[0]
-				generator = &core.GeneratorConfig{Kind: "randomBase64", Bytes: addRandomLength}
-				var err error
-				value, err = core.GenerateValue(generator)
-				if err != nil {
-					return fmt.Errorf("generate value for key %q: %w", keyName, err)
-				}
-				rotationMode = "generated"
-			} else {
-				// name → static key, prompt for value securely
-				keyName = k
-				var inputValue string
-				err := huh.NewInput().
-					Title(fmt.Sprintf("Enter value for key %q", keyName)).
-					EchoMode(huh.EchoModePassword).
-					Value(&inputValue).
-					Run()
-				if err != nil {
-					return fmt.Errorf("prompt for key %q: %w", keyName, err)
-				}
-				if inputValue == "" {
-					return fmt.Errorf("value for key %q cannot be empty", keyName)
-				}
-				value = []byte(inputValue)
-				rotationMode = "static"
+			spec, err := ParseKeySpec(k)
+			if err != nil {
+				return fmt.Errorf("invalid key spec %q: %w", k, err)
 			}
 
-			if keyName == "" {
-				return fmt.Errorf("key name cannot be empty in %q", k)
+			var value []byte
+			var generator *core.GeneratorConfig
+			var templateStr string
+
+			switch spec.Kind {
+			case "random":
+				// Generated key with configured generator
+				generator = &core.GeneratorConfig{Kind: addGeneratorKind, Bytes: addRandomLength}
+				value, err = core.GenerateValue(generator)
+				if err != nil {
+					return fmt.Errorf("generate value for key %q: %w", spec.Name, err)
+				}
+
+			case "template":
+				// Templated key - generate secret, create JSON payload
+				// Auto-detect generator kind from well-known prefix patterns
+				genKind := addGeneratorKind
+				genBytes := addRandomLength
+				for _, p := range template.WellKnownPrefixes() {
+					if strings.HasPrefix(spec.Template, p.Prefix+"{{") {
+						if genKind != p.SecretKind {
+							fmt.Printf("  Auto-selecting generator %s for %s prefix (%s)\n", p.SecretKind, p.Prefix, p.Description)
+							genKind = p.SecretKind
+						}
+						if genBytes == 32 { // default not overridden
+							genBytes = p.SecretBytes
+						}
+						break
+					}
+				}
+				generator = &core.GeneratorConfig{Kind: genKind, Bytes: genBytes}
+				secretValue, err := core.GenerateValue(generator)
+				if err != nil {
+					return fmt.Errorf("generate secret for key %q: %w", spec.Name, err)
+				}
+				// Convert core.GeneratorConfig to template.GeneratorConfig for payload
+				templateGen := &template.GeneratorConfig{Kind: generator.Kind, Bytes: generator.Bytes}
+				// Create template payload - value will be the JSON, not the computed value
+				payload, err := template.NewPayload(spec.Template, map[string]string{}, string(secretValue), templateGen)
+				if err != nil {
+					return fmt.Errorf("create template payload for key %q: %w", spec.Name, err)
+				}
+				templateStr = spec.Template
+				// For templated keys, the GSM value is the JSON payload
+				value, err = payload.Marshal()
+				if err != nil {
+					return fmt.Errorf("marshal template payload for key %q: %w", spec.Name, err)
+				}
+
+			case "static":
+				// Static key - prompt for value securely
+				inputValue, err := PromptSecretValue(spec.Name)
+				if err != nil {
+					return fmt.Errorf("prompt for key %q: %w", spec.Name, err)
+				}
+				value = []byte(inputValue)
 			}
 
 			keys = append(keys, addKeyInput{
-				keyName:      keyName,
+				keyName:      spec.Name,
 				value:        value,
-				rotationMode: rotationMode,
+				rotationMode: spec.RotationMode,
 				generator:    generator,
+				isTemplated:  spec.Kind == "template",
+				template:     templateStr,
 			})
 		}
 	} else {
@@ -167,16 +212,36 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	// Generate GSM resource paths
 	type keyToCreate struct {
 		keyName     string
-		value       []byte
+		value       []byte // For templated keys, this is the JSON payload
+		sealValue   []byte // The value to seal (computed value for templated keys)
 		gsmResource string
+		isTemplated bool
+		template    string
 	}
 	var keysToCreate []keyToCreate
 	for _, k := range keys {
 		gsmResource := store.SecretResource(cfg.Store.ProjectID, store.FormatSecretID(shortName, k.keyName))
+
+		// For templated keys, we need to extract the computed value for sealing
+		var sealValue []byte
+		if k.isTemplated {
+			// Parse the JSON payload to get the computed value
+			payload, err := template.ParsePayload(k.value)
+			if err != nil {
+				return fmt.Errorf("parse template payload for %s: %w", k.keyName, err)
+			}
+			sealValue = []byte(payload.Computed)
+		} else {
+			sealValue = k.value
+		}
+
 		keysToCreate = append(keysToCreate, keyToCreate{
 			keyName:     k.keyName,
 			value:       k.value,
+			sealValue:   sealValue,
 			gsmResource: gsmResource,
+			isTemplated: k.isTemplated,
+			template:    k.template,
 		})
 	}
 
@@ -222,18 +287,41 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		}
 		printSuccess("Created GSM secret: %s (version %s)", k.keyName, version)
 
-		keyMetadata = append(keyMetadata, core.KeyMetadata{
-			KeyName: k.keyName,
-			Source:  core.SourceConfig{Kind: "gsm"},
-			GSM: &core.GSMRef{
-				SecretResource: k.gsmResource,
-				Version:        version,
-			},
-			Rotation: &core.RotationConfig{
-				Mode:      keysByName[k.keyName].rotationMode,
-				Generator: keysByName[k.keyName].generator,
-			},
-		})
+		input := keysByName[k.keyName]
+
+		if k.isTemplated {
+			// Templated key: use computed source with GSM-backed payload
+			keyMetadata = append(keyMetadata, core.KeyMetadata{
+				KeyName: k.keyName,
+				Source:  core.SourceConfig{Kind: "computed"},
+				Computed: &core.ComputedConfig{
+					Kind:     "template",
+					Template: k.template,
+					GSM: &core.GSMRef{
+						SecretResource: k.gsmResource,
+						Version:        version,
+					},
+				},
+				Rotation: &core.RotationConfig{
+					Mode:      input.rotationMode,
+					Generator: input.generator,
+				},
+			})
+		} else {
+			// Regular key: use GSM source
+			keyMetadata = append(keyMetadata, core.KeyMetadata{
+				KeyName: k.keyName,
+				Source:  core.SourceConfig{Kind: "gsm"},
+				GSM: &core.GSMRef{
+					SecretResource: k.gsmResource,
+					Version:        version,
+				},
+				Rotation: &core.RotationConfig{
+					Mode:      input.rotationMode,
+					Generator: input.generator,
+				},
+			})
+		}
 	}
 
 	// Create metadata
@@ -269,7 +357,8 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	// Seal each key and build SealedSecret
 	encryptedData := make(map[string]string)
 	for _, k := range keysToCreate {
-		encrypted, err := sealer.Seal(shortName, namespace, k.keyName, k.value, scope)
+		// For templated keys, seal the computed value (not the JSON payload)
+		encrypted, err := sealer.Seal(shortName, namespace, k.keyName, k.sealValue, scope)
 		if err != nil {
 			return fmt.Errorf("seal key %s: %w", k.keyName, err)
 		}
@@ -303,6 +392,8 @@ type addKeyInput struct {
 	value        []byte
 	rotationMode string // "static", "generated", "external"
 	generator    *core.GeneratorConfig
+	isTemplated  bool   // True if this is a templated key with JSON payload
+	template     string // Template string (only if isTemplated)
 }
 
 func runAddInteractive(shortName, projectID string) (namespace, manifestPath, scope, secretType string, keys []addKeyInput, err error) {

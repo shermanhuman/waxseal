@@ -160,3 +160,78 @@ func TestLookupWellKnown(t *testing.T) {
 		})
 	}
 }
+
+func TestDetectPrefixedKey(t *testing.T) {
+	tests := []struct {
+		name       string
+		keyName    string
+		value      string
+		wantMatch  bool
+		wantTmpl   string
+		wantSecret string
+	}{
+		{
+			name:       "garage access key",
+			keyName:    "access-key",
+			value:      "GKa1b2c3d4e5f6a1b2c3d4e5f6",
+			wantMatch:  true,
+			wantTmpl:   "GK{{secret}}",
+			wantSecret: "a1b2c3d4e5f6a1b2c3d4e5f6",
+		},
+		{
+			name:       "garage access_key underscore",
+			keyName:    "access_key",
+			value:      "GK0123456789abcdef01234567",
+			wantMatch:  true,
+			wantTmpl:   "GK{{secret}}",
+			wantSecret: "0123456789abcdef01234567",
+		},
+		{
+			name:      "non-hex after GK",
+			keyName:   "access-key",
+			value:     "GKzzzzzzzzzzzzzzzzzzzzzzzz", // z is not hex
+			wantMatch: false,
+		},
+		{
+			name:      "wrong prefix",
+			keyName:   "access-key",
+			value:     "AKa1b2c3d4e5f6a1b2c3d4e5f6",
+			wantMatch: false,
+		},
+		{
+			name:      "wrong key name",
+			keyName:   "secret-key", // not an access-key
+			value:     "GKa1b2c3d4e5f6a1b2c3d4e5f6",
+			wantMatch: false,
+		},
+		{
+			name:      "wrong length",
+			keyName:   "access-key",
+			value:     "GKa1b2c3d4e5f6", // too short
+			wantMatch: false,
+		},
+		{
+			name:      "plain hex secret key is not templated",
+			keyName:   "secret-key",
+			value:     "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+			wantMatch: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			matched, _, tmpl, secret := DetectPrefixedKey(tt.value, tt.keyName)
+			if matched != tt.wantMatch {
+				t.Fatalf("DetectPrefixedKey() matched = %v, want %v", matched, tt.wantMatch)
+			}
+			if matched {
+				if tmpl != tt.wantTmpl {
+					t.Errorf("DetectPrefixedKey() tmpl = %q, want %q", tmpl, tt.wantTmpl)
+				}
+				if secret != tt.wantSecret {
+					t.Errorf("DetectPrefixedKey() secret = %q, want %q", secret, tt.wantSecret)
+				}
+			}
+		})
+	}
+}

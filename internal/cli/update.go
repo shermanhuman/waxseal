@@ -53,6 +53,7 @@ var (
 	updateFromStdin      bool
 	updateGenerateRandom bool
 	updateRandomLength   int
+	updateGeneratorKind  string
 	updateCreateKey      bool
 )
 
@@ -61,6 +62,7 @@ func init() {
 	updateCmd.Flags().BoolVar(&updateFromStdin, "stdin", false, "Read new value from stdin")
 	updateCmd.Flags().BoolVar(&updateGenerateRandom, "generate-random", false, "Generate a random value")
 	updateCmd.Flags().IntVar(&updateRandomLength, "random-length", 32, "Length of generated random value (bytes)")
+	updateCmd.Flags().StringVar(&updateGeneratorKind, "generator", "randomBase64", "Generator kind: randomBase64 or randomHex")
 	updateCmd.Flags().BoolVar(&updateCreateKey, "create", false, "Create the key if it doesn't exist")
 	addPreflightChecks(updateCmd, authNeeds{gsm: true, kubeseal: true})
 }
@@ -118,34 +120,22 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		}
 		createNewKey = true
 
-		// Collect key configuration (same prompts as discover wizard)
-		err = huh.NewSelect[string]().
-			Title("Rotation mode").
-			Description("How should this key be rotated?").
-			Options(
-				huh.NewOption("Static - not expected to rotate (waxseal rotate ignores)", "static"),
-				huh.NewOption("Generated - waxseal auto-rotates", "generated"),
-				huh.NewOption("External - managed externally (waxseal rotate prompts with hints)", "external"),
-			).
-			Value(&newKeyRotationMode).
-			Run()
+		// Collect key configuration
+		newKeyRotationMode, err = PromptRotationMode(keyName)
 		if err != nil {
 			return err
 		}
 
 		// If generated, ask for generator type
 		if newKeyRotationMode == "generated" {
-			err = huh.NewSelect[string]().
-				Title("Generator type").
-				Description("How should the secret value be generated?").
-				Options(
-					huh.NewOption("Random Base64 (URL-safe, good for tokens/passwords)", "randomBase64"),
-					huh.NewOption("Random Hex (hexadecimal string)", "randomHex"),
-				).
-				Value(&newKeyGenType).
-				Run()
-			if err != nil {
-				return err
+			// Use flag value if provided on command line, otherwise prompt
+			if cmd.Flags().Changed("generator") {
+				newKeyGenType = updateGeneratorKind
+			} else {
+				newKeyGenType, err = PromptGeneratorKind(keyName)
+				if err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -169,16 +159,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		// If rotation mode is unknown or missing, prompt to configure it
 		if keyMeta.Rotation == nil || keyMeta.Rotation.Mode == "" || keyMeta.Rotation.Mode == "unknown" {
 			fmt.Printf("  Key '%s' has no rotation mode configured.\n", keyName)
-			err = huh.NewSelect[string]().
-				Title("Rotation mode").
-				Description("How should this key be rotated?").
-				Options(
-					huh.NewOption("Static - not expected to rotate (waxseal rotate ignores)", "static"),
-					huh.NewOption("Generated - waxseal auto-rotates", "generated"),
-					huh.NewOption("External - managed externally (waxseal rotate prompts with hints)", "external"),
-				).
-				Value(&newKeyRotationMode).
-				Run()
+			newKeyRotationMode, err = PromptRotationMode(keyName)
 			if err != nil {
 				return err
 			}
@@ -191,21 +172,18 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 
 			// If generated, ask for generator type
 			if newKeyRotationMode == "generated" {
-				err = huh.NewSelect[string]().
-					Title("Generator type").
-					Description("How should the secret value be generated?").
-					Options(
-						huh.NewOption("Random Base64 (URL-safe, good for tokens/passwords)", "randomBase64"),
-						huh.NewOption("Random Hex (hexadecimal string)", "randomHex"),
-					).
-					Value(&newKeyGenType).
-					Run()
-				if err != nil {
-					return err
+				// Use flag value if provided on command line, otherwise prompt
+				if cmd.Flags().Changed("generator") {
+					newKeyGenType = updateGeneratorKind
+				} else {
+					newKeyGenType, err = PromptGeneratorKind(keyName)
+					if err != nil {
+						return err
+					}
 				}
 				keyMeta.Rotation.Generator = &core.GeneratorConfig{
 					Kind:  newKeyGenType,
-					Bytes: 32,
+					Bytes: updateRandomLength,
 				}
 			}
 		}
@@ -218,11 +196,17 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	var newValue []byte
 	if updateGenerateRandom {
 		var err error
-		newValue, err = core.GenerateValue(&core.GeneratorConfig{Kind: "randomBase64", Bytes: updateRandomLength})
+		// Use configured generator kind from flag or existing metadata
+		generatorKind := updateGeneratorKind
+		if !createNewKey && keyMeta != nil && keyMeta.Rotation != nil && keyMeta.Rotation.Generator != nil {
+			// Respect existing generator config when updating
+			generatorKind = keyMeta.Rotation.Generator.Kind
+		}
+		newValue, err = core.GenerateValue(&core.GeneratorConfig{Kind: generatorKind, Bytes: updateRandomLength})
 		if err != nil {
 			return fmt.Errorf("generate random bytes: %w", err)
 		}
-		fmt.Printf("Generated random value (%d bytes, base64 encoded)\n", updateRandomLength)
+		fmt.Printf("Generated random value (%d bytes, %s)\n", updateRandomLength, generatorKind)
 	} else if updateFromStdin {
 		reader := bufio.NewReader(os.Stdin)
 		line, err := reader.ReadString('\n')
@@ -299,7 +283,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		if newKeyRotationMode == "generated" && newKeyGenType != "" {
 			newKeyMeta.Rotation.Generator = &core.GeneratorConfig{
 				Kind:  newKeyGenType,
-				Bytes: 32,
+				Bytes: updateRandomLength,
 			}
 		}
 		metadata.Keys = append(metadata.Keys, newKeyMeta)
