@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/shermanhuman/waxseal/internal/core"
@@ -221,8 +222,13 @@ func SerializeMetadata(m *core.SecretMetadata) string {
 			}
 			if len(k.Computed.Params) > 0 {
 				sb.WriteString("      params:\n")
-				for pk, pv := range k.Computed.Params {
-					sb.WriteString(fmt.Sprintf("        %s: %q\n", pk, pv))
+				paramKeys := make([]string, 0, len(k.Computed.Params))
+				for pk := range k.Computed.Params {
+					paramKeys = append(paramKeys, pk)
+				}
+				sort.Strings(paramKeys)
+				for _, pk := range paramKeys {
+					sb.WriteString(fmt.Sprintf("        %s: %q\n", pk, k.Computed.Params[pk]))
 				}
 			}
 		}

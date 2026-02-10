@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/huh"
@@ -569,9 +570,30 @@ func runCreateSecretWizard(ctx context.Context) error {
 			// Auto-detect template and extract values
 			isTemplate, detected, extractedValues := template.DetectConnectionString(connString, nil)
 			if !isTemplate {
-				printWarning("Could not auto-detect connection string format. Using as-is with {{secret}} placeholder.")
-				// Try to find and replace a password-like segment
-				tmplString = connString
+				printWarning("Could not auto-detect connection string format.")
+				printDim("Enter a template manually using {{secret}} for the rotatable part.")
+				fmt.Println()
+				var manualTemplate string
+				err = huh.NewInput().
+					Title("Template string").
+					Description("Use {{secret}} for the password/secret portion").
+					Placeholder(connString).
+					Value(&manualTemplate).
+					Validate(func(s string) error {
+						if s == "" {
+							return fmt.Errorf("template is required")
+						}
+						if !strings.Contains(s, "{{secret}}") {
+							return fmt.Errorf("template must contain {{secret}} placeholder")
+						}
+						return nil
+					}).
+					Run()
+				if err != nil {
+					return err
+				}
+				tmplString = manualTemplate
+				// Extract any other {{variables}} as params the user should fill in
 				tmplValues = make(map[string]string)
 				tmplSecret = ""
 			} else {
@@ -582,8 +604,13 @@ func runCreateSecretWizard(ctx context.Context) error {
 				fmt.Printf("  %s\n", tmplString)
 				fmt.Println()
 				printDim("Extracted values:")
-				for k, v := range tmplValues {
-					fmt.Printf("  %s: %s\n", k, v)
+				sortedKeys := make([]string, 0, len(tmplValues))
+				for k := range tmplValues {
+					sortedKeys = append(sortedKeys, k)
+				}
+				sort.Strings(sortedKeys)
+				for _, k := range sortedKeys {
+					fmt.Printf("  %s: %s\n", k, tmplValues[k])
 				}
 				fmt.Println()
 			}
@@ -789,12 +816,19 @@ func runCreateSecretWizard(ctx context.Context) error {
 			printSuccess("Created computed GSM secret: %s (version %s)", k.keyName, version)
 
 			// Build computed key metadata
+			rotationCfg := &core.RotationConfig{
+				Mode: k.rotationMode,
+			}
+			if k.tmplGenerator != nil {
+				rotationCfg.Generator = &core.GeneratorConfig{
+					Kind:  k.tmplGenerator.Kind,
+					Bytes: k.tmplGenerator.Bytes,
+				}
+			}
 			keyMetadata = append(keyMetadata, core.KeyMetadata{
-				KeyName: k.keyName,
-				Source:  core.SourceConfig{Kind: "computed"},
-				Rotation: &core.RotationConfig{
-					Mode: k.rotationMode,
-				},
+				KeyName:  k.keyName,
+				Source:   core.SourceConfig{Kind: "computed"},
+				Rotation: rotationCfg,
 				Computed: &core.ComputedConfig{
 					Kind:     "template",
 					Template: k.tmplString,
