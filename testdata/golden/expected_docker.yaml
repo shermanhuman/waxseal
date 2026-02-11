@@ -2,7 +2,7 @@ apiVersion: bitnami.com/v1alpha1
 kind: SealedSecret
 metadata:
   annotations:
-    sealedsecrets.bitnami.com/scope: namespace-wide
+    sealedsecrets.bitnami.com/namespace-wide: "true"
   name: docker-registry
   namespace: infra
 spec:
