@@ -66,9 +66,17 @@ func NewSealedSecret(name, namespace, scope, secretType string, encryptedData ma
 	}
 
 	// Add scope annotation if not strict (strict is the default)
+	// Use the legacy boolean annotations that older controller versions (<=0.27) expect
 	if scope != ScopeStrict && scope != "" {
-		ss.Metadata.Annotations = map[string]string{
-			AnnotationScope: scope,
+		switch scope {
+		case ScopeNamespaceWide:
+			ss.Metadata.Annotations = map[string]string{
+				"sealedsecrets.bitnami.com/namespace-wide": "true",
+			}
+		case ScopeClusterWide:
+			ss.Metadata.Annotations = map[string]string{
+				"sealedsecrets.bitnami.com/cluster-wide": "true",
+			}
 		}
 	}
 
