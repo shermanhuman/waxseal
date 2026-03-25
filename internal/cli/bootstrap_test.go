@@ -74,12 +74,8 @@ func TestCheckMetadataExists_NoMetadataDir(t *testing.T) {
 	repoPath = dir
 	yes = false // Don't prompt interactively
 
-	cmd := &cobra.Command{Use: "list"}
-
-	// This will prompt for input which we can't easily test in unit tests
-	// Just verify it doesn't panic
-	// In a real test we'd use testify/mock or similar
-	_ = cmd
+	// This test verifies the function doesn't panic when metadata dir exists but
+	// no metadata files are present — interactive prompt makes it hard to call directly.
 }
 
 func TestCheckMetadataExists_EmptyMetadataDir(t *testing.T) {

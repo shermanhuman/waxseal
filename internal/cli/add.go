@@ -203,7 +203,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	} else {
 		// Interactive mode
 		var err error
-		namespace, manifestPath, scope, secretType, keys, err = runAddInteractive(shortName, cfg.Store.ProjectID)
+		namespace, manifestPath, scope, secretType, keys, err = runAddInteractive(shortName)
 		if err != nil {
 			return err
 		}
@@ -396,7 +396,7 @@ type addKeyInput struct {
 	template     string // Template string (only if isTemplated)
 }
 
-func runAddInteractive(shortName, projectID string) (namespace, manifestPath, scope, secretType string, keys []addKeyInput, err error) {
+func runAddInteractive(shortName string) (namespace, manifestPath, scope, secretType string, keys []addKeyInput, err error) {
 	// Default values
 	namespace = "default"
 	manifestPath = fmt.Sprintf("apps/%s/sealed-secret.yaml", shortName)

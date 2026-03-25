@@ -171,7 +171,7 @@ func runDiscover(cmd *cobra.Command, args []string) error {
 			stub = generateMetadataStub(ds, shortName, projectID, nil)
 		} else {
 			// Interactive mode
-			keyConfigs, err := runInteractiveWizard(ds, shortName, projectID)
+			keyConfigs, err := runInteractiveWizard(ds, projectID)
 			if err != nil {
 				return err
 			}
@@ -271,7 +271,7 @@ func fetchSecretFromCluster(namespace, name string) (map[string]string, error) {
 
 // detectConnectionStringTemplate analyzes a value and suggests a template if it looks like a connection string.
 // Returns: isTemplate, template string, extracted values map
-func runInteractiveWizard(ds discoveredSecret, shortName, projectID string) ([]keyConfig, error) {
+func runInteractiveWizard(ds discoveredSecret, projectID string) ([]keyConfig, error) {
 	keys := ds.sealedSecret.GetEncryptedKeys()
 	configs := make([]keyConfig, 0, len(keys))
 
