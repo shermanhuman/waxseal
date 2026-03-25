@@ -445,9 +445,14 @@ func doCheckGSM(ctx context.Context) (hasErrors, hasWarnings bool) {
 
 		for _, km := range m.Keys {
 			if km.GSM != nil {
-				exists, _, err := gsmStore.SecretVersionExists(ctx, km.GSM.SecretResource, km.GSM.Version)
-				if err != nil {
-					printWarning("%s/%s: cannot check GSM: %v", m.ShortName, km.KeyName, err)
+				var exists bool
+				spinErr := withSpinner(fmt.Sprintf("Checking %s/%s...", m.ShortName, km.KeyName), func() error {
+					var e error
+					exists, _, e = gsmStore.SecretVersionExists(ctx, km.GSM.SecretResource, km.GSM.Version)
+					return e
+				})
+				if spinErr != nil {
+					printWarning("%s/%s: cannot check GSM: %v", m.ShortName, km.KeyName, spinErr)
 					hasWarnings = true
 				} else if !exists {
 					printError("%s/%s: GSM secret not found: %s (v%s)",
@@ -456,9 +461,14 @@ func doCheckGSM(ctx context.Context) (hasErrors, hasWarnings bool) {
 				}
 			}
 			if km.Computed != nil && km.Computed.GSM != nil {
-				exists, _, err := gsmStore.SecretVersionExists(ctx, km.Computed.GSM.SecretResource, km.Computed.GSM.Version)
-				if err != nil {
-					printWarning("%s/%s: cannot check computed GSM: %v", m.ShortName, km.KeyName, err)
+				var exists bool
+				spinErr := withSpinner(fmt.Sprintf("Checking %s/%s (computed)...", m.ShortName, km.KeyName), func() error {
+					var e error
+					exists, _, e = gsmStore.SecretVersionExists(ctx, km.Computed.GSM.SecretResource, km.Computed.GSM.Version)
+					return e
+				})
+				if spinErr != nil {
+					printWarning("%s/%s: cannot check computed GSM: %v", m.ShortName, km.KeyName, spinErr)
 					hasWarnings = true
 				} else if !exists {
 					printError("%s/%s: computed GSM secret not found: %s (v%s)",
@@ -485,9 +495,14 @@ func doCheckCluster(ctx context.Context) (hasErrors, hasWarnings bool) {
 			continue
 		}
 
-		clusterData, err := readSecretFromCluster(ctx, m.SealedSecret.Namespace, m.SealedSecret.Name)
-		if err != nil {
-			printWarning("%s: cannot read from cluster: %v", m.ShortName, err)
+		var clusterData map[string][]byte
+		spinErr := withSpinner(fmt.Sprintf("Reading %s/%s...", m.SealedSecret.Namespace, m.SealedSecret.Name), func() error {
+			var e error
+			clusterData, e = readSecretFromCluster(ctx, m.SealedSecret.Namespace, m.SealedSecret.Name)
+			return e
+		})
+		if spinErr != nil {
+			printWarning("%s: cannot read from cluster: %v", m.ShortName, spinErr)
 			hasWarnings = true
 			continue
 		}
