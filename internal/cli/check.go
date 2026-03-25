@@ -363,6 +363,9 @@ func doCheckMetadata() (hasErrors, hasWarnings bool) {
 
 	var secretCount int
 	for _, m := range secrets {
+		if m.IsRetired() {
+			continue
+		}
 		// Check manifest exists
 		manifestPath := m.ManifestPath
 		if !filepath.IsAbs(manifestPath) {
