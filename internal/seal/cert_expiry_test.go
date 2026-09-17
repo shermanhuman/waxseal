@@ -5,7 +5,6 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/pem"
 	"math/big"
 	"testing"
 	"time"
@@ -119,17 +118,4 @@ func generateTestCertWithDates(notBefore, notAfter time.Time) (*x509.Certificate
 	}
 
 	return x509.ParseCertificate(certDER)
-}
-
-// generateExpiryTestCertPEM creates a test certificate PEM for use in expiry tests.
-func generateExpiryTestCertPEM(daysUntilExpiry int) ([]byte, error) {
-	cert, err := generateTestCert(daysUntilExpiry)
-	if err != nil {
-		return nil, err
-	}
-
-	return pem.EncodeToMemory(&pem.Block{
-		Type:  "CERTIFICATE",
-		Bytes: cert.Raw,
-	}), nil
 }

@@ -1,0 +1,23 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - govet
+    - staticcheck
+    - errcheck
+    - ineffassign
+    - unused
+  settings:
+    staticcheck:
+      # Quickfix suggestions are style, not defects.
+      checks: ["all", "-QF*", "-ST*"]
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters: [errcheck]
+    paths:
+      # Frozen until the rewrite swaps it out; remove this entry in the swap.
+      - internal/cli
+      # Targets a deleted CLI surface; replaced by a smoke suite in the swap.
+      - tests/e2e

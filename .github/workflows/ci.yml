@@ -1,0 +1,80 @@
+# .github/workflows/ci.yml
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Format
+        if: runner.os == 'Linux'
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+
+      - name: Test (race)
+        if: runner.os == 'Linux'
+        run: go test -race -coverprofile=cover.out ./...
+
+      - name: Test
+        if: runner.os != 'Linux'
+        run: go test ./...
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.4
+
+  release-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # -X on a symbol that does not exist fails silently, so prove the
+      # path in .goreleaser.yaml still reaches the version variable.
+      - name: ldflags probe
+        run: |
+          go build -ldflags "-X github.com/shermanhuman/waxseal/internal/version.Version=ci-probe" -o "$RUNNER_TEMP/waxseal" ./cmd/waxseal
+          "$RUNNER_TEMP/waxseal" --version | grep -q ci-probe
+          grep -q 'internal/version.Version=' .goreleaser.yaml
+
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2.13"
+          args: check
