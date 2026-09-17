@@ -1,8 +1,17 @@
-# Promptherder generated artifacts
-.promptherder/
+# Build outputs
+*.exe
+*.test
+/waxseal
+/waxseal-next
+/dist/
+/dev/
+cover.out
+
+# Agent tool artifacts
 .agent/
 .agents/
 .antigravity/
+.gemini/
 .github/prompts/
 .github/instructions/
 .github/copilot-instructions.md
