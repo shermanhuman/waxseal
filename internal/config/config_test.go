@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/shermanhuman/waxseal/internal/core"
@@ -55,11 +56,6 @@ store:
 	// Cert defaults
 	if cfg.Cert.RepoCertPath != "keys/pub-cert.pem" {
 		t.Errorf("cert.repoCertPath = %q, want %q", cfg.Cert.RepoCertPath, "keys/pub-cert.pem")
-	}
-
-	// Discovery defaults
-	if len(cfg.Discovery.IncludeGlobs) != 1 || cfg.Discovery.IncludeGlobs[0] != "apps/**/*.yaml" {
-		t.Errorf("discovery.includeGlobs = %v, want [apps/**/*.yaml]", cfg.Discovery.IncludeGlobs)
 	}
 }
 
@@ -132,20 +128,6 @@ store:
 	}
 }
 
-func TestParse_InvalidReplication(t *testing.T) {
-	yaml := `
-version: "1"
-store:
-  kind: gsm
-  projectId: my-project
-  defaultReplication: invalid
-`
-	_, err := Parse([]byte(yaml))
-	if err == nil {
-		t.Fatal("expected error for invalid replication")
-	}
-}
-
 func TestParse_RemindersWithAuth(t *testing.T) {
 	yaml := `
 version: "1"
@@ -177,6 +159,8 @@ reminders:
 }
 
 func TestParse_RemindersEnabledWithoutAuth(t *testing.T) {
+	// reminders.auth carried no information (ADC was the only legal value)
+	// and is no longer required.
 	yaml := `
 version: "1"
 store:
@@ -185,9 +169,91 @@ store:
 reminders:
   enabled: true
 `
-	_, err := Parse([]byte(yaml))
-	if err == nil {
-		t.Fatal("expected error for reminders without auth")
+	if _, err := Parse([]byte(yaml)); err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+}
+
+func TestParse_InvalidReminderProvider(t *testing.T) {
+	yaml := `
+version: "1"
+store:
+  kind: gsm
+  projectId: my-project
+reminders:
+  enabled: true
+  provider: google-calendar
+`
+	if _, err := Parse([]byte(yaml)); err == nil {
+		t.Fatal("expected error for an unknown reminders provider")
+	}
+}
+
+// A config written by an older waxseal must keep loading, and the fields no
+// command ever read must disappear the next time the file is written.
+func TestMarshal_DropsDeprecatedFields(t *testing.T) {
+	old := `
+version: "1"
+store:
+  kind: gsm
+  projectId: my-project
+  defaultReplication: automatic
+  labels:
+    team: platform
+controller:
+  namespace: sealed-secrets
+  serviceName: controller
+  keySecretLabel: sealedsecrets.bitnami.com/sealed-secrets-key
+cert:
+  repoCertPath: keys/pub-cert.pem
+  verifyAgainstCluster: true
+discovery:
+  includeGlobs: ["apps/**/*.yaml"]
+  excludeGlobs: ["**/kustomization.yaml"]
+bootstrap:
+  cluster:
+    enabled: true
+    kubeContext: prod
+    allowReadingSecrets: true
+reminders:
+  enabled: true
+  provider: both
+  leadTimeDays: [14, 3]
+  eventTitleTemplate: "x"
+  auth:
+    kind: adc
+`
+	cfg, err := Parse([]byte(old))
+	if err != nil {
+		t.Fatalf("an existing config must still parse: %v", err)
+	}
+	out, err := cfg.Marshal()
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	for _, gone := range []string{"defaultReplication", "labels", "keySecretLabel", "verifyAgainstCluster",
+		"discovery", "bootstrap", "eventTitleTemplate", "auth"} {
+		if strings.Contains(string(out), gone) {
+			t.Errorf("deprecated field %q was written back:\n%s", gone, out)
+		}
+	}
+
+	again, err := Parse(out)
+	if err != nil {
+		t.Fatalf("written config must parse: %v\n%s", err, out)
+	}
+	if again.Store.ProjectID != "my-project" || again.Controller.Namespace != "sealed-secrets" ||
+		again.Controller.ServiceName != "controller" || again.Reminders.Provider != "both" ||
+		len(again.Reminders.LeadTimeDays) != 2 || again.Reminders.LeadTimeDays[0] != 14 {
+		t.Errorf("live fields did not survive the write:\n%s", out)
+	}
+
+	second, err := again.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(second) != string(out) {
+		t.Errorf("Marshal is not idempotent:\nfirst:\n%s\nsecond:\n%s", out, second)
 	}
 }
 

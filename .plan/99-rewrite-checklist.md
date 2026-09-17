@@ -29,7 +29,7 @@ test in Phase 4, written before the op it covers.
 - [ ] 4 Rollback runs on every later failure and never deletes pre-existing secrets — `ops`: `FakeStore.FailOn` after N creates; assert only newly created secrets are removed
 - [ ] 5 A missing value is an error, never a silent skip — `ops.SetKeyValue` without a value returns `*MissingInputError`; `ops.Rotate` on a non-generated key returns a typed error
 - [ ] 6 No result or log line contains a secret or rendered computed value — `ops`: marshal every result struct to JSON and assert the seeded secret is absent
-- [ ] 7 `reminders configure` updates a config that already has a reminders block — `ops`/`repo`: load, set, write, re-parse
+- [x] 7 `reminders configure` updates a config that already has a reminders block — `internal/repo`: `TestWriteConfig_UpdatesRemindersInGeneratedConfig`
 
 ## Deliberate behaviour changes (decisions, not accidents)
 
@@ -40,3 +40,5 @@ test in Phase 4, written before the op it covers.
 - Well-known key-name catalogue and prefixed-key detection removed.
 - Never-read config fields are accepted on read and dropped on write.
 - Metadata files may be re-quoted on their next write; semantic content is unchanged.
+- `reminders.auth` is no longer required (ADC was its only legal value). An unknown `reminders.provider` is now a validation error.
+- Generated config and metadata files no longer carry explanatory comments, and comments in an existing config do not survive a write.
