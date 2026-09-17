@@ -810,7 +810,7 @@ type createSecretInput struct {
 }
 
 // runCreateSecretWizard presents an interactive form to create a new Secret.
-func runCreateSecretWizard(ctx context.Context) error {
+func runCreateSecretWizard(ctx context.Context) (retErr error) {
 	cfg, err := resolveConfig()
 	if err != nil {
 		return fmt.Errorf("run 'waxseal setup' first: %w", err)
@@ -994,10 +994,12 @@ func runCreateSecretWizard(ctx context.Context) error {
 	}
 	defer closeStore()
 
-	// Track created secrets for cleanup on failure
+	// Track secrets this run created, so any later failure (GSM, metadata,
+	// sealing, manifest) removes them. Secrets that already existed are never
+	// tracked: deleting one would destroy all of its versions.
 	var createdSecrets []string
-	cleanup := func() {
-		if len(createdSecrets) == 0 {
+	defer func() {
+		if retErr == nil || len(createdSecrets) == 0 {
 			return
 		}
 		printWarning("Cleaning up %d created GSM secret(s)...", len(createdSecrets))
@@ -1006,7 +1008,7 @@ func runCreateSecretWizard(ctx context.Context) error {
 				logging.Warn("failed to cleanup secret", "resource", resource, "error", delErr)
 			}
 		}
-	}
+	}()
 
 	// Create GSM secrets
 	var keyMetadata []core.KeyMetadata
@@ -1016,24 +1018,28 @@ func runCreateSecretWizard(ctx context.Context) error {
 		var version string
 		var gsmErr error
 
+		existed, existsErr := gsmStore.SecretExists(ctx, gsmResource)
+		if existsErr != nil {
+			return fmt.Errorf("check GSM secret %s: %w", k.keyName, existsErr)
+		}
+
 		if k.isComputed {
 			// For computed keys, store JSON payload in GSM
 			payload, payloadErr := template.NewPayload(k.tmplString, k.tmplValues, k.tmplSecret, k.tmplGenerator)
 			if payloadErr != nil {
-				cleanup()
 				return fmt.Errorf("create payload for %s: %w", k.keyName, payloadErr)
 			}
 			payloadJSON, marshalErr := payload.Marshal()
 			if marshalErr != nil {
-				cleanup()
 				return fmt.Errorf("marshal payload for %s: %w", k.keyName, marshalErr)
 			}
 			version, gsmErr = gsmStore.CreateSecretVersion(ctx, gsmResource, payloadJSON)
 			if gsmErr != nil {
-				cleanup()
 				return fmt.Errorf("create GSM secret %s: %w", k.keyName, gsmErr)
 			}
-			createdSecrets = append(createdSecrets, gsmResource)
+			if !existed {
+				createdSecrets = append(createdSecrets, gsmResource)
+			}
 			printSuccess("Created computed GSM secret: %s (version %s)", k.keyName, version)
 
 			// Build computed key metadata
@@ -1063,10 +1069,11 @@ func runCreateSecretWizard(ctx context.Context) error {
 			// For regular keys, store raw value
 			version, gsmErr = gsmStore.CreateSecretVersion(ctx, gsmResource, k.value)
 			if gsmErr != nil {
-				cleanup()
 				return fmt.Errorf("create GSM secret %s: %w", k.keyName, gsmErr)
 			}
-			createdSecrets = append(createdSecrets, gsmResource)
+			if !existed {
+				createdSecrets = append(createdSecrets, gsmResource)
+			}
 			printSuccess("Created GSM secret: %s (version %s)", k.keyName, version)
 
 			keyMetadata = append(keyMetadata, core.KeyMetadata{

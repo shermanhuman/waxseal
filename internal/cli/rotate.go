@@ -177,7 +177,7 @@ func runRotate(cmd *cobra.Command, args []string) error {
 					return fmt.Errorf("update payload for %s: %w", key.KeyName, err)
 				}
 				fmt.Printf("  Generated new secret (%d chars)\n", len(newSecret))
-				fmt.Printf("  Recomputed: %s...\n", truncateStr(payload.Computed, 50))
+				fmt.Printf("  Recomputed value (%d chars)\n", len(payload.Computed))
 
 				// Marshal and store as newValue
 				newValue, err = payload.Marshal()
@@ -246,6 +246,9 @@ func runRotate(cmd *cobra.Command, args []string) error {
 				// Prompt for new secret value (masked input)
 				fmt.Println("  After updating externally, enter the new secret value:")
 				var newSecret string
+				if !dryRun && yes {
+					return errValueRequiresPrompt(shortName, key.KeyName)
+				}
 				if !dryRun && !yes {
 					var err error
 					newSecret, err = promptSecret("New {{secret}}")
@@ -264,7 +267,7 @@ func runRotate(cmd *cobra.Command, args []string) error {
 					return fmt.Errorf("update payload for %s: %w", key.KeyName, err)
 				}
 				fmt.Printf("  Updated secret value\n")
-				fmt.Printf("  Recomputed: %s...\n", truncateStr(payload.Computed, 50))
+				fmt.Printf("  Recomputed value (%d chars)\n", len(payload.Computed))
 
 				// Store new version
 				newValue, err = payload.Marshal()
@@ -306,8 +309,9 @@ func runRotate(cmd *cobra.Command, args []string) error {
 					continue
 				}
 			}
-			// For external/manual non-templated, we don't generate - we expect GSM to have been updated
-			// Just increment version reference
+			// waxseal pins numeric GSM versions, so a value changed outside
+			// waxseal is not picked up here. Say so instead of doing nothing.
+			fmt.Printf("  Not rotated: set the new value with 'waxseal updatekey %s %s --stdin'\n", shortName, key.KeyName)
 			continue
 
 		case "static":
@@ -326,6 +330,9 @@ func runRotate(cmd *cobra.Command, args []string) error {
 			// Prompt for new value (masked input)
 			fmt.Println("  Enter the new value for this static secret:")
 			var inputValue string
+			if !dryRun && yes {
+				return errValueRequiresPrompt(shortName, key.KeyName)
+			}
 			if !dryRun && !yes {
 				var err error
 				inputValue, err = promptSecret("New value")
@@ -381,7 +388,7 @@ func runRotate(cmd *cobra.Command, args []string) error {
 	// Write updated metadata
 	if !dryRun {
 		updatedMetadata := files.SerializeMetadata(metadata)
-		if err := os.WriteFile(metadataPath, []byte(updatedMetadata), 0o644); err != nil {
+		if err := files.NewAtomicWriter().Write(metadataPath, []byte(updatedMetadata)); err != nil {
 			return fmt.Errorf("write metadata: %w", err)
 		}
 		fmt.Printf("\n")
@@ -439,4 +446,11 @@ func displayOperatorHints(hints *core.OperatorHints, keyName string) {
 		fmt.Printf("  │ Consult documentation or team for rotation guidance.\n")
 	}
 	fmt.Printf("  └────────────────────────────\n\n")
+}
+
+// errValueRequiresPrompt is returned when --yes is set but the key needs an
+// operator-supplied value. --yes answers confirmations; it cannot supply a value.
+func errValueRequiresPrompt(shortName, keyName string) error {
+	return fmt.Errorf("%s/%s needs a new value, which --yes cannot supply; use 'waxseal updatekey %s %s --stdin'",
+		shortName, keyName, shortName, keyName)
 }
