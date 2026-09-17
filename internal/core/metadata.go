@@ -179,11 +179,7 @@ func (s *SealedSecretRef) Validate() error {
 	if s.Namespace == "" {
 		return NewValidationError("sealedSecret.namespace", "required")
 	}
-	validScopes := map[string]bool{"strict": true, "namespace-wide": true, "cluster-wide": true}
-	if !validScopes[s.Scope] {
-		return NewValidationError("sealedSecret.scope", "must be 'strict', 'namespace-wide', or 'cluster-wide'")
-	}
-	return nil
+	return Scopes.Validate("sealedSecret.scope", s.Scope)
 }
 
 // Validate checks the KeyMetadata.
@@ -243,18 +239,14 @@ func (g *GSMRef) Validate() error {
 
 // Validate checks the RotationConfig.
 func (r *RotationConfig) Validate() error {
-	validModes := map[string]bool{"static": true, "generated": true, "external": true, "unknown": true}
-	if !validModes[r.Mode] {
-		return NewValidationError("rotation.mode", "must be 'static', 'generated', 'external', or 'unknown'")
+	if err := RotationModes.Validate("rotation.mode", r.Mode); err != nil {
+		return err
 	}
-	if r.Mode == "generated" && r.Generator == nil {
+	if r.Mode == RotationGenerated && r.Generator == nil {
 		return NewValidationError("rotation.generator", "required when mode is 'generated'")
 	}
 	if r.Generator != nil {
-		validKinds := map[string]bool{"randomBase64": true, "randomHex": true, "randomBytes": true}
-		if !validKinds[r.Generator.Kind] {
-			return NewValidationError("rotation.generator.kind", "must be 'randomBase64', 'randomHex', or 'randomBytes'")
-		}
+		return GeneratorKinds.Validate("rotation.generator.kind", r.Generator.Kind)
 	}
 	return nil
 }
@@ -286,32 +278,59 @@ func (m *SecretMetadata) IsRetired() bool {
 	return m.Status == "retired"
 }
 
-// IsExpired returns true if any key is expired.
-func (m *SecretMetadata) IsExpired() bool {
-	now := time.Now()
-	for _, k := range m.Keys {
-		if k.Expiry != nil {
-			if exp, err := time.Parse(time.RFC3339, k.Expiry.ExpiresAt); err == nil {
-				if exp.Before(now) {
-					return true
-				}
-			}
+// Key returns the named key, or nil when the secret has no such key.
+func (m *SecretMetadata) Key(name string) *KeyMetadata {
+	for i := range m.Keys {
+		if m.Keys[i].KeyName == name {
+			return &m.Keys[i]
+		}
+	}
+	return nil
+}
+
+// ActiveRef returns the GSM reference that holds this key's value: the plain
+// reference for a gsm key, or the payload reference for a computed key. It is
+// nil for a computed key derived purely from other keys.
+func (k *KeyMetadata) ActiveRef() *GSMRef {
+	if k.GSM != nil {
+		return k.GSM
+	}
+	if k.Computed != nil {
+		return k.Computed.GSM
+	}
+	return nil
+}
+
+// ExpiresAt returns the key's expiry time, if it has a valid one.
+func (k *KeyMetadata) ExpiresAt() (time.Time, bool) {
+	if k.Expiry == nil {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(time.RFC3339, k.Expiry.ExpiresAt)
+	return t, err == nil
+}
+
+// ExpiresBefore reports whether any key expires before t. Callers pass the
+// time in so expiry logic is testable without a clock.
+func (m *SecretMetadata) ExpiresBefore(t time.Time) bool {
+	for i := range m.Keys {
+		if exp, ok := m.Keys[i].ExpiresAt(); ok && exp.Before(t) {
+			return true
 		}
 	}
 	return false
 }
 
+// IsExpired returns true if any key is expired.
+//
+// Deprecated: use ExpiresBefore; removed with the old CLI.
+func (m *SecretMetadata) IsExpired() bool {
+	return m.ExpiresBefore(time.Now())
+}
+
 // ExpiresWithinDays returns true if any key expires within the given days.
+//
+// Deprecated: use ExpiresBefore; removed with the old CLI.
 func (m *SecretMetadata) ExpiresWithinDays(days int) bool {
-	threshold := time.Now().AddDate(0, 0, days)
-	for _, k := range m.Keys {
-		if k.Expiry != nil {
-			if exp, err := time.Parse(time.RFC3339, k.Expiry.ExpiresAt); err == nil {
-				if exp.Before(threshold) {
-					return true
-				}
-			}
-		}
-	}
-	return false
+	return m.ExpiresBefore(time.Now().AddDate(0, 0, days))
 }

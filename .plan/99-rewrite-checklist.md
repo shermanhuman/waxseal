@@ -7,7 +7,7 @@ this file tracks gates, test obligations, and deliberate behaviour changes.
 ## Phase gates
 
 - [ ] 0 Safety net: CI green on ubuntu + windows; v0.4.19 tagged
-- [ ] 1 `internal/repo`, marshal-based metadata/config, `core/enums.go`
+- [x] 1 `internal/repo`, marshal-based metadata/config, `core/enums.go`
 - [ ] 2 Ports: `proc`, `kube`, `gcp`, `seal.FetchCert`/`CertInfo`, `reminder.New`, `store.EnsureVersion`, `template` -> `computed`
 - [ ] 3 Read-only ops: `List`, `Show`, `Check`, `Discover`
 - [ ] 5 `internal/ui`

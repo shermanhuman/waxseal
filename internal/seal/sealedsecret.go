@@ -38,9 +38,9 @@ type SecretTemplateSpec struct {
 
 // Scope constants for SealedSecrets.
 const (
-	ScopeStrict        = "strict"
-	ScopeNamespaceWide = "namespace-wide"
-	ScopeClusterWide   = "cluster-wide"
+	ScopeStrict        = core.ScopeStrict
+	ScopeNamespaceWide = core.ScopeNamespaceWide
+	ScopeClusterWide   = core.ScopeClusterWide
 )
 
 // Annotation keys for SealedSecrets.
