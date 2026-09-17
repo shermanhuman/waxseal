@@ -10,6 +10,7 @@ import (
 	"github.com/shermanhuman/waxseal/internal/core"
 	"github.com/shermanhuman/waxseal/internal/seal"
 	"github.com/shermanhuman/waxseal/internal/store"
+	"github.com/shermanhuman/waxseal/internal/testutil"
 )
 
 // TestGolden_OpaqueSecret tests output for a simple Opaque secret.
@@ -57,11 +58,6 @@ func runGoldenTest(t *testing.T, name string, secrets map[string]map[string]stri
 		t.Fatalf("read input: %v", err)
 	}
 
-	expectedData, err := os.ReadFile(expectedPath)
-	if err != nil {
-		t.Fatalf("read expected: %v", err)
-	}
-
 	// Parse metadata to get manifest path
 	metadata, err := core.ParseMetadata(inputData)
 	if err != nil {
@@ -96,29 +92,7 @@ func runGoldenTest(t *testing.T, name string, secrets map[string]map[string]stri
 		t.Fatalf("read manifest: %v", err)
 	}
 
-	// Compare
-	expected := normalizeYAML(string(expectedData))
-	actual := normalizeYAML(string(actualData))
-
-	if expected != actual {
-		t.Errorf("output mismatch for %s:\n\nExpected:\n%s\n\nActual:\n%s", name, expected, actual)
-	}
-}
-
-// normalizeYAML removes trailing whitespace and ensures consistent line endings.
-func normalizeYAML(s string) string {
-	lines := strings.Split(s, "\n")
-	var normalized []string
-	for _, line := range lines {
-		// Trim trailing whitespace
-		line = strings.TrimRight(line, " \t\r")
-		normalized = append(normalized, line)
-	}
-	// Remove trailing empty lines
-	for len(normalized) > 0 && normalized[len(normalized)-1] == "" {
-		normalized = normalized[:len(normalized)-1]
-	}
-	return strings.Join(normalized, "\n")
+	testutil.AssertGolden(t, expectedPath, actualData)
 }
 
 // TestGolden_KeyOrdering verifies keys are alphabetically sorted.

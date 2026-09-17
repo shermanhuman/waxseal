@@ -214,3 +214,26 @@ func TestSecretVersionResource(t *testing.T) {
 		t.Errorf("SecretVersionResource() = %q, want %q", got, want)
 	}
 }
+
+func TestFakeStore_FailOn(t *testing.T) {
+	ctx := context.Background()
+	boom := errors.New("boom")
+
+	f := NewFakeStore()
+	f.FailOn("CreateSecret", "projects/p/secrets/b", boom)
+
+	if _, err := f.CreateSecretVersion(ctx, "projects/p/secrets/a", []byte("x")); err != nil {
+		t.Fatalf("unrelated resource should succeed: %v", err)
+	}
+	if _, err := f.CreateSecretVersion(ctx, "projects/p/secrets/b", []byte("x")); !errors.Is(err, boom) {
+		t.Fatalf("got %v, want injected error", err)
+	}
+	if got := f.Resources(); len(got) != 1 || got[0] != "projects/p/secrets/a" {
+		t.Errorf("Resources() = %v, want only secret a", got)
+	}
+
+	f.FailOn("DeleteSecret", "", boom)
+	if err := f.DeleteSecret(ctx, "projects/p/secrets/a"); !errors.Is(err, boom) {
+		t.Errorf("wildcard failure: got %v, want injected error", err)
+	}
+}

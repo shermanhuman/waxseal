@@ -141,6 +141,8 @@ func (s *CertSealer) GetIssuer() string {
 type FakeSealer struct {
 	// Prefix to add to "encrypted" values for testing
 	Prefix string
+	// FailKeys maps a key name to the error Seal returns for it.
+	FailKeys map[string]error
 }
 
 // NewFakeSealer creates a fake sealer for testing.
@@ -150,6 +152,9 @@ func NewFakeSealer() *FakeSealer {
 
 // Seal returns a fake encrypted value for testing.
 func (s *FakeSealer) Seal(name, namespace, key string, value []byte, scope string) (string, error) {
+	if err := s.FailKeys[key]; err != nil {
+		return "", err
+	}
 	// Return a deterministic fake encrypted value
 	return fmt.Sprintf("%s%s/%s/%s=%s", s.Prefix, namespace, name, key, string(value)), nil
 }
