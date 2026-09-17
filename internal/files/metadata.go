@@ -158,7 +158,7 @@ func SerializeMetadata(m *core.SecretMetadata) string {
 		sb.WriteString(fmt.Sprintf("retiredAt: %s\n", m.RetiredAt))
 	}
 	if m.RetireReason != "" {
-		sb.WriteString(fmt.Sprintf("retireReason: %s\n", m.RetireReason))
+		sb.WriteString(fmt.Sprintf("retireReason: %q\n", m.RetireReason)) // free text
 	}
 	if m.ReplacedBy != "" {
 		sb.WriteString(fmt.Sprintf("replacedBy: %s\n", m.ReplacedBy))
@@ -217,6 +217,9 @@ func SerializeMetadata(m *core.SecretMetadata) string {
 				for _, input := range k.Computed.Inputs {
 					sb.WriteString(fmt.Sprintf("        - var: %s\n", input.Var))
 					sb.WriteString("          ref:\n")
+					if input.Ref.ShortName != "" {
+						sb.WriteString(fmt.Sprintf("            shortName: %s\n", input.Ref.ShortName))
+					}
 					sb.WriteString(fmt.Sprintf("            keyName: %s\n", input.Ref.KeyName))
 				}
 			}
