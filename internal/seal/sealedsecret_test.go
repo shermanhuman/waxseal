@@ -228,3 +228,48 @@ spec:
 		t.Errorf("type = %q, want %q", ss.GetSecretType(), "kubernetes.io/dockerconfigjson")
 	}
 }
+
+// A manifest waxseal writes must read back with the scope it was written
+// with; otherwise an update re-seals with the wrong label and the controller
+// cannot decrypt it.
+func TestScope_RoundTrip(t *testing.T) {
+	for _, scope := range []string{ScopeStrict, ScopeNamespaceWide, ScopeClusterWide} {
+		t.Run(scope, func(t *testing.T) {
+			data, err := NewSealedSecret("app", "default", scope, "Opaque", map[string]string{"k": "v"}).ToYAML()
+			if err != nil {
+				t.Fatalf("ToYAML: %v", err)
+			}
+			ss, err := ParseSealedSecret(data)
+			if err != nil {
+				t.Fatalf("ParseSealedSecret: %v", err)
+			}
+			if got := ss.GetScope(); got != scope {
+				t.Errorf("GetScope() = %q, want %q", got, scope)
+			}
+		})
+	}
+}
+
+func TestGetScope_AnnotationForms(t *testing.T) {
+	tests := []struct {
+		name        string
+		annotations map[string]string
+		want        string
+	}{
+		{"legacy namespace-wide", map[string]string{annotationNamespaceWide: "true"}, ScopeNamespaceWide},
+		{"legacy cluster-wide", map[string]string{annotationClusterWide: "true"}, ScopeClusterWide},
+		{"legacy false is strict", map[string]string{annotationNamespaceWide: "false"}, ScopeStrict},
+		{"scope annotation", map[string]string{AnnotationScope: ScopeClusterWide}, ScopeClusterWide},
+		// Upstream gives cluster-wide precedence when both are set.
+		{"both legacy", map[string]string{annotationNamespaceWide: "true", annotationClusterWide: "true"}, ScopeClusterWide},
+		{"unrelated annotation", map[string]string{"foo": "bar"}, ScopeStrict},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ss := &SealedSecret{Metadata: ObjectMeta{Annotations: tt.annotations}}
+			if got := ss.GetScope(); got != tt.want {
+				t.Errorf("GetScope() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

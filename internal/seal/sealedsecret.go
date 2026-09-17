@@ -48,6 +48,11 @@ const (
 	AnnotationScope     = "sealedsecrets.bitnami.com/scope"
 	AnnotationNamespace = "sealedsecrets.bitnami.com/namespace"
 	AnnotationName      = "sealedsecrets.bitnami.com/name"
+
+	// Legacy boolean scope annotations. waxseal writes these because
+	// controllers <= 0.27 do not understand AnnotationScope.
+	annotationNamespaceWide = "sealedsecrets.bitnami.com/namespace-wide"
+	annotationClusterWide   = "sealedsecrets.bitnami.com/cluster-wide"
 )
 
 // NewSealedSecret constructs a SealedSecret with the correct annotations.
@@ -71,11 +76,11 @@ func NewSealedSecret(name, namespace, scope, secretType string, encryptedData ma
 		switch scope {
 		case ScopeNamespaceWide:
 			ss.Metadata.Annotations = map[string]string{
-				"sealedsecrets.bitnami.com/namespace-wide": "true",
+				annotationNamespaceWide: "true",
 			}
 		case ScopeClusterWide:
 			ss.Metadata.Annotations = map[string]string{
-				"sealedsecrets.bitnami.com/cluster-wide": "true",
+				annotationClusterWide: "true",
 			}
 		}
 	}
@@ -113,16 +118,16 @@ func ParseSealedSecret(data []byte) (*SealedSecret, error) {
 }
 
 // GetScope returns the scope of the SealedSecret based on annotations.
-// Returns "strict" if no scope annotation is present.
+// It understands both the legacy boolean annotations (which NewSealedSecret
+// writes) and the newer scope annotation. Cluster-wide takes precedence,
+// matching the controller. Returns "strict" if no scope annotation is present.
 func (ss *SealedSecret) GetScope() string {
-	if ss.Metadata.Annotations == nil {
-		return ScopeStrict
-	}
-
-	scope := ss.Metadata.Annotations[AnnotationScope]
-	switch scope {
-	case ScopeNamespaceWide, ScopeClusterWide:
-		return scope
+	a := ss.Metadata.Annotations
+	switch {
+	case a[annotationClusterWide] == "true", a[AnnotationScope] == ScopeClusterWide:
+		return ScopeClusterWide
+	case a[annotationNamespaceWide] == "true", a[AnnotationScope] == ScopeNamespaceWide:
+		return ScopeNamespaceWide
 	default:
 		return ScopeStrict
 	}
