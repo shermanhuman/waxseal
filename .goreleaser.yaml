@@ -14,7 +14,7 @@ builds:
       - arm64
     main: ./cmd/waxseal
     ldflags:
-      - -s -w -X github.com/shermanhuman/waxseal/internal/cli.Version={{.Version}} -X github.com/shermanhuman/waxseal/internal/cli.Commit={{.Commit}} -X github.com/shermanhuman/waxseal/internal/cli.BuildDate={{.Date}}
+      - -s -w -X github.com/shermanhuman/waxseal/internal/version.Version={{.Version}} -X github.com/shermanhuman/waxseal/internal/version.Commit={{.Commit}} -X github.com/shermanhuman/waxseal/internal/version.BuildDate={{.Date}}
 
   - id: waxseal-win
     env:
@@ -26,7 +26,7 @@ builds:
       - arm64
     main: ./cmd/waxseal
     ldflags:
-      - -s -w -X github.com/shermanhuman/waxseal/internal/cli.Version={{.Version}} -X github.com/shermanhuman/waxseal/internal/cli.Commit={{.Commit}} -X github.com/shermanhuman/waxseal/internal/cli.BuildDate={{.Date}}
+      - -s -w -X github.com/shermanhuman/waxseal/internal/version.Version={{.Version}} -X github.com/shermanhuman/waxseal/internal/version.Commit={{.Commit}} -X github.com/shermanhuman/waxseal/internal/version.BuildDate={{.Date}}
 
 archives:
   - id: nix

@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime/debug"
 	"strings"
 
+	"github.com/shermanhuman/waxseal/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -18,38 +18,6 @@ var (
 	dryRun     bool
 	yes        bool
 )
-
-// Version information (can be overridden at build time via ldflags)
-var (
-	Version   = "0.4.18"
-	Commit    = ""
-	BuildDate = ""
-)
-
-func init() {
-	// Fall back to Go's embedded VCS info for local builds.
-	// Goreleaser ldflags take priority when set.
-	if Commit == "" || BuildDate == "" {
-		if info, ok := debug.ReadBuildInfo(); ok {
-			for _, s := range info.Settings {
-				switch s.Key {
-				case "vcs.revision":
-					if Commit == "" && len(s.Value) >= 7 {
-						Commit = s.Value[:7]
-					}
-				case "vcs.time":
-					if BuildDate == "" {
-						BuildDate = s.Value
-					}
-				case "vcs.modified":
-					if s.Value == "true" && Commit != "" {
-						Commit += "-dirty"
-					}
-				}
-			}
-		}
-	}
-}
 
 // rootCmd is the base command for waxseal.
 var rootCmd = &cobra.Command{
@@ -62,7 +30,7 @@ Source of truth:
   - Git stores SealedSecret manifests (ciphertext) and metadata
 
 Run 'waxseal help advanced' for non-interactive / scripting commands.`,
-	Version: Version,
+	Version: version.Version,
 }
 
 // Command group IDs
@@ -116,14 +84,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&yes, "yes", false, "Skip confirmation prompts (where applicable)")
 
 	// Custom version template to show commit and build date
-	versionTpl := "waxseal {{.Version}}\n"
-	if Commit != "" {
-		versionTpl += "Commit: " + Commit + "\n"
-	}
-	if BuildDate != "" {
-		versionTpl += "Built:  " + BuildDate + "\n"
-	}
-	rootCmd.SetVersionTemplate(versionTpl)
+	rootCmd.SetVersionTemplate(version.String())
 
 	// Command groups for organized help output
 	rootCmd.AddGroup(

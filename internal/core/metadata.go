@@ -95,11 +95,11 @@ type GSMHintLink struct {
 
 // ComputedConfig describes how to compute a key from other values.
 type ComputedConfig struct {
-	Kind      string            `json:"kind"` // "template"
-	Template  string            `json:"template"`
-	GSM       *GSMRef           `json:"gsm,omitempty"` // GSM reference for JSON payload (new architecture)
-	Inputs    []InputRef        `json:"inputs,omitempty"`
-	Params    map[string]string `json:"params,omitempty"`
+	Kind     string            `json:"kind"` // "template"
+	Template string            `json:"template"`
+	GSM      *GSMRef           `json:"gsm,omitempty"` // GSM reference for JSON payload (new architecture)
+	Inputs   []InputRef        `json:"inputs,omitempty"`
+	Params   map[string]string `json:"params,omitempty"`
 }
 
 // InputRef references a value from another key.
@@ -295,5 +295,3 @@ func (m *SecretMetadata) ExpiresWithinDays(days int) bool {
 	}
 	return false
 }
-
-

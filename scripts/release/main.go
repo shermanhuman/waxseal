@@ -10,7 +10,7 @@ import (
 )
 
 // Path to the file containing the version variable
-const versionFile = "internal/cli/root.go"
+const versionFile = "internal/version/version.go"
 
 func main() {
 	if len(os.Args) < 2 {
