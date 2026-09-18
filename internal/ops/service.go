@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/shermanhuman/waxseal/internal/config"
 	"github.com/shermanhuman/waxseal/internal/repo"
 	"github.com/shermanhuman/waxseal/internal/seal"
 	"github.com/shermanhuman/waxseal/internal/store"
@@ -28,12 +29,15 @@ type CertFetcher interface {
 // panicking, and checks report it as skipped.
 type Service struct {
 	Repo    *repo.Repo
+	Config  *config.Config
 	Store   store.Store
 	Sealer  seal.Sealer
 	Cluster Cluster
 	Certs   CertFetcher
 	// Now supplies the current time; tests fix it. Defaults to time.Now.
 	Now func() time.Time
+	// ProjectID is the GCP project new GSM secrets are created in.
+	ProjectID string
 }
 
 func (s *Service) now() time.Time {

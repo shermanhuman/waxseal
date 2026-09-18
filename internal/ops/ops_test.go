@@ -2,6 +2,7 @@ package ops
 
 import (
 	"context"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -17,6 +18,8 @@ import (
 // fixedNow is inside the fixture cert's validity and before every fixture
 // expiry, so tests are deterministic.
 var fixedNow = time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC)
+
+var errBoom = errors.New("boom")
 
 // fakeCluster serves secrets from a map keyed "namespace/name".
 type fakeCluster struct {
@@ -35,6 +38,14 @@ func (f *fakeCluster) GetSecret(_ context.Context, namespace, name string) (map[
 	return data, nil
 }
 
+// fakeCerts returns a fixed certificate.
+type fakeCerts struct {
+	pem []byte
+	err error
+}
+
+func (f *fakeCerts) FetchCert(context.Context, string, string) ([]byte, error) { return f.pem, f.err }
+
 // newFixtureService copies testdata/infra-repo into a temp dir and wires the
 // fakes around it.
 func newFixtureService(t *testing.T) (*Service, *store.FakeStore) {
@@ -45,12 +56,18 @@ func newFixtureService(t *testing.T) (*Service, *store.FakeStore) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	cfg, err := r.Config()
+	if err != nil {
+		t.Fatal(err)
+	}
 	st := store.NewFakeStore()
 	return &Service{
-		Repo:   r,
-		Store:  st,
-		Sealer: seal.NewFakeSealer(),
-		Now:    func() time.Time { return fixedNow },
+		Repo:      r,
+		Config:    cfg,
+		Store:     st,
+		Sealer:    seal.NewFakeSealer(),
+		Now:       func() time.Time { return fixedNow },
+		ProjectID: cfg.Store.ProjectID,
 	}, st
 }
 

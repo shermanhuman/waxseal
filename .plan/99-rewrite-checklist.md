@@ -12,7 +12,7 @@ this file tracks gates, test obligations, and deliberate behaviour changes.
 - [x] 3 Read-only ops: `List`, `Show`, `Check`, `Discover`
 - [x] 5 `internal/ui`
 - [x] 6a `cli2` skeleton + help-golden walker + `--no-input` contract walker
-- [ ] 4 Mutating ops (`apply` first, then `Reseal` dual-run against goldens)
+- [x] 4 Mutating ops (`apply` first, then `Reseal` dual-run against goldens)
 - [ ] 6b Remaining commands + JSON goldens
 - [ ] 7 Swap, dogfood, smoke e2e, `scripts/dod.sh` clean
 - [ ] 8 Docs, `v0.5.0-rc.1`, `v0.5.0`
@@ -25,10 +25,10 @@ test in Phase 4, written before the op it covers.
 
 - [x] 1 Scope round-trip — `internal/seal`: `TestScope_RoundTrip`, `TestGetScope_AnnotationForms`
 - [x] 2 Serializer drops `ref.shortName`, unquoted free text — `internal/files`: `TestSerializeMetadata_RoundTrip` (moves to `internal/repo`)
-- [ ] 3 Metadata pointer written atomically and before the manifest — `ops`: fail the manifest write, assert metadata holds the new GSM version
-- [ ] 4 Rollback runs on every later failure and never deletes pre-existing secrets — `ops`: `FakeStore.FailOn` after N creates; assert only newly created secrets are removed
-- [ ] 5 A missing value is an error, never a silent skip — `ops.SetKeyValue` without a value returns `*MissingInputError`; `ops.Rotate` on a non-generated key returns a typed error
-- [ ] 6 No result or log line contains a secret or rendered computed value — `ops`: marshal every result struct to JSON and assert the seeded secret is absent
+- [x] 3 Metadata pointer written atomically and before the manifest — `repo`: `TestCommit_MetadataLandsBeforeManifest`; `ops`: `TestSetKeyValue_MetadataPointerSurvivesManifestFailure`, `TestApply_UnrecordedVersionIsReported`
+- [x] 4 Rollback runs on every later failure and never deletes pre-existing secrets — `ops`: `TestApply_RollbackDeletesOnlyWhatItCreated`, `TestApply_GSMFailureRollsBackEarlierCreates`, `TestApply_SealFailureWritesNothing`
+- [x] 5 A missing value is an error, never a silent skip — `ops`: `TestSetKeyValue_PlainAndComputed` (empty value), `TestRotate` (`ErrNotGenerated`)
+- [x] 6 No result or log line contains a secret or rendered computed value — `ops`: `TestResults_NeverContainSecrets`
 - [x] 7 `reminders configure` updates a config that already has a reminders block — `internal/repo`: `TestWriteConfig_UpdatesRemindersInGeneratedConfig`
 
 ## Deliberate behaviour changes (decisions, not accidents)
@@ -45,3 +45,5 @@ test in Phase 4, written before the op it covers.
 - `discover` is read-only: it lists manifests and whether metadata covers them. Registering happens in `import`, which reads the cluster secret and pushes to GSM, so metadata never carries a placeholder GSM version (the old stub wrote `version: "1"`).
 - `check metadata` no longer warns about internal hostnames in `computed.params`; it would fire on nearly every GitOps repo and guards nothing. It now does check that manifest scope and key set agree with metadata.
 - The `testdata/infra-repo` fixture had a truncated certificate and an invalid reminders provider (`google-calendar`); both fixed.
+- `tests/integration` folded into `ops`/`repo`/`seal` tests and deleted. `TestComputedKeyCycleDetection` has no equivalent: computed keys are evaluated in metadata order and may only reference keys already evaluated, so a cycle is impossible by construction (a forward reference is an "unknown key" validation error).
+- `import` registers every key as `external`; connection strings become computed keys with the password as `{{secret}}`. Re-importing a registered secret pushes new versions for the keys the cluster still has and reports the ones it dropped.
