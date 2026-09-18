@@ -9,7 +9,7 @@ this file tracks gates, test obligations, and deliberate behaviour changes.
 - [ ] 0 Safety net: CI green on ubuntu + windows; v0.4.19 tagged
 - [x] 1 `internal/repo`, marshal-based metadata/config, `core/enums.go`
 - [x] 2 Ports: `proc`, `kube`, `gcp`, `seal.FetchCert`/`CertInfo`, `reminder.New`, `store.EnsureVersion` (the `template` -> `computed` rename and `Payload.Generator` -> `*core.GeneratorConfig` are deferred to the swap so the frozen CLI is not touched)
-- [ ] 3 Read-only ops: `List`, `Show`, `Check`, `Discover`
+- [x] 3 Read-only ops: `List`, `Show`, `Check`, `Discover`
 - [ ] 5 `internal/ui`
 - [ ] 6a `cli2` skeleton + help-golden walker + `--no-input` contract walker
 - [ ] 4 Mutating ops (`apply` first, then `Reseal` dual-run against goldens)
@@ -42,3 +42,6 @@ test in Phase 4, written before the op it covers.
 - Metadata files may be re-quoted on their next write; semantic content is unchanged.
 - `reminders.auth` is no longer required (ADC was its only legal value). An unknown `reminders.provider` is now a validation error.
 - Generated config and metadata files no longer carry explanatory comments, and comments in an existing config do not survive a write.
+- `discover` is read-only: it lists manifests and whether metadata covers them. Registering happens in `import`, which reads the cluster secret and pushes to GSM, so metadata never carries a placeholder GSM version (the old stub wrote `version: "1"`).
+- `check metadata` no longer warns about internal hostnames in `computed.params`; it would fire on nearly every GitOps repo and guards nothing. It now does check that manifest scope and key set agree with metadata.
+- The `testdata/infra-repo` fixture had a truncated certificate and an invalid reminders provider (`google-calendar`); both fixed.

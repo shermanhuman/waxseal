@@ -15,7 +15,7 @@ discovery:
     - "apps/**/kustomization.yaml"
 reminders:
   enabled: true
-  provider: google-calendar
+  provider: calendar
   calendarId: primary
   leadTimeDays: [30, 7, 1]
   auth:
