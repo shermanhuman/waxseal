@@ -43,14 +43,6 @@ func (s *Service) now() time.Time {
 	return s.Now()
 }
 
-// MissingInputError reports a value the operation needed but was not given.
-// The CLI maps it to a usage error naming the flag or argument.
-type MissingInputError struct {
-	Field string
-}
-
-func (e *MissingInputError) Error() string { return "missing required input: " + e.Field }
-
 // Change is one side effect an operation made or, in a dry run, would make.
 type Change struct {
 	Op     string `json:"op"`     // create | update | delete

@@ -90,7 +90,7 @@ func TestShow(t *testing.T) {
 
 func TestActiveMetadata(t *testing.T) {
 	s, _ := newFixtureService(t)
-	if _, err := s.activeMetadata(""); !errors.As(err, new(*MissingInputError)) {
+	if _, err := s.activeMetadata(""); !errors.As(err, new(*core.MissingInputError)) {
 		t.Errorf("empty name: got %v", err)
 	}
 	if _, err := s.activeMetadata("nope"); !errors.Is(err, ErrNotRegistered) {

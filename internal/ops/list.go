@@ -166,7 +166,7 @@ var ErrNotRegistered = errors.New("secret is not registered")
 
 func (s *Service) activeMetadata(shortName string) (*core.SecretMetadata, error) {
 	if shortName == "" {
-		return nil, &MissingInputError{Field: "<secret>"}
+		return nil, &core.MissingInputError{Field: "<secret>"}
 	}
 	m, err := s.Repo.Metadata(shortName)
 	if err != nil {
