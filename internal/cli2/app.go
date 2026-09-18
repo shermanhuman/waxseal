@@ -22,6 +22,7 @@ import (
 	"github.com/shermanhuman/waxseal/internal/logging"
 	"github.com/shermanhuman/waxseal/internal/ops"
 	"github.com/shermanhuman/waxseal/internal/proc"
+	"github.com/shermanhuman/waxseal/internal/reminder"
 	"github.com/shermanhuman/waxseal/internal/repo"
 	"github.com/shermanhuman/waxseal/internal/seal"
 	"github.com/shermanhuman/waxseal/internal/store"
@@ -57,7 +58,9 @@ type App struct {
 	Cluster   ops.Cluster
 	Certs     ops.CertFetcher
 	Gcloud    *gcp.Client
-	Prompter  ui.Prompter
+	// NewReminders builds the configured reminder provider.
+	NewReminders func(ctx context.Context, cfg *config.RemindersConfig) (reminder.Provider, error)
+	Prompter     ui.Prompter
 	// LookPath reports whether a binary is installed.
 	LookPath func(name string) error
 	// CheckADC reports whether GCP application default credentials work.
@@ -86,12 +89,13 @@ func NewApp() *App {
 			}
 			return s, func() { _ = s.Close() }, nil
 		},
-		NewSealer: func(certPath string) seal.Sealer { return seal.NewKubesealSealer(certPath) },
-		Cluster:   kube.Client{},
-		Certs:     seal.Kubeseal{},
-		Gcloud:    &gcp.Client{},
-		LookPath:  proc.LookPath,
-		CheckADC:  gcp.ADCTokenValid,
+		NewSealer:    func(certPath string) seal.Sealer { return seal.NewKubesealSealer(certPath) },
+		Cluster:      kube.Client{},
+		Certs:        seal.Kubeseal{},
+		Gcloud:       &gcp.Client{},
+		NewReminders: reminder.New,
+		LookPath:     proc.LookPath,
+		CheckADC:     gcp.ADCTokenValid,
 	}
 }
 
@@ -241,6 +245,9 @@ func (a *App) Service(ctx context.Context, n Needs, optional bool) (*ops.Service
 		return nil, err
 	}
 	svc := &ops.Service{Repo: r, Now: a.Now, Certs: a.Certs}
+	if cfg, err := a.Config(); err == nil {
+		svc.Config, svc.ProjectID = cfg, cfg.Store.ProjectID
+	}
 	if n.GSM {
 		st, err := a.Store(ctx)
 		if err != nil && !optional {

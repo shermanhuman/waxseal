@@ -10,15 +10,24 @@ Usage:
   waxseal [command]
 
 Secrets and keys:
+  key         Add keys, set their values and change how they are managed
   secret      List, inspect and retire secrets
 
 Operations:
   check       Check certificate, expiry, metadata, GSM and cluster state
+  reminders   Expiry reminders in Google Tasks or Calendar
+  reseal      Re-encrypt manifests from Secret Manager
+  rotate      Generate new values for generated keys and reseal them
 
 Setup:
+  cert        Manage the controller certificate
   completion  Generate the autocompletion script for the specified shell
   discover    Find SealedSecret manifests in the repository
+  gcp         Provision GCP for waxseal
   help        Help about any command
+  import      Register manifests by reading their values from the cluster
+  init        Write .waxseal/config.yaml for this repository
+  setup       Guided first-time setup (interactive)
 
 Flags:
       --dry-run         show what would change without changing anything

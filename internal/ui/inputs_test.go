@@ -82,6 +82,14 @@ func TestInputs_NonInteractiveNamesTheFlag(t *testing.T) {
 		t.Errorf("Choice: got %v", err)
 	}
 
+	// An input with a default is optional: the default is used silently.
+	if got, err := in.String(Spec{Flag: "--controller-name"}, false, "", "sealed-secrets", nil); err != nil || got != "sealed-secrets" {
+		t.Errorf("defaulted String = %q, %v", got, err)
+	}
+	if got, err := in.Choice(Spec{Flag: "--scope"}, false, "", core.Scopes, core.ScopeStrict); err != nil || got != core.ScopeStrict {
+		t.Errorf("defaulted Choice = %q, %v", got, err)
+	}
+
 	_, err = in.Secret(Spec{Flag: "--from-file or --generate"})
 	if !errors.As(err, &missing) || missing.Field != "--from-file or --generate" {
 		t.Errorf("Secret: got %v", err)

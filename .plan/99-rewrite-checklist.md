@@ -13,7 +13,7 @@ this file tracks gates, test obligations, and deliberate behaviour changes.
 - [x] 5 `internal/ui`
 - [x] 6a `cli2` skeleton + help-golden walker + `--no-input` contract walker
 - [x] 4 Mutating ops (`apply` first, then `Reseal` dual-run against goldens)
-- [ ] 6b Remaining commands + JSON goldens
+- [x] 6b Remaining commands + JSON goldens
 - [ ] 7 Swap, dogfood, smoke e2e, `scripts/dod.sh` clean
 - [ ] 8 Docs, `v0.5.0-rc.1`, `v0.5.0`
 

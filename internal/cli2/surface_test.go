@@ -62,11 +62,20 @@ func TestHelpGolden(t *testing.T) {
 func TestNoInputContract(t *testing.T) {
 	// Commands that legitimately run with no input at all.
 	succeeds := map[string]bool{
-		"waxseal":             true, // prints help
-		"waxseal secret":      true,
-		"waxseal secret list": true,
-		"waxseal check":       true,
-		"waxseal discover":    true,
+		"waxseal":                     true, // prints help
+		"waxseal secret":              true,
+		"waxseal secret list":         true,
+		"waxseal check":               true,
+		"waxseal discover":            true,
+		"waxseal reseal":              true, // all secrets, no confirmation needed
+		"waxseal cert fetch":          true,
+		"waxseal import":              true, // nothing unregistered in the fixture
+		"waxseal reminders sync":      true,
+		"waxseal reminders configure": true, // every flag has a default
+		"waxseal key":                 true,
+		"waxseal cert":                true,
+		"waxseal gcp":                 true,
+		"waxseal reminders":           true,
 	}
 	ta := newTestApp(t, false)
 	ta.seedStore(t)
@@ -87,8 +96,8 @@ func TestNoInputContract(t *testing.T) {
 				if code != ExitUsage {
 					t.Errorf("exit %d, want 2 (missing input); stderr:\n%s", code, stderr)
 				}
-				if !strings.Contains(stderr, "missing required") && !strings.Contains(stderr, "confirmation required") {
-					t.Errorf("stderr must name what is missing:\n%s", stderr)
+				if !strings.Contains(stderr, "missing required") && !strings.Contains(stderr, "confirmation required") && !strings.Contains(stderr, "hint:") {
+					t.Errorf("stderr must name what is missing or give a hint:\n%s", stderr)
 				}
 			}
 		})

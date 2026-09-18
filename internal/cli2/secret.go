@@ -18,7 +18,7 @@ func newSecretCmd(app *App) *cobra.Command {
 		Short:   "List, inspect and retire secrets",
 		GroupID: groupSecrets,
 	}
-	cmd.AddCommand(newSecretListCmd(app), newSecretShowCmd(app))
+	cmd.AddCommand(newSecretListCmd(app), newSecretShowCmd(app), newSecretRetireCmd(app))
 	return cmd
 }
 

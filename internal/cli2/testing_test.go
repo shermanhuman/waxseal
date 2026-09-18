@@ -10,8 +10,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shermanhuman/waxseal/internal/config"
 	"github.com/shermanhuman/waxseal/internal/core"
+	"github.com/shermanhuman/waxseal/internal/gcp"
 	"github.com/shermanhuman/waxseal/internal/ops"
+	"github.com/shermanhuman/waxseal/internal/reminder"
 	"github.com/shermanhuman/waxseal/internal/repo"
 	"github.com/shermanhuman/waxseal/internal/seal"
 	"github.com/shermanhuman/waxseal/internal/store"
@@ -24,12 +27,17 @@ var fixedNow = time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC)
 
 type testApp struct {
 	*App
-	Store    *store.FakeStore
-	Cluster  *fakeCluster
-	Prompter *ui.ScriptedPrompter
-	Out, Err bytes.Buffer
-	tty      bool
+	Store     *store.FakeStore
+	Cluster   *fakeCluster
+	Prompter  *ui.ScriptedPrompter
+	Reminders *reminder.FakeProvider
+	Out, Err  bytes.Buffer
+	tty       bool
 }
+
+type fakeCerts struct{ pem []byte }
+
+func (f *fakeCerts) FetchCert(context.Context, string, string) ([]byte, error) { return f.pem, nil }
 
 type fakeCluster struct {
 	secrets map[string]map[string][]byte
@@ -56,6 +64,11 @@ func newTestApp(t *testing.T, tty bool) *testApp {
 		Prompter: &ui.ScriptedPrompter{},
 		tty:      tty,
 	}
+	certPEM, err := os.ReadFile(filepath.Join(dir, "keys", "pub-cert.pem"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ta.Reminders = reminder.NewFakeProvider()
 	ta.App = &App{
 		Stdin:  &bytes.Buffer{},
 		Stdout: &ta.Out,
@@ -68,9 +81,14 @@ func newTestApp(t *testing.T, tty bool) *testApp {
 		},
 		NewSealer: func(string) seal.Sealer { return seal.NewFakeSealer() },
 		Cluster:   ta.Cluster,
-		Prompter:  ta.Prompter,
-		LookPath:  func(string) error { return nil },
-		CheckADC:  func(context.Context) error { return nil },
+		Certs:     &fakeCerts{pem: certPEM},
+		Gcloud:    &gcp.Client{},
+		NewReminders: func(context.Context, *config.RemindersConfig) (reminder.Provider, error) {
+			return ta.Reminders, nil
+		},
+		Prompter: ta.Prompter,
+		LookPath: func(string) error { return nil },
+		CheckADC: func(context.Context) error { return nil },
 	}
 	ta.Flags.Repo = dir
 	return ta

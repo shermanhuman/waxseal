@@ -52,8 +52,17 @@ instead, naming the missing flag.`,
 	)
 	root.AddCommand(
 		newSecretCmd(app),
+		newKeyCmd(app),
+		newRotateCmd(app),
+		newResealCmd(app),
 		newCheckCmd(app),
+		newRemindersCmd(app),
+		newInitCmd(app),
+		newGCPCmd(app),
+		newCertCmd(app),
 		newDiscoverCmd(app),
+		newImportCmd(app),
+		newSetupCmd(app),
 	)
 	root.SetHelpCommandGroupID(groupSetup)
 	root.SetCompletionCommandGroupID(groupSetup)

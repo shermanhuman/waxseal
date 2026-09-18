@@ -40,7 +40,7 @@ func (n noPrompter) Select(s Spec, choices []core.Choice, _ string, _ bool) (str
 	return "", n.missing(Spec{Flag: s.Flag + " (" + strings.Join(values(choices), "|") + ")"})
 }
 func (noPrompter) Confirm(title string, _ bool) (bool, error) {
-	return false, &ConfirmRequiredError{Action: title}
+	return false, &ConfirmRequiredError{Action: strings.TrimSuffix(title, "?")}
 }
 
 // ScriptedPrompter answers prompts from a queue, for tests. An unexpected

@@ -1,15 +1,14 @@
-List, inspect and retire secrets
+Read each secret's plaintext from the cluster, store it in Secret Manager
+and write metadata for it. Names are the ones `waxseal discover` suggests,
+or registered secrets to re-import. Connection strings become computed
+keys with the password as their {{secret}}. Every key is registered as
+externally rotated; change that with `waxseal key edit`.
 
 Usage:
-  waxseal secret [command]
-
-Available Commands:
-  list        List registered secrets
-  retire      Mark a secret retired; optionally delete its manifest
-  show        Show a secret's keys and where their values live
+  waxseal import [secret]... [flags]
 
 Flags:
-  -h, --help   help for secret
+  -h, --help   help for import
 
 Global Flags:
       --dry-run         show what would change without changing anything
@@ -19,5 +18,3 @@ Global Flags:
       --repo string     path to the repository (default ".")
       --verbose         log subprocess calls and debug detail to stderr
   -y, --yes             answer yes to confirmations
-
-Use "waxseal secret [command] --help" for more information about a command.

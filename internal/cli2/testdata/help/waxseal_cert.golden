@@ -1,15 +1,13 @@
-List, inspect and retire secrets
+Manage the controller certificate
 
 Usage:
-  waxseal secret [command]
+  waxseal cert [command]
 
 Available Commands:
-  list        List registered secrets
-  retire      Mark a secret retired; optionally delete its manifest
-  show        Show a secret's keys and where their values live
+  fetch       Fetch the controller's sealing certificate into the repo
 
 Flags:
-  -h, --help   help for secret
+  -h, --help   help for cert
 
 Global Flags:
       --dry-run         show what would change without changing anything
@@ -20,4 +18,4 @@ Global Flags:
       --verbose         log subprocess calls and debug detail to stderr
   -y, --yes             answer yes to confirmations
 
-Use "waxseal secret [command] --help" for more information about a command.
+Use "waxseal cert [command] --help" for more information about a command.

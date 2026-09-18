@@ -3,7 +3,8 @@ package ui
 import "github.com/shermanhuman/waxseal/internal/core"
 
 // Inputs resolves each input the same way: a flag or argument that was set
-// wins; otherwise the Prompter is asked, which on a non-interactive run
+// wins; otherwise, on a terminal, the Prompter is asked (offering the
+// default); otherwise the default is used, and an input with no default
 // fails naming the flag. --yes answers confirmations and nothing else.
 type Inputs struct {
 	Prompter    Prompter
@@ -30,6 +31,9 @@ func (in *Inputs) String(s Spec, set bool, val, def string, validate func(string
 		}
 		return val, nil
 	}
+	if def != "" && !in.Interactive {
+		return def, nil
+	}
 	return in.Prompter.Input(s, def, validate)
 }
 
@@ -42,6 +46,9 @@ func (in *Inputs) Choice(s Spec, set bool, val string, e core.Enum, def string) 
 			return "", err
 		}
 		return val, nil
+	}
+	if def != "" && !in.Interactive {
+		return def, nil
 	}
 	return in.Prompter.Select(s, e.Choices, def, e.Open)
 }

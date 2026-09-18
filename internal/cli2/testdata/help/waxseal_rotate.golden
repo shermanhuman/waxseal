@@ -1,15 +1,13 @@
-List, inspect and retire secrets
+Generate a new value for each generated key, store it as a new Secret
+Manager version and re-encrypt the manifest. With no keys named, every
+generated key of the secret is rotated and the others are listed as
+skipped. Keys rotated elsewhere get their new value with `waxseal key set`.
 
 Usage:
-  waxseal secret [command]
-
-Available Commands:
-  list        List registered secrets
-  retire      Mark a secret retired; optionally delete its manifest
-  show        Show a secret's keys and where their values live
+  waxseal rotate [secret] [key]... [flags]
 
 Flags:
-  -h, --help   help for secret
+  -h, --help   help for rotate
 
 Global Flags:
       --dry-run         show what would change without changing anything
@@ -19,5 +17,3 @@ Global Flags:
       --repo string     path to the repository (default ".")
       --verbose         log subprocess calls and debug detail to stderr
   -y, --yes             answer yes to confirmations
-
-Use "waxseal secret [command] --help" for more information about a command.
