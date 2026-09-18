@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.0 (unreleased)
+## 0.5.0 (2026-09-18)
 
 A ground-up rewrite. Every command can be driven entirely by flags; on a
 terminal, waxseal prompts for whatever you leave out; with `--no-input` or
