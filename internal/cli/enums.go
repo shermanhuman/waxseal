@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"strings"
+
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
@@ -37,13 +39,7 @@ func enumFlag(cmd *cobra.Command, dst *string, name, usage string, e core.Enum) 
 }
 
 func joinValues(e core.Enum) string {
-	s := ""
-	for i, v := range e.Values() {
-		if i > 0 {
-			s += "|"
-		}
-		s += v
-	}
+	s := strings.Join(e.Values(), "|")
 	if e.Open {
 		s += "|..."
 	}

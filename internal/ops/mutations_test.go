@@ -228,6 +228,39 @@ func TestRotate(t *testing.T) {
 	}
 }
 
+func TestSetKeyValue_GenerateUsesTheKeysGenerator(t *testing.T) {
+	s, st := newFixtureService(t)
+	seedStore(t, s, st)
+	ctx := context.Background()
+	// database_password: randomBase64, 32 bytes -> 44 chars of base64.
+	res, err := s.SetKeyValue(ctx, SetKeyValueInput{ShortName: "my-app-secrets", Key: "database_password", Generate: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, _ := s.Repo.Metadata("my-app-secrets")
+	value, _ := st.AccessVersion(ctx, m.Key("database_password").GSM.SecretResource, res.Versions["database_password"])
+	if len(value) != 44 {
+		t.Errorf("generated %d chars, want 44 (32 bytes base64)", len(value))
+	}
+	if _, err := s.SetKeyValue(ctx, SetKeyValueInput{ShortName: "my-app-secrets", Key: "api_key", Generate: true}); !errors.As(err, new(*core.MissingInputError)) {
+		t.Errorf("generate on a key without a generator: got %v", err)
+	}
+}
+
+func TestEditKey_DryRun(t *testing.T) {
+	s, _ := newFixtureService(t)
+	static := core.RotationStatic
+	before, _ := os.ReadFile(s.Repo.MetadataPath("my-app-secrets"))
+	res, err := s.EditKey(EditKeyInput{ShortName: "my-app-secrets", Key: "api_key", Rotation: &static, DryRun: true})
+	if err != nil || !res.DryRun || len(res.Changes) != 1 {
+		t.Fatalf("%v %+v", err, res)
+	}
+	after, _ := os.ReadFile(s.Repo.MetadataPath("my-app-secrets"))
+	if string(after) != string(before) {
+		t.Error("dry run wrote metadata")
+	}
+}
+
 func TestEditKey(t *testing.T) {
 	s, st := newFixtureService(t)
 	seedStore(t, s, st)
@@ -413,17 +446,28 @@ func TestImport(t *testing.T) {
 	}
 
 	// Re-import of a registered secret: existing keys get new versions,
-	// keys the cluster dropped are reported.
-	delete(s.Cluster.(*fakeCluster).secrets["ingress-nginx/wildcard-tls"], "tls.key")
+	// keys the cluster dropped are reported, and a computed key whose
+	// cluster value is no longer a connection string is left alone rather
+	// than converted (its resource holds JSON payloads).
+	cluster := s.Cluster.(*fakeCluster).secrets["ingress-nginx/wildcard-tls"]
+	delete(cluster, "tls.key")
+	cluster["DB_URL"] = []byte("Bearer rendered-token")
 	res, err = s.Import(ctx, ImportInput{ShortName: "ingress-nginx-wildcard-tls"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(res.Updated, []string{"DB_URL", "tls.crt"}) || !reflect.DeepEqual(res.MissingInCluster, []string{"tls.key"}) {
+	if !reflect.DeepEqual(res.Updated, []string{"tls.crt"}) || !reflect.DeepEqual(res.MissingInCluster, []string{"tls.key"}) || !reflect.DeepEqual(res.Skipped, []string{"DB_URL"}) {
 		t.Errorf("re-import = %+v", res)
 	}
-	if m, _ = s.Repo.Metadata("ingress-nginx-wildcard-tls"); m.Key("tls.crt").GSM.Version != "2" {
+	m, _ = s.Repo.Metadata("ingress-nginx-wildcard-tls")
+	if m.Key("tls.crt").GSM.Version != "2" {
 		t.Errorf("tls.crt version = %s", m.Key("tls.crt").GSM.Version)
+	}
+	if db := m.Key("DB_URL"); db.Source.Kind != "computed" || db.Computed.GSM.Version != "1" {
+		t.Errorf("computed key must be untouched: %+v", db)
+	}
+	if got, _ := st.AccessVersion(ctx, db.Computed.GSM.SecretResource, "1"); !strings.HasPrefix(string(got), "{") {
+		t.Error("payload resource must still hold JSON")
 	}
 }
 

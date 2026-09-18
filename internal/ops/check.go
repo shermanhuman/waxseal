@@ -133,7 +133,7 @@ func (s *Service) checkCert(warnDays int) []Finding {
 	}
 	days := cert.DaysLeft(s.now())
 	switch {
-	case days < 0:
+	case cert.NotAfter().Before(s.now()):
 		return []Finding{{SeverityError, CheckCert, cfg.Cert.RepoCertPath,
 			fmt.Sprintf("certificate expired %d days ago; rotate the controller key and run `waxseal reseal`", -days)}}
 	case days < warnDays:

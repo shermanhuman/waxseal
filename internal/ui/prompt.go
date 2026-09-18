@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/shermanhuman/waxseal/internal/core"
@@ -80,7 +81,7 @@ func (p *ScriptedPrompter) Select(s Spec, choices []core.Choice, _ string, allow
 	if err != nil {
 		return "", err
 	}
-	if !allowOther && !contains(values(choices), v) {
+	if !allowOther && !slices.Contains(values(choices), v) {
 		return "", fmt.Errorf("scripted prompter: %q is not a choice for %s", v, s.Flag)
 	}
 	return v, nil
@@ -99,13 +100,4 @@ func values(choices []core.Choice) []string {
 		out[i] = c.Value
 	}
 	return out
-}
-
-func contains(list []string, v string) bool {
-	for _, x := range list {
-		if x == v {
-			return true
-		}
-	}
-	return false
 }

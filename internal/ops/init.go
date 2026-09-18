@@ -1,6 +1,7 @@
 package ops
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 
@@ -39,8 +40,8 @@ func (s *Service) Init(in InitInput) (*MutationResult, error) {
 		Version: "1",
 		Store:   config.StoreConfig{Kind: "gsm", ProjectID: in.ProjectID},
 		Controller: config.ControllerConfig{
-			Namespace:   cmpOr(in.ControllerNamespace, "kube-system"),
-			ServiceName: cmpOr(in.ControllerName, "sealed-secrets"),
+			Namespace:   cmp.Or(in.ControllerNamespace, "kube-system"),
+			ServiceName: cmp.Or(in.ControllerName, "sealed-secrets"),
 		},
 		Cert: config.CertConfig{RepoCertPath: "keys/pub-cert.pem"},
 	}

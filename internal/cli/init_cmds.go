@@ -130,6 +130,9 @@ func (r *importResult) Text(p *ui.Printer) {
 		if len(s.MissingInCluster) > 0 {
 			p.Warn("%s: in metadata but not in the cluster: %s", s.ShortName, strings.Join(s.MissingInCluster, ", "))
 		}
+		if len(s.Skipped) > 0 {
+			p.Warn("%s: computed keys left unchanged (their cluster value is rendered): %s", s.ShortName, strings.Join(s.Skipped, ", "))
+		}
 	}
 	if !r.DryRun {
 		p.Next([]string{"review rotation modes: waxseal secret show <secret>; adjust with waxseal key edit", "commit .waxseal/metadata and the manifests"})
@@ -154,11 +157,11 @@ externally rotated; change that with ` + "`waxseal key edit`" + `.`,
 			return nil, err
 		}
 		names := args
+		found, err := svc.Discover()
+		if err != nil {
+			return nil, err
+		}
 		if len(names) == 0 {
-			found, err := svc.Discover()
-			if err != nil {
-				return nil, err
-			}
 			for _, d := range found {
 				if d.Registered == "" {
 					names = append(names, d.Suggested)
@@ -177,7 +180,7 @@ externally rotated; change that with ` + "`waxseal key edit`" + `.`,
 			for _, name := range names {
 				progress(name)
 				one := importOne{ShortName: name}
-				res, err := svc.Import(ctx, ops.ImportInput{ShortName: name, DryRun: app.Flags.DryRun})
+				res, err := svc.Import(ctx, ops.ImportInput{ShortName: name, Discovered: found, DryRun: app.Flags.DryRun})
 				if err != nil {
 					one.Error = err.Error()
 					failed++

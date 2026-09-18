@@ -72,6 +72,37 @@ func TestKeyAdd_InteractiveWalksEveryInput(t *testing.T) {
 	}
 }
 
+func TestKeyAdd_ExplicitValueKeepsChosenGenerator(t *testing.T) {
+	ta := newTestApp(t, true)
+	// secret, key, rotation (generated), generator (hex), value from the prompt
+	ta.Prompter.Answers = []string{"my-app-secrets", "token", "generated", "randomHex", "given-value"}
+	ta.seedStore(t)
+	if _, errw, code := ta.run("key", "add"); code != 0 {
+		t.Fatalf("exit %d\n%s", code, errw)
+	}
+	m, _ := ta.Repo().Metadata("my-app-secrets")
+	if k := m.Key("token"); k.Rotation.Generator == nil || k.Rotation.Generator.Kind != "randomHex" {
+		t.Errorf("generator = %+v, want the hex kind chosen at the prompt", k.Rotation)
+	}
+}
+
+func TestSetup_DryRunKeepsGlobalFlags(t *testing.T) {
+	ta := newTestApp(t, true)
+	ta.Flags.Repo = t.TempDir()
+	// init prompts: project, namespace, name; then three offers declined.
+	ta.Prompter.Answers = []string{"p", "kube-system", "sealed-secrets", "n", "n", "n"}
+	_, errw, code := ta.run("setup", "--dry-run")
+	if code != 0 {
+		t.Fatalf("exit %d\n%s", code, errw)
+	}
+	if _, err := os.Stat(ta.Repo().ConfigPath()); !os.IsNotExist(err) {
+		t.Error("setup --dry-run wrote the config")
+	}
+	if _, err := os.Stat(ta.Repo().Root() + "/keys/pub-cert.pem"); !os.IsNotExist(err) {
+		t.Error("setup --dry-run wrote the certificate")
+	}
+}
+
 func TestKeySet(t *testing.T) {
 	ta := newTestApp(t, false)
 	ta.seedStore(t)
@@ -94,7 +125,7 @@ func TestKeySet(t *testing.T) {
 		t.Errorf("api_key = %+v", k)
 	}
 
-	// --generate on a generated key uses its stored generator.
+	// --generate on a generated key uses its stored generator, byte length included.
 	_, errw, code = ta.run("key", "set", "my-app-secrets", "database_password", "--generate")
 	if code != 0 {
 		t.Fatalf("exit %d\n%s", code, errw)
@@ -102,6 +133,9 @@ func TestKeySet(t *testing.T) {
 	m, _ = ta.Repo().Metadata("my-app-secrets")
 	if m.Key("database_password").GSM.Version != "4" {
 		t.Errorf("version = %s", m.Key("database_password").GSM.Version)
+	}
+	if v, _ := ta.Store.AccessVersion(t.Context(), m.Key("database_password").GSM.SecretResource, "4"); len(v) != 44 {
+		t.Errorf("generated %d chars, want 44 (32 bytes of base64 as configured)", len(v))
 	}
 
 	// --generate on a key without a generator is a usage error, not a prompt.
@@ -297,9 +331,19 @@ func TestDryRunJSONGolden(t *testing.T) {
 		{"reseal", "my-app-secrets", "--skip-cert-check"},
 		{"secret", "retire", "tls-cert", "--delete-manifest"},
 		{"import", "ingress-nginx-wildcard-tls"},
+		{"key", "edit", "my-app-secrets", "api_key", "--rotation", "static", "--expires", "none"},
+		{"init", "--project", "other", "--force"},
+		{"cert", "fetch"},
+		{"reminders", "configure", "--provider", "tasks"},
+		{"reminders", "clear", "tls-cert"},
+		{"gcp", "provision", "--project", "p"},
 	}
 	for _, args := range cases {
-		t.Run(strings.Join(args[:2], "_"), func(t *testing.T) {
+		name := args[0]
+		if len(args) > 1 && !strings.HasPrefix(args[1], "-") {
+			name += "_" + args[1]
+		}
+		t.Run(name, func(t *testing.T) {
 			ta := newTestApp(t, false)
 			ta.seedStore(t)
 			ta.Stdin = bytes.NewBufferString("v\n")
@@ -315,7 +359,7 @@ func TestDryRunJSONGolden(t *testing.T) {
 			if after := snapshot(t, ta.Repo().Root()); after != before {
 				t.Error("dry run changed files in the repo")
 			}
-			testutil.AssertGolden(t, filepath.Join("testdata", "json", strings.Join(args[:2], "_")+".golden"), []byte(out))
+			testutil.AssertGolden(t, filepath.Join("testdata", "json", name+".golden"), []byte(out))
 		})
 	}
 }

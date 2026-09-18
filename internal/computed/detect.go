@@ -5,86 +5,106 @@ import (
 	"strings"
 )
 
-// DetectConnectionString checks if a value is a database/service connection string
-// and returns a template with {{variable}} placeholders and the extracted values.
-// allKeys is the list of other key names in the same secret (for future cross-referencing).
-func DetectConnectionString(value string, allKeys []string) (isTemplate bool, tmpl string, values map[string]string) {
-	// Check if it looks like a URL-based connection string
-	if !strings.Contains(value, "://") {
-		return false, "", nil
-	}
+var connectionSchemes = []string{
+	// SQL
+	"postgresql", "postgres", "mysql", "mariadb", "sqlserver", "mssql",
+	// NoSQL
+	"mongodb", "mongodb+srv", "couchbase", "couchdb", "cockroachdb",
+	// Key-value / cache
+	"redis", "rediss", "memcached",
+	// Messaging
+	"amqp", "amqps", "nats", "tls", "kafka",
+	// Search
+	"elasticsearch", "opensearch",
+	// Other
+	"clickhouse", "cassandra", "scylla", "neo4j", "bolt",
+}
 
+// DetectConnectionString recognises a database-style URL with a password and
+// splits it into a template, its non-secret values and the password. The
+// template is rebuilt from the URL's parts rather than by substitution, so a
+// password that is percent-encoded, or that happens to appear elsewhere in
+// the URL, can never leak into the template. The password is returned in
+// its raw (encoded) form so that rendering the template reproduces the
+// original value exactly.
+func DetectConnectionString(value string) (tmpl string, values map[string]string, secret string, ok bool) {
 	parsed, err := url.Parse(value)
-	if err != nil {
-		return false, "", nil
+	if err != nil || parsed.User == nil {
+		return "", nil, "", false
 	}
-
-	// Common database/service connection string schemes
-	schemes := []string{
-		// SQL Databases
-		"postgresql", "postgres", "mysql", "mariadb", "sqlserver", "mssql",
-		// NoSQL Databases
-		"mongodb", "mongodb+srv", "couchbase", "couchdb", "cockroachdb",
-		// Key-Value / Cache
-		"redis", "rediss", "memcached",
-		// Message Queues
-		"amqp", "amqps", "nats", "tls", "kafka",
-		// Search
-		"elasticsearch", "opensearch",
-		// Other
-		"clickhouse", "cassandra", "scylla", "neo4j", "bolt",
-	}
-	isDBConnection := false
-	for _, s := range schemes {
-		if strings.EqualFold(parsed.Scheme, s) {
-			isDBConnection = true
+	scheme := parsed.Scheme
+	known := false
+	for _, s := range connectionSchemes {
+		if strings.EqualFold(scheme, s) {
+			known = true
 			break
 		}
 	}
-	if !isDBConnection {
-		return false, "", nil
+	if !known {
+		return "", nil, "", false
 	}
 
-	// Extract values and build template
-	values = make(map[string]string)
-	tmpl = value
-
-	// Extract username and password (password becomes {{secret}})
-	if parsed.User != nil {
-		if username := parsed.User.Username(); username != "" {
-			values["username"] = username
-			tmpl = strings.Replace(tmpl, username, "{{username}}", 1)
-		}
-		if password, ok := parsed.User.Password(); ok && password != "" {
-			// Password is the secret - use {{secret}} as standard variable
-			tmpl = strings.Replace(tmpl, password, "{{secret}}", 1)
-		}
+	// Raw parts: authority is everything between "://" and the first
+	// '/', '?' or '#'; userinfo is up to the last '@' in it.
+	rest := value[len(scheme)+3:]
+	end := strings.IndexAny(rest, "/?#")
+	if end < 0 {
+		end = len(rest)
+	}
+	authority, tail := rest[:end], rest[end:]
+	at := strings.LastIndex(authority, "@")
+	if at < 0 {
+		return "", nil, "", false
+	}
+	userinfo := authority[:at]
+	rawUser, rawPassword, hasPassword := strings.Cut(userinfo, ":")
+	if !hasPassword || rawPassword == "" {
+		return "", nil, "", false
 	}
 
-	// Extract host and port
-	if parsed.Host != "" {
-		host := parsed.Hostname()
-		port := parsed.Port()
+	values = map[string]string{}
+	var b strings.Builder
+	b.WriteString(scheme + "://")
+	if rawUser != "" {
+		values["username"] = rawUser
+		b.WriteString("{{username}}")
+	}
+	b.WriteString(":{{secret}}@")
 
-		if host != "" {
-			values["host"] = host
-			// Replace host in template carefully (it may appear after @)
-			tmpl = strings.Replace(tmpl, host, "{{host}}", 1)
-		}
+	host, port := parsed.Hostname(), parsed.Port()
+	switch {
+	case host == "" || strings.Contains(host, ":"):
+		// No host, or an IPv6 literal: keep the raw host:port as is.
+		b.WriteString(authority[at+1:])
+	default:
+		values["host"] = host
+		b.WriteString("{{host}}")
 		if port != "" {
 			values["port"] = port
-			tmpl = strings.Replace(tmpl, ":"+port, ":{{port}}", 1)
+			b.WriteString(":{{port}}")
 		}
 	}
 
-	// Extract database name from path
-	if parsed.Path != "" && parsed.Path != "/" {
-		database := strings.TrimPrefix(parsed.Path, "/")
-		if database != "" {
+	if strings.HasPrefix(tail, "/") {
+		pathEnd := strings.IndexAny(tail, "?#")
+		if pathEnd < 0 {
+			pathEnd = len(tail)
+		}
+		if database := tail[1:pathEnd]; database != "" {
 			values["database"] = database
-			tmpl = strings.Replace(tmpl, "/"+database, "/{{database}}", 1)
+			b.WriteString("/{{database}}")
+			tail = tail[pathEnd:]
 		}
 	}
+	b.WriteString(tail)
+	tmpl = b.String()
 
-	return true, tmpl, values
+	// The template must reproduce the value, and the password must not
+	// survive in the only literal part that could carry it (the query and
+	// fragment); the scheme is a fixed public word.
+	p := &Payload{Template: tmpl, Values: values, Secret: rawPassword}
+	if rendered, err := p.Compute(); err != nil || rendered != value || strings.Contains(tail, rawPassword) {
+		return "", nil, "", false
+	}
+	return tmpl, values, rawPassword, true
 }

@@ -1,0 +1,14 @@
+{
+  "summary": "my-app-secrets/api_key updated",
+  "dryRun": true,
+  "changes": [
+    {
+      "op": "update",
+      "kind": "metadata",
+      "target": ".waxseal/metadata/my-app-secrets.yaml"
+    }
+  ],
+  "next": [
+    "commit the changed files: .waxseal/metadata/my-app-secrets.yaml"
+  ]
+}

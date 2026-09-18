@@ -284,7 +284,14 @@ asks for what is missing. In scripts, run the steps directly.`,
 				return nil, ui.WithHint(&usageError{err: errors.New("setup is interactive; run it on a terminal")},
 					"in scripts run: waxseal init, waxseal gcp provision, waxseal cert fetch, waxseal discover, waxseal import, waxseal reminders configure")
 			}
+			// Building a second root re-registers the persistent flags, which
+			// resets the bound globals to their defaults; keep this run's.
+			globals := app.Flags
 			root := newRootCmd(app)
+			app.Flags = globals
+			root.SetIn(app.Stdin)
+			root.SetOut(app.Stdout)
+			root.SetErr(app.Stderr)
 			step := func(args ...string) error {
 				io.P.Info("")
 				io.P.Info("── waxseal %s", strings.Join(args, " "))

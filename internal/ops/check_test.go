@@ -72,6 +72,10 @@ func TestCheck_Cert(t *testing.T) {
 	if got := run(notAfter.AddDate(0, 0, 1), 30); got != SeverityError {
 		t.Errorf("after expiry: %s", got)
 	}
+	// Expired six hours ago: whole-day arithmetic says 0 days, but it is expired.
+	if got := run(notAfter.Add(6*time.Hour), 30); got != SeverityError {
+		t.Errorf("six hours after expiry: %s, want error", got)
+	}
 
 	if err := os.Remove(s.Repo.Root() + "/" + cfg.Cert.RepoCertPath); err != nil {
 		t.Fatal(err)

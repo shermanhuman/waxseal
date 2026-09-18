@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -39,18 +40,7 @@ func commitNext(res *ops.MutationResult) []string {
 	if len(paths) == 0 {
 		return nil
 	}
-	return []string{"commit the changed files: " + joinPaths(paths)}
-}
-
-func joinPaths(paths []string) string {
-	s := ""
-	for i, p := range paths {
-		if i > 0 {
-			s += " "
-		}
-		s += p
-	}
-	return s
+	return []string{"commit the changed files: " + strings.Join(paths, " ")}
 }
 
 // ── key add ────────────────────────────────────────────────────────────────
@@ -153,18 +143,13 @@ func keySpec(cmd *cobra.Command, io *IO, app *App, value *valueFlags, kc *keyCon
 			value.generate = true
 		}
 	}
-	v, gen, err := value.resolve(io, app.Stdin, spec.Generator, ui.Spec{Flag: "--from-file or --generate", Title: "Value for " + keyName})
+	v, _, err := value.resolve(io, app.Stdin, spec.Generator, ui.Spec{Flag: "--from-file or --generate", Title: "Value for " + keyName})
 	if err != nil {
 		return spec, err
 	}
-	spec.Value, spec.Generator = v, gen
-	if spec.Value != nil && rotation == core.RotationGenerated {
-		// Explicit value with a generated mode: keep the generator for future rotations.
-		spec.Generator = &core.GeneratorConfig{Kind: kc.generator, Bytes: kc.bytes}
-		if spec.Generator.Kind == "" {
-			spec.Generator.Kind = core.GeneratorRandomBase64
-		}
-	}
+	// An explicit value with a generated mode keeps the chosen generator
+	// for future rotations; ops generates the initial value when Value is nil.
+	spec.Value = v
 	if kc.expires != "" {
 		exp, err := parseExpiry(kc.expires)
 		if err != nil {
@@ -279,7 +264,7 @@ reseals; the secret part is untouched).`,
 
 		var last *ops.MutationResult
 		if metaChange {
-			in := ops.EditKeyInput{ShortName: secretName, Key: keyName}
+			in := ops.EditKeyInput{ShortName: secretName, Key: keyName, DryRun: app.Flags.DryRun}
 			if cmd.Flags().Changed("rotation") || kc.rotation != "" {
 				in.Rotation = &kc.rotation
 			}

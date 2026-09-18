@@ -1,6 +1,7 @@
 package ops
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -122,11 +123,11 @@ func (s *Service) AddKey(ctx context.Context, in AddKeyInput) (*MutationResult, 
 		}
 		m = &core.SecretMetadata{
 			ShortName:    in.ShortName,
-			ManifestPath: cmpOr(in.New.ManifestPath, "apps/"+in.ShortName+"/sealed-secret.yaml"),
+			ManifestPath: cmp.Or(in.New.ManifestPath, "apps/"+in.ShortName+"/sealed-secret.yaml"),
 			SealedSecret: core.SealedSecretRef{
-				Name:      cmpOr(in.New.Name, in.ShortName),
+				Name:      cmp.Or(in.New.Name, in.ShortName),
 				Namespace: in.New.Namespace,
-				Scope:     cmpOr(in.New.Scope, core.ScopeStrict),
+				Scope:     cmp.Or(in.New.Scope, core.ScopeStrict),
 				Type:      in.New.Type,
 			},
 			Status: "active",
@@ -151,6 +152,8 @@ type SetKeyValueInput struct {
 	ShortName string
 	Key       string
 	Value     []byte
+	// Generate produces the value with the key's own generator instead.
+	Generate bool
 	// ExpiresAt: nil leaves expiry alone; "" clears it; otherwise RFC3339.
 	ExpiresAt *string
 	DryRun    bool
@@ -162,6 +165,14 @@ func (s *Service) SetKeyValue(ctx context.Context, in SetKeyValueInput) (*Mutati
 	m, k, err := s.activeKey(in.ShortName, in.Key)
 	if err != nil {
 		return nil, err
+	}
+	if in.Generate {
+		if k.Rotation == nil || k.Rotation.Generator == nil {
+			return nil, &core.MissingInputError{Field: "--generator (the key has none; set one with `key edit`)"}
+		}
+		if in.Value, err = core.GenerateValue(k.Rotation.Generator); err != nil {
+			return nil, err
+		}
 	}
 	if len(in.Value) == 0 {
 		return nil, &core.MissingInputError{Field: "--from-file or --generate"}
@@ -224,6 +235,7 @@ type EditKeyInput struct {
 	Rotation  *string               // nil leaves it alone
 	Generator *core.GeneratorConfig // nil leaves it alone
 	ExpiresAt *string               // nil leaves it alone; "" clears
+	DryRun    bool
 }
 
 // EditKey updates a key's rotation mode, generator or expiry in metadata.
@@ -254,10 +266,14 @@ func (s *Service) EditKey(in EditKeyInput) (*MutationResult, error) {
 			k.Expiry = &core.ExpiryConfig{ExpiresAt: *in.ExpiresAt}
 		}
 	}
+	res := &MutationResult{ShortName: m.ShortName, DryRun: in.DryRun, Changes: []Change{{Op: "update", Kind: "metadata", Target: repo.MetadataRel(m.ShortName)}}}
+	if in.DryRun {
+		return res, nil
+	}
 	if err := s.Repo.WriteMetadata(m); err != nil {
 		return nil, err
 	}
-	return &MutationResult{ShortName: m.ShortName, Changes: []Change{{Op: "update", Kind: "metadata", Target: repo.MetadataRel(m.ShortName)}}}, nil
+	return res, nil
 }
 
 // ComputedView describes a computed key without its secret.
@@ -353,11 +369,4 @@ func (s *Service) activeKey(shortName, key string) (*core.SecretMetadata, *core.
 		return nil, nil, fmt.Errorf("%s/%s: %w", shortName, key, ErrKeyNotFound)
 	}
 	return m, k, nil
-}
-
-func cmpOr(v, def string) string {
-	if v != "" {
-		return v
-	}
-	return def
 }

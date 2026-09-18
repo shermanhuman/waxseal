@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"slices"
 
 	"github.com/shermanhuman/waxseal/internal/computed"
@@ -13,10 +12,13 @@ import (
 
 // ImportInput registers a manifest by reading its plaintext from the
 // cluster. ShortName is either a suggested name from Discover (for a new
-// manifest) or an existing secret to re-import.
+// manifest) or an existing secret to re-import. Discovered, if set, is a
+// Discover result to look the name up in, saving a repository walk per
+// import.
 type ImportInput struct {
-	ShortName string
-	DryRun    bool
+	ShortName  string
+	Discovered []Discovered
+	DryRun     bool
 }
 
 // ImportResult reports an import.
@@ -26,6 +28,7 @@ type ImportResult struct {
 	Updated          []string `json:"updated"`          // keys already registered, re-pushed
 	MissingInCluster []string `json:"missingInCluster"` // keys in metadata the cluster no longer has
 	Templated        []string `json:"templated,omitempty"`
+	Skipped          []string `json:"skipped,omitempty"` // computed keys whose value cannot be re-imported
 }
 
 // Import pushes a cluster secret's values to GSM and writes metadata for
@@ -38,7 +41,7 @@ func (s *Service) Import(ctx context.Context, in ImportInput) (*ImportResult, er
 	}
 	m, err := s.metadata(in.ShortName)
 	if errors.Is(err, ErrNotRegistered) {
-		m, err = s.metadataForManifest(in.ShortName)
+		m, err = s.metadataForManifest(in.ShortName, in.Discovered)
 	}
 	if err != nil {
 		return nil, err
@@ -64,20 +67,21 @@ func (s *Service) Import(ctx context.Context, in ImportInput) (*ImportResult, er
 	for _, name := range names {
 		value := data[name]
 		k := m.Key(name)
-		if k == nil {
+		isNew := k == nil
+		if isNew {
 			m.Keys = append(m.Keys, core.KeyMetadata{KeyName: name, Rotation: &core.RotationConfig{Mode: core.RotationExternal}})
 			k = &m.Keys[len(m.Keys)-1]
-			res.Added = append(res.Added, name)
-		} else {
-			res.Updated = append(res.Updated, name)
 		}
-		resource := s.gsmResource(m.ShortName, name)
-		if ref := k.ActiveRef(); ref != nil {
-			resource = ref.SecretResource
-		}
-		ref := &core.GSMRef{SecretResource: resource}
+		tmpl, values, secret, isConn := computed.DetectConnectionString(string(value))
 
-		if tmpl, values, secret, ok := detectTemplate(string(value)); ok && (k.Source.Kind == "computed" || k.Source.Kind == "") {
+		switch {
+		case isNew && isConn, k.Source.Kind == "computed" && isConn && k.Computed != nil && k.Computed.GSM != nil:
+			// A new connection string becomes a computed key; an existing
+			// computed key gets a new payload version on its own resource.
+			ref := &core.GSMRef{SecretResource: s.gsmResource(m.ShortName, name)}
+			if !isNew {
+				ref.SecretResource = k.Computed.GSM.SecretResource
+			}
 			payload, err := computed.NewPayload(tmpl, values, secret, nil)
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", name, err)
@@ -91,12 +95,32 @@ func (s *Service) Import(ctx context.Context, in ImportInput) (*ImportResult, er
 			k.Computed = &core.ComputedConfig{Kind: "template", Template: tmpl, GSM: ref}
 			writes = append(writes, keyWrite{name: name, ref: ref, gsm: pdata, seal: []byte(payload.Computed)})
 			res.Templated = append(res.Templated, name)
+		case k.Source.Kind == "computed":
+			// The cluster holds the rendered value; it cannot be split back
+			// into template and secret. Leave the key alone.
+			m.Keys = m.Keys[:len(m.Keys)]
+			res.Skipped = append(res.Skipped, name)
 			continue
+		default:
+			// A plain key keeps its resource; a new key gets one.
+			ref := &core.GSMRef{SecretResource: s.gsmResource(m.ShortName, name)}
+			if k.GSM != nil {
+				ref.SecretResource = k.GSM.SecretResource
+			}
+			k.Source = core.SourceConfig{Kind: "gsm"}
+			k.Computed = nil
+			k.GSM = ref
+			writes = append(writes, keyWrite{name: name, ref: ref, gsm: value, seal: value})
 		}
-		k.Source = core.SourceConfig{Kind: "gsm"}
-		k.Computed = nil
-		k.GSM = ref
-		writes = append(writes, keyWrite{name: name, ref: ref, gsm: value, seal: value})
+		if isNew {
+			res.Added = append(res.Added, name)
+		} else {
+			res.Updated = append(res.Updated, name)
+		}
+	}
+	if len(writes) == 0 {
+		res.MutationResult = &MutationResult{ShortName: m.ShortName, DryRun: in.DryRun}
+		return res, nil
 	}
 
 	res.MutationResult, err = s.apply(ctx, m, writes, false, in.DryRun)
@@ -108,10 +132,12 @@ func (s *Service) Import(ctx context.Context, in ImportInput) (*ImportResult, er
 
 // metadataForManifest builds fresh metadata for a discovered manifest whose
 // suggested short name is name.
-func (s *Service) metadataForManifest(name string) (*core.SecretMetadata, error) {
-	found, err := s.Discover()
-	if err != nil {
-		return nil, err
+func (s *Service) metadataForManifest(name string, found []Discovered) (*core.SecretMetadata, error) {
+	if found == nil {
+		var err error
+		if found, err = s.Discover(); err != nil {
+			return nil, err
+		}
 	}
 	for _, d := range found {
 		if d.Suggested != name || d.Registered != "" {
@@ -132,22 +158,4 @@ func typeOrEmpty(t string) string {
 		return ""
 	}
 	return t
-}
-
-// detectTemplate recognises a connection string and splits it into a
-// template, its non-secret values and the password.
-func detectTemplate(value string) (tmpl string, values map[string]string, secret string, ok bool) {
-	ok, tmpl, values = computed.DetectConnectionString(value, nil)
-	if !ok {
-		return "", nil, "", false
-	}
-	u, err := url.Parse(value)
-	if err != nil || u.User == nil {
-		return "", nil, "", false
-	}
-	secret, hasPassword := u.User.Password()
-	if !hasPassword || secret == "" {
-		return "", nil, "", false
-	}
-	return tmpl, values, secret, true
 }
