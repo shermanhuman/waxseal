@@ -6,7 +6,7 @@ import "runtime/debug"
 // Build information. Version is bumped by scripts/release; all three can be
 // overridden at build time via -ldflags "-X".
 var (
-	Version   = "0.4.18"
+	Version   = "0.5.0"
 	Commit    = ""
 	BuildDate = ""
 )
