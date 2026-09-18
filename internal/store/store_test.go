@@ -237,3 +237,34 @@ func TestFakeStore_FailOn(t *testing.T) {
 		t.Errorf("wildcard failure: got %v, want injected error", err)
 	}
 }
+
+func TestFakeStore_EnsureVersion(t *testing.T) {
+	ctx := context.Background()
+	f := NewFakeStore()
+	const res = "projects/p/secrets/a"
+
+	v, created, err := f.EnsureVersion(ctx, res, []byte("one"))
+	if err != nil || v != "1" || !created {
+		t.Fatalf("first: %q %v %v", v, created, err)
+	}
+	v, created, err = f.EnsureVersion(ctx, res, []byte("two"))
+	if err != nil || v != "2" || created {
+		t.Fatalf("second: %q %v %v", v, created, err)
+	}
+
+	for _, tc := range []struct {
+		version string
+		want    bool
+	}{{"1", true}, {"2", true}, {"3", false}} {
+		got, err := f.VersionExists(ctx, res, tc.version)
+		if err != nil || got != tc.want {
+			t.Errorf("VersionExists(%s) = %v, %v; want %v", tc.version, got, err, tc.want)
+		}
+	}
+	if _, err := f.VersionExists(ctx, res, "latest"); err == nil {
+		t.Error("alias versions must be rejected")
+	}
+	if got, err := f.VersionExists(ctx, "projects/p/secrets/missing", "1"); err != nil || got {
+		t.Errorf("missing secret: got %v, %v", got, err)
+	}
+}

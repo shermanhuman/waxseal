@@ -131,6 +131,31 @@ func (g *GSMStore) CreateSecretVersion(ctx context.Context, secretResource strin
 	return "", err
 }
 
+// EnsureVersion adds a version, creating the secret first when needed.
+func (g *GSMStore) EnsureVersion(ctx context.Context, secretResource string, data []byte) (string, bool, error) {
+	version, err := g.AddVersion(ctx, secretResource, data)
+	if err == nil {
+		return version, false, nil
+	}
+	if !core.IsNotFound(err) {
+		return "", false, err
+	}
+	version, err = g.CreateSecret(ctx, secretResource, data)
+	if err != nil {
+		return "", false, err
+	}
+	return version, true, nil
+}
+
+// VersionExists reports whether the version exists and is enabled.
+func (g *GSMStore) VersionExists(ctx context.Context, secretResource string, version string) (bool, error) {
+	if err := ValidateNumericVersion(version); err != nil {
+		return false, err
+	}
+	exists, enabled, err := g.SecretVersionExists(ctx, secretResource, version)
+	return exists && enabled, err
+}
+
 // SecretExists checks if a secret exists.
 func (g *GSMStore) SecretExists(ctx context.Context, secretResource string) (bool, error) {
 	req := &secretmanagerpb.GetSecretRequest{
