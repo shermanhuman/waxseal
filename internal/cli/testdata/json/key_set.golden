@@ -10,7 +10,7 @@
     {
       "op": "update",
       "kind": "metadata",
-      "target": "<repo>/.waxseal/metadata/my-app-secrets.yaml"
+      "target": ".waxseal/metadata/my-app-secrets.yaml"
     },
     {
       "op": "update",
@@ -19,6 +19,6 @@
     }
   ],
   "next": [
-    "commit the changed files: <repo>/.waxseal/metadata/my-app-secrets.yaml apps/my-app/sealed-secret.yaml"
+    "commit the changed files: .waxseal/metadata/my-app-secrets.yaml apps/my-app/sealed-secret.yaml"
   ]
 }

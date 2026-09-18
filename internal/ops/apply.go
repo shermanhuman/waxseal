@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/shermanhuman/waxseal/internal/core"
+	"github.com/shermanhuman/waxseal/internal/repo"
 	"github.com/shermanhuman/waxseal/internal/seal"
 	"github.com/shermanhuman/waxseal/internal/store"
 )
@@ -97,7 +98,7 @@ func (s *Service) apply(ctx context.Context, m *core.SecretMetadata, writes []ke
 			res.Changes = append(res.Changes, Change{Op: "create", Kind: "gsm-version", Target: w.ref.SecretResource})
 		}
 	}
-	res.Changes = append(res.Changes, Change{Op: "update", Kind: "metadata", Target: s.Repo.MetadataPath(m.ShortName)})
+	res.Changes = append(res.Changes, Change{Op: "update", Kind: "metadata", Target: repo.MetadataRel(m.ShortName)})
 	manifestOp := "update"
 	if existing == nil {
 		manifestOp = "create"

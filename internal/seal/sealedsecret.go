@@ -2,6 +2,7 @@ package seal
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/shermanhuman/waxseal/internal/core"
 	"sigs.k8s.io/yaml"
@@ -139,6 +140,7 @@ func (ss *SealedSecret) GetEncryptedKeys() []string {
 	for k := range ss.Spec.EncryptedData {
 		keys = append(keys, k)
 	}
+	slices.Sort(keys)
 	return keys
 }
 

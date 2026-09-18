@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/shermanhuman/waxseal/internal/core"
+	"github.com/shermanhuman/waxseal/internal/repo"
 )
 
 // RetireInput describes a retirement.
@@ -28,7 +29,7 @@ func (s *Service) Retire(in RetireInput) (*MutationResult, error) {
 		m.RetiredAt = s.now().UTC().Format(time.RFC3339)
 		m.RetireReason = in.Reason
 		m.ReplacedBy = in.ReplacedBy
-		res.Changes = append(res.Changes, Change{Op: "update", Kind: "metadata", Target: s.Repo.MetadataPath(m.ShortName)})
+		res.Changes = append(res.Changes, Change{Op: "update", Kind: "metadata", Target: repo.MetadataRel(m.ShortName)})
 	}
 	if in.DeleteManifest {
 		if _, err := s.Repo.Manifest(m); err == nil {

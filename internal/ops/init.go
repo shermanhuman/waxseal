@@ -6,6 +6,7 @@ import (
 
 	"github.com/shermanhuman/waxseal/internal/config"
 	"github.com/shermanhuman/waxseal/internal/core"
+	"github.com/shermanhuman/waxseal/internal/repo"
 )
 
 // InitInput describes a new repository configuration.
@@ -43,7 +44,7 @@ func (s *Service) Init(in InitInput) (*MutationResult, error) {
 		},
 		Cert: config.CertConfig{RepoCertPath: "keys/pub-cert.pem"},
 	}
-	res := &MutationResult{DryRun: in.DryRun, Changes: []Change{{Op: "create", Kind: "config", Target: s.Repo.ConfigPath()}}}
+	res := &MutationResult{DryRun: in.DryRun, Changes: []Change{{Op: "create", Kind: "config", Target: repo.ConfigRel}}}
 	if in.DryRun {
 		return res, nil
 	}

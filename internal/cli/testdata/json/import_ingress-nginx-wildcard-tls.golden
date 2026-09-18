@@ -12,7 +12,7 @@
         {
           "op": "update",
           "kind": "metadata",
-          "target": "<repo>/.waxseal/metadata/ingress-nginx-wildcard-tls.yaml"
+          "target": ".waxseal/metadata/ingress-nginx-wildcard-tls.yaml"
         },
         {
           "op": "update",

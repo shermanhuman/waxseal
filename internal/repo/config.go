@@ -6,9 +6,12 @@ import (
 	"github.com/shermanhuman/waxseal/internal/config"
 )
 
+// ConfigRel is the repo-relative path of the config file.
+const ConfigRel = ".waxseal/config.yaml"
+
 // ConfigPath returns the absolute path of the waxseal config file.
 func (r *Repo) ConfigPath() string {
-	return filepath.Join(r.root, ".waxseal", "config.yaml")
+	return filepath.Join(r.root, filepath.FromSlash(ConfigRel))
 }
 
 // Config loads the config with defaults applied. It returns an error wrapping

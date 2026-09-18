@@ -22,7 +22,7 @@ func TestKeyAdd_NewSecretFromFlagsAndStdin(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit %d\n%s", code, errw)
 	}
-	if !strings.Contains(out, "web/password stored as GSM version 1") || !strings.Contains(errw, "commit the changed files") {
+	if !strings.Contains(out, "web/password stored as GSM version 1") || !strings.Contains(errw, "commit the changed files: .waxseal/metadata/web.yaml apps/web/sealed-secret.yaml") {
 		t.Errorf("stdout:\n%s\nstderr:\n%s", out, errw)
 	}
 	value, err := ta.Store.AccessVersion(t.Context(), "projects/waxseal-test-project/secrets/web-password", "1")
@@ -315,9 +315,7 @@ func TestDryRunJSONGolden(t *testing.T) {
 			if after := snapshot(t, ta.Repo().Root()); after != before {
 				t.Error("dry run changed files in the repo")
 			}
-			// Paths are per-test temp dirs; normalise them.
-			normalised := strings.ReplaceAll(out, ta.Repo().Root(), "<repo>")
-			testutil.AssertGolden(t, filepath.Join("testdata", "json", strings.Join(args[:2], "_")+".golden"), []byte(normalised))
+			testutil.AssertGolden(t, filepath.Join("testdata", "json", strings.Join(args[:2], "_")+".golden"), []byte(out))
 		})
 	}
 }

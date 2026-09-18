@@ -8,6 +8,7 @@ import (
 
 	"github.com/shermanhuman/waxseal/internal/computed"
 	"github.com/shermanhuman/waxseal/internal/core"
+	"github.com/shermanhuman/waxseal/internal/repo"
 )
 
 // KeySpec describes a key to add. Exactly one of Value or Generator
@@ -256,7 +257,7 @@ func (s *Service) EditKey(in EditKeyInput) (*MutationResult, error) {
 	if err := s.Repo.WriteMetadata(m); err != nil {
 		return nil, err
 	}
-	return &MutationResult{ShortName: m.ShortName, Changes: []Change{{Op: "update", Kind: "metadata", Target: s.Repo.MetadataPath(m.ShortName)}}}, nil
+	return &MutationResult{ShortName: m.ShortName, Changes: []Change{{Op: "update", Kind: "metadata", Target: repo.MetadataRel(m.ShortName)}}}, nil
 }
 
 // ComputedView describes a computed key without its secret.

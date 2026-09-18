@@ -20,6 +20,12 @@ func (r *Repo) MetadataPath(shortName string) string {
 	return filepath.Join(r.metadataDir(), shortName+metadataExt)
 }
 
+// MetadataRel returns the repo-relative, slash-separated path of a secret's
+// metadata file, for reporting.
+func MetadataRel(shortName string) string {
+	return ".waxseal/metadata/" + shortName + metadataExt
+}
+
 // Metadata loads one secret's metadata. It returns an error wrapping
 // core.ErrNotFound when the secret is not registered.
 func (r *Repo) Metadata(shortName string) (*core.SecretMetadata, error) {

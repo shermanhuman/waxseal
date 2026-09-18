@@ -13,6 +13,7 @@ import (
 	"github.com/shermanhuman/waxseal/internal/gcp"
 	"github.com/shermanhuman/waxseal/internal/ops"
 	"github.com/shermanhuman/waxseal/internal/reminder"
+	"github.com/shermanhuman/waxseal/internal/repo"
 	"github.com/shermanhuman/waxseal/internal/ui"
 )
 
@@ -227,7 +228,7 @@ func newRemindersCmd(app *App) *cobra.Command {
 			}
 		}
 		cfg.Reminders = rc
-		res := &ops.MutationResult{DryRun: app.Flags.DryRun, Changes: []ops.Change{{Op: "update", Kind: "config", Target: r.ConfigPath()}}}
+		res := &ops.MutationResult{DryRun: app.Flags.DryRun, Changes: []ops.Change{{Op: "update", Kind: "config", Target: repo.ConfigRel}}}
 		if !app.Flags.DryRun {
 			if err := r.WriteConfig(cfg); err != nil {
 				return nil, err
