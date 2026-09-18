@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/shermanhuman/waxseal/internal/core"
 	"github.com/shermanhuman/waxseal/internal/proc"
@@ -112,5 +113,31 @@ func TestClassify(t *testing.T) {
 	exists := classify(&proc.ExitError{Name: "gcloud", Stderr: "already exists"})
 	if !errors.Is(exists, core.ErrAlreadyExists) {
 		t.Errorf("got %v", exists)
+	}
+}
+
+// IAM sees a new service account only after a moment; the binding step
+// must be retried rather than failed.
+func TestApply_RetriesUntilPropagated(t *testing.T) {
+	calls := 0
+	c := Client{retryDelay: time.Millisecond, run: func(_ context.Context, _ []byte, _ string, args ...string) ([]byte, error) {
+		calls++
+		if calls < 3 {
+			return nil, &proc.ExitError{Name: "gcloud", Code: 1, Stderr: "ERROR: INVALID_ARGUMENT: Service account x does not exist."}
+		}
+		return nil, nil
+	}}
+	if err := c.Apply(context.Background(), []Step{{"Bind", []string{"projects", "add-iam-policy-binding"}}}, nil); err != nil {
+		t.Fatalf("got %v after %d calls", err, calls)
+	}
+	if calls != 3 {
+		t.Errorf("calls = %d, want 3", calls)
+	}
+
+	stuck := Client{retryDelay: time.Millisecond, run: func(context.Context, []byte, string, ...string) ([]byte, error) {
+		return nil, &proc.ExitError{Name: "gcloud", Code: 1, Stderr: "does not exist"}
+	}}
+	if err := stuck.Apply(context.Background(), []Step{{"Bind", []string{"x"}}}, nil); err == nil {
+		t.Error("must give up eventually")
 	}
 }

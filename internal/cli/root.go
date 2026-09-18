@@ -63,6 +63,7 @@ instead, naming the missing flag.`,
 		newDiscoverCmd(app),
 		newImportCmd(app),
 		newSetupCmd(app),
+		newDocsCmd(app),
 	)
 	root.SetHelpCommandGroupID(groupSetup)
 	root.SetCompletionCommandGroupID(groupSetup)

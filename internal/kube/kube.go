@@ -53,24 +53,22 @@ func (c Client) GetSecret(ctx context.Context, namespace, name string) (map[stri
 	return data, nil
 }
 
-// FindController locates the sealed-secrets controller by its standard Helm
-// label and returns its namespace and service name. It returns an error
-// wrapping core.ErrNotFound when no controller is running.
+// FindController locates the sealed-secrets controller by the labels the
+// Helm chart and the release manifest use, and returns its namespace and
+// service name. It returns an error wrapping core.ErrNotFound when no
+// controller is running.
 func (c Client) FindController(ctx context.Context) (namespace, service string, err error) {
-	run := c.runner()
-	out, err := run(ctx, nil, "kubectl", "get", "pods", "-A",
-		"-l", "app.kubernetes.io/name=sealed-secrets",
-		"-o", "jsonpath={.items[0].metadata.namespace}")
-	namespace = strings.TrimSpace(string(out))
-	if err != nil || namespace == "" {
-		return "", "", core.WrapNotFound("sealed-secrets controller", err)
-	}
-	for _, candidate := range []string{"sealed-secrets-controller", "sealed-secrets"} {
-		if _, err := run(ctx, nil, "kubectl", "get", "svc", "-n", namespace, candidate); err == nil {
-			return namespace, candidate, nil
+	for _, selector := range []string{"app.kubernetes.io/name=sealed-secrets", "name=sealed-secrets-controller"} {
+		out, err := c.runner()(ctx, nil, "kubectl", "get", "svc", "-A", "-l", selector,
+			"-o", "jsonpath={.items[0].metadata.namespace} {.items[0].metadata.name}")
+		if err != nil {
+			continue
+		}
+		if parts := strings.Fields(string(out)); len(parts) == 2 {
+			return parts[0], parts[1], nil
 		}
 	}
-	return "", "", core.WrapNotFound("sealed-secrets controller service in "+namespace, nil)
+	return "", "", core.WrapNotFound("sealed-secrets controller service", nil)
 }
 
 // ListNamespaces returns the cluster's namespaces.

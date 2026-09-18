@@ -97,12 +97,13 @@ func NewApp() *App {
 	}
 }
 
-// Close releases anything the run opened.
+// Close releases anything the run opened. The App can be reused for
+// another run afterwards; memoised ports are dropped.
 func (a *App) Close() {
 	if a.closeStore != nil {
 		a.closeStore()
-		a.closeStore = nil
 	}
+	a.closeStore, a.st, a.cfg, a.repo = nil, nil, nil, nil
 }
 
 // IO is what a command uses to talk to the user.

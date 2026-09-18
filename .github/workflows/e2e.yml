@@ -29,9 +29,8 @@ jobs:
 
       - name: Install the sealed-secrets controller
         run: |
-          helm repo add sealed-secrets https://bitnami-labs.github.io/sealed-secrets
-          helm install sealed-secrets sealed-secrets/sealed-secrets \
-            --namespace kube-system --version 2.17.4 --wait --timeout 180s
+          kubectl apply -f https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.30.0/controller.yaml
+          kubectl -n kube-system rollout status deployment/sealed-secrets-controller --timeout=180s
 
       - name: Install kubeseal
         run: |

@@ -1,0 +1,48 @@
+## waxseal gcp provision
+
+Enable APIs and create the service account waxseal needs
+
+### Synopsis
+
+Run the gcloud steps that prepare a project: enable Secret Manager (and
+the Calendar and Tasks APIs with --enable-reminders-api), create a service
+account with Secret Manager admin, and optionally a Workload Identity pool
+for GitHub Actions. With --create the project itself is created first,
+which needs a billing account and a folder or organization.
+
+Steps that are already done are skipped. --dry-run prints the plan.
+
+```
+waxseal gcp provision [flags]
+```
+
+### Options
+
+```
+      --billing-account string   billing account to link to a created project
+      --create                   create the project first
+      --enable-reminders-api     also enable the Calendar and Tasks APIs
+      --folder string            folder ID for a created project
+      --github-repo string       owner/repo to set up Workload Identity for GitHub Actions
+  -h, --help                     help for provision
+      --organization string      organization ID for a created project
+      --project string           GCP project ID
+      --service-account string   service account ID to create (default "waxseal")
+```
+
+### Options inherited from parent commands
+
+```
+      --dry-run         show what would change without changing anything
+      --no-color        disable colour
+      --no-input        never prompt; fail if an input is missing
+  -o, --output string   output format: text or json (default "text")
+      --repo string     path to the repository (default ".")
+      --verbose         log subprocess calls and debug detail to stderr
+  -y, --yes             answer yes to confirmations
+```
+
+### SEE ALSO
+
+* [waxseal gcp](waxseal_gcp.md)	 - Provision GCP for waxseal
+

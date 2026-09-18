@@ -16,7 +16,8 @@ import (
 
 // Client runs gcloud. The zero value is usable; tests inject a runner.
 type Client struct {
-	run proc.Runner
+	run        proc.Runner
+	retryDelay time.Duration // tests shorten the propagation wait
 }
 
 func (c Client) runner() proc.Runner {
@@ -43,6 +44,8 @@ func classify(err error) error {
 		return fmt.Errorf("%w: %w", ErrProjectIDTaken, err)
 	case strings.Contains(msg, "already exists"):
 		return fmt.Errorf("%w: %w", core.ErrAlreadyExists, err)
+	case strings.Contains(msg, "does not exist"):
+		return fmt.Errorf("%w: %w", errNotPropagated, err)
 	}
 	return err
 }
@@ -107,11 +110,27 @@ type Step struct {
 }
 
 // Apply runs each step, treating "already exists" as done. onStep is called
-// after every step with nil for success or skipped-as-done.
+// after every step with nil for success or skipped-as-done. A step that
+// fails because a resource created by an earlier step "does not exist" yet
+// is retried a few times: IAM sees a new service account only after a
+// short propagation delay.
 func (c Client) Apply(ctx context.Context, steps []Step, onStep func(Step, error)) error {
 	for _, step := range steps {
-		_, err := c.runner()(ctx, nil, "gcloud", step.Args...)
-		err = classify(err)
+		var err error
+		for attempt := 0; attempt < 5; attempt++ {
+			_, err = c.runner()(ctx, nil, "gcloud", step.Args...)
+			err = classify(err)
+			if !errors.Is(err, errNotPropagated) {
+				break
+			}
+			select {
+			case <-ctx.Done():
+				err = ctx.Err()
+			case <-time.After(c.propagationDelay()):
+				continue
+			}
+			break
+		}
 		if errors.Is(err, core.ErrAlreadyExists) {
 			err = nil
 		}
@@ -123,6 +142,16 @@ func (c Client) Apply(ctx context.Context, steps []Step, onStep func(Step, error
 		}
 	}
 	return nil
+}
+
+// errNotPropagated marks a failure that IAM propagation will resolve.
+var errNotPropagated = errors.New("resource not yet visible")
+
+func (c Client) propagationDelay() time.Duration {
+	if c.retryDelay > 0 {
+		return c.retryDelay
+	}
+	return 3 * time.Second
 }
 
 // Interactive runs gcloud attached to the terminal, for flows such as

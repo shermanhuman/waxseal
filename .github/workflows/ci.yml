@@ -41,6 +41,16 @@ jobs:
         if: runner.os != 'Linux'
         run: go test ./...
 
+      - name: Command reference is up to date
+        if: runner.os == 'Linux'
+        run: |
+          rm -rf docs/cli && mkdir -p docs/cli && go run ./cmd/waxseal docs docs/cli
+          git diff --exit-code docs/cli || (echo "docs/cli is stale: run 'go run ./cmd/waxseal docs docs/cli'" && exit 1)
+
+      - name: Definition of done
+        if: runner.os == 'Linux'
+        run: ./scripts/dod.sh
+
   lint:
     runs-on: ubuntu-latest
     steps:

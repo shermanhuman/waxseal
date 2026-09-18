@@ -5,8 +5,9 @@
 // kubectl, and a fake Secret Manager. It covers exactly what the unit
 // fakes cannot: that the controller decrypts what waxseal seals.
 //
-// Run: kind create cluster --config tests/e2e/kind-config.yaml && helm ...
-// (see .github/workflows/e2e.yml), then go test -tags e2e ./tests/e2e/
+// Run: kind create cluster --config tests/e2e/kind-config.yaml, install the
+// controller as .github/workflows/e2e.yml does, then
+// go test -tags e2e ./tests/e2e/
 //
 // With WAXSEAL_GSM_E2E=<project>, the real Secret Manager of that project
 // is used instead of the fake; secrets it creates are deleted afterwards.
@@ -26,6 +27,7 @@ import (
 	"time"
 
 	"github.com/shermanhuman/waxseal/internal/cli"
+	"github.com/shermanhuman/waxseal/internal/kube"
 	"github.com/shermanhuman/waxseal/internal/store"
 )
 
@@ -140,7 +142,7 @@ func (h *harness) project() string {
 
 func TestSmoke(t *testing.T) {
 	h := newHarness(t)
-	ns, svc, err := findController()
+	ns, svc, err := kube.Client{}.FindController(context.Background())
 	if err != nil {
 		t.Fatalf("no sealed-secrets controller: %v", err)
 	}
@@ -217,17 +219,4 @@ func waitFor(t *testing.T, cond func() bool) {
 		}
 		time.Sleep(2 * time.Second)
 	}
-}
-
-func findController() (ns, svc string, err error) {
-	out, err := exec.Command("kubectl", "get", "svc", "-A", "-l", "app.kubernetes.io/name=sealed-secrets",
-		"-o", "jsonpath={.items[0].metadata.namespace} {.items[0].metadata.name}").Output()
-	if err != nil {
-		return "", "", err
-	}
-	parts := strings.Fields(string(out))
-	if len(parts) != 2 {
-		return "", "", fmt.Errorf("unexpected output %q", out)
-	}
-	return parts[0], parts[1], nil
 }

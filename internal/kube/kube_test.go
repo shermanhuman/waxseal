@@ -50,18 +50,25 @@ func TestGetSecret(t *testing.T) {
 }
 
 func TestFindController(t *testing.T) {
-	pods := "kubectl get pods -A -l app.kubernetes.io/name=sealed-secrets -o jsonpath={.items[0].metadata.namespace}"
-	c := Client{run: script{
-		pods: {out: "sealed-secrets"},
-		"kubectl get svc -n sealed-secrets sealed-secrets-controller": {err: &proc.ExitError{Name: "kubectl", Code: 1}},
-		"kubectl get svc -n sealed-secrets sealed-secrets":            {out: "ok"},
-	}.runner(t)}
+	helm := "kubectl get svc -A -l app.kubernetes.io/name=sealed-secrets -o jsonpath={.items[0].metadata.namespace} {.items[0].metadata.name}"
+	manifest := "kubectl get svc -A -l name=sealed-secrets-controller -o jsonpath={.items[0].metadata.namespace} {.items[0].metadata.name}"
+
+	c := Client{run: script{helm: {out: "sealed-secrets sealed-secrets"}}.runner(t)}
 	ns, svc, err := c.FindController(context.Background())
 	if err != nil || ns != "sealed-secrets" || svc != "sealed-secrets" {
-		t.Errorf("got %q %q %v", ns, svc, err)
+		t.Errorf("helm labels: got %q %q %v", ns, svc, err)
 	}
 
-	none := Client{run: script{pods: {out: ""}}.runner(t)}
+	c = Client{run: script{
+		helm:     {err: &proc.ExitError{Name: "kubectl", Code: 1, Stderr: "error: array index out of bounds"}},
+		manifest: {out: "kube-system sealed-secrets-controller"},
+	}.runner(t)}
+	ns, svc, err = c.FindController(context.Background())
+	if err != nil || ns != "kube-system" || svc != "sealed-secrets-controller" {
+		t.Errorf("release manifest labels: got %q %q %v", ns, svc, err)
+	}
+
+	none := Client{run: script{helm: {out: ""}, manifest: {out: ""}}.runner(t)}
 	if _, _, err := none.FindController(context.Background()); !core.IsNotFound(err) {
 		t.Errorf("no controller: got %v", err)
 	}

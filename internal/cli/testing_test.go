@@ -99,7 +99,6 @@ func (ta *testApp) run(args ...string) (stdout, stderr string, code int) {
 	ta.Out.Reset()
 	ta.Err.Reset()
 	ta.Flags = GlobalFlags{Repo: ta.Flags.Repo}
-	ta.cfg, ta.repo, ta.st = nil, nil, nil
 	code = Main(context.Background(), ta.App, args)
 	return ta.Out.String(), ta.Err.String(), code
 }
