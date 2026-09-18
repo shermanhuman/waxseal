@@ -19,22 +19,22 @@ func IsTerminal(w any) bool {
 }
 
 // Interactive decides whether prompting is allowed: not --no-input, not in
-// CI, and both stdin and stderr are terminals. stderr rather than stdout
-// because prompts are drawn there, so `waxseal ... -o json | jq` can still
-// ask a question.
-func Interactive(noInput bool, getenv func(string) string, stdin, stderr any) bool {
+// CI, and both stdin and stderr are terminals (per isTTY, which tests stub).
+// stderr rather than stdout because prompts are drawn there, so
+// `waxseal ... -o json | jq` can still ask a question.
+func Interactive(noInput bool, getenv func(string) string, isTTY func(any) bool, stdin, stderr any) bool {
 	if noInput || truthy(getenv("CI")) {
 		return false
 	}
-	return IsTerminal(stdin) && IsTerminal(stderr)
+	return isTTY(stdin) && isTTY(stderr)
 }
 
 // ColorEnabled decides whether to colour output written to w.
-func ColorEnabled(noColor bool, getenv func(string) string, w any) bool {
+func ColorEnabled(noColor bool, getenv func(string) string, isTTY func(any) bool, w any) bool {
 	if noColor || getenv("NO_COLOR") != "" || getenv("TERM") == "dumb" {
 		return false
 	}
-	return IsTerminal(w)
+	return isTTY(w)
 }
 
 func truthy(v string) bool {

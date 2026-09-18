@@ -83,7 +83,7 @@ func TestShow(t *testing.T) {
 		t.Errorf("DATABASE_URL = %+v", url)
 	}
 
-	if _, err := s.Show("nope"); !core.IsNotFound(err) {
+	if _, err := s.Show("nope"); !errors.Is(err, ErrNotRegistered) {
 		t.Errorf("unknown secret: got %v", err)
 	}
 }

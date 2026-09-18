@@ -9,6 +9,11 @@ linters:
     - ineffassign
     - unused
   settings:
+    errcheck:
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
     staticcheck:
       # Quickfix suggestions are style, not defects.
       checks: ["all", "-QF*", "-ST*"]

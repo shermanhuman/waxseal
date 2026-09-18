@@ -15,19 +15,29 @@ func env(m map[string]string) func(string) string {
 func TestInteractive(t *testing.T) {
 	// Buffers are never terminals, so the only way to be interactive in a
 	// test is not at all; the rest of the rule is exercised by short-circuits.
-	if Interactive(false, env(nil), nil, nil) {
+	tty := func(any) bool { return true }
+	if Interactive(false, env(nil), IsTerminal, nil, nil) {
 		t.Error("non-terminal streams must not be interactive")
 	}
+	if !Interactive(false, env(nil), tty, nil, nil) {
+		t.Error("terminals with no CI and no --no-input are interactive")
+	}
+	if Interactive(true, env(nil), tty, nil, nil) {
+		t.Error("--no-input wins over a terminal")
+	}
 	for _, ci := range []string{"1", "true", "yes", "anything"} {
-		if Interactive(false, env(map[string]string{"CI": ci}), nil, nil) {
+		if Interactive(false, env(map[string]string{"CI": ci}), tty, nil, nil) {
 			t.Errorf("CI=%q must not be interactive", ci)
 		}
 	}
 	if truthy("0") || truthy("false") || truthy("") {
 		t.Error("0/false/empty must not count as CI")
 	}
-	if ColorEnabled(false, env(map[string]string{"NO_COLOR": "1"}), nil) || ColorEnabled(true, env(nil), nil) {
+	if ColorEnabled(false, env(map[string]string{"NO_COLOR": "1"}), tty, nil) || ColorEnabled(true, env(nil), tty, nil) {
 		t.Error("NO_COLOR and --no-color must disable colour")
+	}
+	if !ColorEnabled(false, env(nil), tty, nil) {
+		t.Error("a terminal without NO_COLOR gets colour")
 	}
 }
 

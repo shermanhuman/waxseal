@@ -11,7 +11,7 @@ this file tracks gates, test obligations, and deliberate behaviour changes.
 - [x] 2 Ports: `proc`, `kube`, `gcp`, `seal.FetchCert`/`CertInfo`, `reminder.New`, `store.EnsureVersion` (the `template` -> `computed` rename and `Payload.Generator` -> `*core.GeneratorConfig` are deferred to the swap so the frozen CLI is not touched)
 - [x] 3 Read-only ops: `List`, `Show`, `Check`, `Discover`
 - [x] 5 `internal/ui`
-- [ ] 6a `cli2` skeleton + help-golden walker + `--no-input` contract walker
+- [x] 6a `cli2` skeleton + help-golden walker + `--no-input` contract walker
 - [ ] 4 Mutating ops (`apply` first, then `Reseal` dual-run against goldens)
 - [ ] 6b Remaining commands + JSON goldens
 - [ ] 7 Swap, dogfood, smoke e2e, `scripts/dod.sh` clean

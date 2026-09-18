@@ -82,9 +82,9 @@ type SecretView struct {
 	Keys         []KeyView `json:"keys"`
 }
 
-// Show returns the detail of one secret.
+// Show returns the detail of one secret, retired or not.
 func (s *Service) Show(shortName string) (*SecretView, error) {
-	m, err := s.Repo.Metadata(shortName)
+	m, err := s.metadata(shortName)
 	if err != nil {
 		return nil, err
 	}
@@ -164,7 +164,9 @@ func daysBetween(from, to time.Time) int {
 // ErrNotRegistered is wrapped when a short name is not a registered secret.
 var ErrNotRegistered = errors.New("secret is not registered")
 
-func (s *Service) activeMetadata(shortName string) (*core.SecretMetadata, error) {
+// metadata loads a secret by short name, mapping a missing file to
+// ErrNotRegistered.
+func (s *Service) metadata(shortName string) (*core.SecretMetadata, error) {
 	if shortName == "" {
 		return nil, &core.MissingInputError{Field: "<secret>"}
 	}
@@ -173,6 +175,15 @@ func (s *Service) activeMetadata(shortName string) (*core.SecretMetadata, error)
 		if core.IsNotFound(err) {
 			return nil, fmt.Errorf("%s: %w", shortName, ErrNotRegistered)
 		}
+		return nil, err
+	}
+	return m, nil
+}
+
+// activeMetadata is metadata for a secret that may still be changed.
+func (s *Service) activeMetadata(shortName string) (*core.SecretMetadata, error) {
+	m, err := s.metadata(shortName)
+	if err != nil {
 		return nil, err
 	}
 	if m.IsRetired() {

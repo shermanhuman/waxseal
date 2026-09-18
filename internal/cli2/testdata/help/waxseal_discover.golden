@@ -1,0 +1,18 @@
+Walk the repository for SealedSecret manifests and report which ones
+metadata already covers. Nothing is written; register new manifests with
+`waxseal import`, which reads their plaintext from the cluster.
+
+Usage:
+  waxseal discover [flags]
+
+Flags:
+  -h, --help   help for discover
+
+Global Flags:
+      --dry-run         show what would change without changing anything
+      --no-color        disable colour
+      --no-input        never prompt; fail if an input is missing
+  -o, --output string   output format: text or json (default "text")
+      --repo string     path to the repository (default ".")
+      --verbose         log subprocess calls and debug detail to stderr
+  -y, --yes             answer yes to confirmations
