@@ -1,0 +1,31 @@
+{
+  "secrets": [
+    {
+      "shortName": "ingress-nginx-wildcard-tls",
+      "dryRun": true,
+      "changes": [
+        {
+          "op": "create",
+          "kind": "gsm-version",
+          "target": "projects/waxseal-test-project/secrets/ingress-nginx-wildcard-tls-tls-crt"
+        },
+        {
+          "op": "update",
+          "kind": "metadata",
+          "target": ".waxseal/metadata/ingress-nginx-wildcard-tls.yaml"
+        },
+        {
+          "op": "update",
+          "kind": "manifest",
+          "target": "apps/ingress/tls-sealed-secret.yaml"
+        }
+      ],
+      "added": [
+        "tls.crt"
+      ],
+      "updated": null,
+      "missingInCluster": null
+    }
+  ],
+  "dryRun": true
+}

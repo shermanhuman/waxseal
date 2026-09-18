@@ -1,0 +1,43 @@
+waxseal keeps the plaintext of every Kubernetes secret in Google Secret
+Manager and only ciphertext in Git. Metadata under .waxseal/ pins each key
+to a GSM secret and version, so manifests can be re-sealed at any time.
+
+Every command can be driven entirely by flags. On a terminal, waxseal
+prompts for whatever you leave out; with --no-input or in CI it fails
+instead, naming the missing flag.
+
+Usage:
+  waxseal [command]
+
+Secrets and keys:
+  key         Add keys, set their values and change how they are managed
+  secret      List, inspect and retire secrets
+
+Operations:
+  check       Check certificate, expiry, metadata, GSM and cluster state
+  reminders   Expiry reminders in Google Tasks or Calendar
+  reseal      Re-encrypt manifests from Secret Manager
+  rotate      Generate new values for generated keys and reseal them
+
+Setup:
+  cert        Manage the controller certificate
+  completion  Generate the autocompletion script for the specified shell
+  discover    Find SealedSecret manifests in the repository
+  gcp         Provision GCP for waxseal
+  help        Help about any command
+  import      Register manifests by reading their values from the cluster
+  init        Write .waxseal/config.yaml for this repository
+  setup       Guided first-time setup (interactive)
+
+Flags:
+      --dry-run         show what would change without changing anything
+  -h, --help            help for waxseal
+      --no-color        disable colour
+      --no-input        never prompt; fail if an input is missing
+  -o, --output string   output format: text or json (default "text")
+      --repo string     path to the repository (default ".")
+      --verbose         log subprocess calls and debug detail to stderr
+  -v, --version         version for waxseal
+  -y, --yes             answer yes to confirmations
+
+Use "waxseal [command] --help" for more information about a command.

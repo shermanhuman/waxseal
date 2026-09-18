@@ -1,0 +1,42 @@
+## waxseal key edit
+
+Change how a key is managed: rotation, generator, expiry, template
+
+### Synopsis
+
+Change a key's rotation mode, generator or expiry (metadata only), or a
+computed key's template and values (stores a new payload version and
+reseals; the secret part is untouched).
+
+```
+waxseal key edit [secret] [key] [flags]
+```
+
+### Options
+
+```
+      --bytes int           random bytes for the generator (default 32)
+      --expires string      expiry date (YYYY-MM-DD or RFC 3339), or 'none' to clear
+      --generator string    generator for generated keys (randomBase64|randomHex)
+  -h, --help                help for edit
+      --param stringArray   template value as name=value (repeatable)
+      --rotation string     how the key is rotated (generated|external|static|unknown)
+      --template string     make this a computed key rendered from the template; {{secret}} is the stored value
+```
+
+### Options inherited from parent commands
+
+```
+      --dry-run         show what would change without changing anything
+      --no-color        disable colour
+      --no-input        never prompt; fail if an input is missing
+  -o, --output string   output format: text or json (default "text")
+      --repo string     path to the repository (default ".")
+      --verbose         log subprocess calls and debug detail to stderr
+  -y, --yes             answer yes to confirmations
+```
+
+### SEE ALSO
+
+* [waxseal key](waxseal_key.md)	 - Add keys, set their values and change how they are managed
+

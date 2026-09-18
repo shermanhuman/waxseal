@@ -1,0 +1,15 @@
+{
+  "summary": "initialised for project other",
+  "dryRun": true,
+  "changes": [
+    {
+      "op": "create",
+      "kind": "config",
+      "target": ".waxseal/config.yaml"
+    }
+  ],
+  "next": [
+    "fetch the controller certificate: waxseal cert fetch",
+    "find existing manifests: waxseal discover"
+  ]
+}

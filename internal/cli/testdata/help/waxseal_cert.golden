@@ -1,0 +1,21 @@
+Manage the controller certificate
+
+Usage:
+  waxseal cert [command]
+
+Available Commands:
+  fetch       Fetch the controller's sealing certificate into the repo
+
+Flags:
+  -h, --help   help for cert
+
+Global Flags:
+      --dry-run         show what would change without changing anything
+      --no-color        disable colour
+      --no-input        never prompt; fail if an input is missing
+  -o, --output string   output format: text or json (default "text")
+      --repo string     path to the repository (default ".")
+      --verbose         log subprocess calls and debug detail to stderr
+  -y, --yes             answer yes to confirmations
+
+Use "waxseal cert [command] --help" for more information about a command.

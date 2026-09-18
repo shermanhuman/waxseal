@@ -1,0 +1,37 @@
+{
+  "project": "p",
+  "steps": [
+    {
+      "Desc": "Enable APIs",
+      "Args": [
+        "services",
+        "enable",
+        "--project=p",
+        "secretmanager.googleapis.com"
+      ]
+    },
+    {
+      "Desc": "Create service account",
+      "Args": [
+        "iam",
+        "service-accounts",
+        "create",
+        "waxseal",
+        "--project=p",
+        "--display-name=WaxSeal Service Account",
+        "--description=Service account for WaxSeal SealedSecrets management"
+      ]
+    },
+    {
+      "Desc": "Grant Secret Manager Admin",
+      "Args": [
+        "projects",
+        "add-iam-policy-binding",
+        "p",
+        "--member=serviceAccount:waxseal@p.iam.gserviceaccount.com",
+        "--role=roles/secretmanager.admin"
+      ]
+    }
+  ],
+  "dryRun": true
+}

@@ -1,267 +1,78 @@
-// Package cli provides the Cobra command structure for waxseal.
 package cli
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
-	"runtime/debug"
-	"strings"
+	"cmp"
 
 	"github.com/spf13/cobra"
+
+	"github.com/shermanhuman/waxseal/internal/version"
 )
 
-var (
-	// Global flags
-	repoPath   string
-	configPath string
-	dryRun     bool
-	yes        bool
-)
-
-// Version information (can be overridden at build time via ldflags)
-var (
-	Version   = "0.4.18"
-	Commit    = ""
-	BuildDate = ""
-)
-
-func init() {
-	// Fall back to Go's embedded VCS info for local builds.
-	// Goreleaser ldflags take priority when set.
-	if Commit == "" || BuildDate == "" {
-		if info, ok := debug.ReadBuildInfo(); ok {
-			for _, s := range info.Settings {
-				switch s.Key {
-				case "vcs.revision":
-					if Commit == "" && len(s.Value) >= 7 {
-						Commit = s.Value[:7]
-					}
-				case "vcs.time":
-					if BuildDate == "" {
-						BuildDate = s.Value
-					}
-				case "vcs.modified":
-					if s.Value == "true" && Commit != "" {
-						Commit += "-dirty"
-					}
-				}
-			}
-		}
-	}
-}
-
-// rootCmd is the base command for waxseal.
-var rootCmd = &cobra.Command{
-	Use:   "waxseal",
-	Short: "GitOps-friendly SealedSecrets management with GSM as source of truth",
-	Long: `waxseal makes SealedSecrets GitOps-friendly by keeping plaintext out of Git.
-
-Source of truth:
-  - All plaintext secret values live in Google Secret Manager (GSM)
-  - Git stores SealedSecret manifests (ciphertext) and metadata
-
-Run 'waxseal help advanced' for non-interactive / scripting commands.`,
-	Version: Version,
-}
-
-// Command group IDs
 const (
-	groupKeyMgmt      = "key-management"
-	groupOps          = "operations"
-	groupMeta         = "metadata"
-	groupInstallation = "installation"
+	groupSecrets = "secrets"
+	groupOps     = "ops"
+	groupSetup   = "setup"
 )
 
-// advancedCmd shows the advanced help output.
-var advancedCmd = &cobra.Command{
-	Use:   "advanced",
-	Short: "Show advanced commands",
-	Long: `Show advanced commands for scripting, CI, and power-user workflows.
+func newRootCmd(app *App) *cobra.Command {
+	root := &cobra.Command{
+		Use:   "waxseal",
+		Short: "Manage SealedSecrets with Google Secret Manager as the source of truth",
+		Long: `waxseal keeps the plaintext of every Kubernetes secret in Google Secret
+Manager and only ciphertext in Git. Metadata under .waxseal/ pins each key
+to a GSM secret and version, so manifests can be re-sealed at any time.
 
-These commands are fully functional but hidden from the primary help
-to keep the default output focused on daily operations.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("Advanced Commands:")
-		fmt.Println()
-		fmt.Println("Key Management (non-interactive):")
-		fmt.Printf("  %-20s %s\n", "addkey", "Add a key to a secret (or create a new secret)")
-		fmt.Printf("  %-20s %s\n", "updatekey", "Update an existing key's value")
-		fmt.Printf("  %-20s %s\n", "retirekey", "Mark a key as retired")
-		fmt.Println()
-		fmt.Println("Validation (individual checks):")
-		fmt.Printf("  %-20s %s\n", "check cert", "Certificate health only")
-		fmt.Printf("  %-20s %s\n", "check expiry", "Secret expiration only")
-		fmt.Printf("  %-20s %s\n", "check metadata", "Config/schema/hygiene validation")
-		fmt.Printf("  %-20s %s\n", "check gsm", "Verify GSM secret versions exist")
-		fmt.Printf("  %-20s %s\n", "check cluster", "Compare metadata vs live cluster keys")
-		fmt.Println()
-		fmt.Println("Discovery & Bootstrap:")
-		fmt.Printf("  %-20s %s\n", "discover", "Scan repo for SealedSecret manifests")
-		fmt.Printf("  %-20s %s\n", "gsm bootstrap", "Push secrets from cluster to GSM")
-		fmt.Printf("  %-20s %s\n", "gsm gcp-bootstrap", "Initialize GCP infrastructure")
-		fmt.Println()
-		fmt.Println("Reminders:")
-		fmt.Printf("  %-20s %s\n", "reminders sync", "Sync calendar/task reminders")
-		fmt.Printf("  %-20s %s\n", "reminders list", "List upcoming expirations")
-		fmt.Printf("  %-20s %s\n", "reminders clear", "Clear reminders for retired secrets")
-		fmt.Printf("  %-20s %s\n", "reminders setup", "Configure reminder providers")
-	},
-}
-
-func init() {
-	rootCmd.PersistentFlags().StringVar(&repoPath, "repo", ".", "Path to the GitOps repository")
-	rootCmd.PersistentFlags().StringVar(&configPath, "config", ".waxseal/config.yaml", "Path to waxseal config file")
-	rootCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "Show what would be done without making changes")
-	rootCmd.PersistentFlags().BoolVar(&yes, "yes", false, "Skip confirmation prompts (where applicable)")
-
-	// Custom version template to show commit and build date
-	versionTpl := "waxseal {{.Version}}\n"
-	if Commit != "" {
-		versionTpl += "Commit: " + Commit + "\n"
+Every command can be driven entirely by flags. On a terminal, waxseal
+prompts for whatever you leave out; with --no-input or in CI it fails
+instead, naming the missing flag.`,
+		Version:       version.Version,
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		CompletionOptions: cobra.CompletionOptions{
+			DisableDefaultCmd: false,
+		},
 	}
-	if BuildDate != "" {
-		versionTpl += "Built:  " + BuildDate + "\n"
-	}
-	rootCmd.SetVersionTemplate(versionTpl)
+	root.SetVersionTemplate(version.String())
+	root.SetFlagErrorFunc(flagErrorFunc)
 
-	// Command groups for organized help output
-	rootCmd.AddGroup(
-		&cobra.Group{ID: groupKeyMgmt, Title: "Key Management:"},
+	f := root.PersistentFlags()
+	f.StringVar(&app.Flags.Repo, "repo", cmp.Or(app.Flags.Repo, "."), "path to the repository")
+	f.BoolVar(&app.Flags.DryRun, "dry-run", false, "show what would change without changing anything")
+	f.BoolVarP(&app.Flags.Yes, "yes", "y", false, "answer yes to confirmations")
+	f.BoolVar(&app.Flags.NoInput, "no-input", false, "never prompt; fail if an input is missing")
+	f.StringVarP(&app.Flags.Output, "output", "o", "text", "output format: text or json")
+	f.BoolVar(&app.Flags.NoColor, "no-color", false, "disable colour")
+	f.BoolVar(&app.Flags.Verbose, "verbose", false, "log subprocess calls and debug detail to stderr")
+	_ = root.RegisterFlagCompletionFunc("output", cobra.FixedCompletions([]string{"text", "json"}, cobra.ShellCompDirectiveNoFileComp))
+
+	root.AddGroup(
+		&cobra.Group{ID: groupSecrets, Title: "Secrets and keys:"},
 		&cobra.Group{ID: groupOps, Title: "Operations:"},
-		&cobra.Group{ID: groupMeta, Title: "Metadata:"},
-		&cobra.Group{ID: groupInstallation, Title: "Installation:"},
+		&cobra.Group{ID: groupSetup, Title: "Setup:"},
 	)
+	root.AddCommand(
+		newSecretCmd(app),
+		newKeyCmd(app),
+		newRotateCmd(app),
+		newResealCmd(app),
+		newCheckCmd(app),
+		newRemindersCmd(app),
+		newInitCmd(app),
+		newGCPCmd(app),
+		newCertCmd(app),
+		newDiscoverCmd(app),
+		newImportCmd(app),
+		newSetupCmd(app),
+		newDocsCmd(app),
+	)
+	root.SetHelpCommandGroupID(groupSetup)
+	root.SetCompletionCommandGroupID(groupSetup)
 
-	// Add "help advanced" command
-	rootCmd.AddCommand(advancedCmd)
-}
-
-// Execute runs the root command.
-func Execute() error {
-	// Disable Cobra's default error printing
-	rootCmd.SilenceErrors = true
-
-	err := rootCmd.Execute()
-	if err != nil {
-		// Print error with red color and proper spacing
-		fmt.Fprintf(os.Stderr, "\n%sError: %s%s\n\n", styleRed, err.Error(), styleReset)
-	}
-	return err
-}
-
-// requiresMetadata returns true if the command needs .waxseal/metadata to exist.
-func requiresMetadata(cmdName string) bool {
-	commands := map[string]bool{
-		"list":      true,
-		"secrets":   true,
-		"keys":      true,
-		"showkey":   true,
-		"check":     true,
-		"reseal":    true,
-		"rotate":    true,
-		"retirekey": true,
-	}
-	return commands[cmdName]
-}
-
-// checkMetadataExists checks if .waxseal/ exists and offers to run discover if not.
-// Returns true if metadata exists or was created, false if we should abort.
-func checkMetadataExists(cmd *cobra.Command) (bool, error) {
-	// Skip check for commands that don't need metadata
-	if !requiresMetadata(cmd.Name()) {
-		return true, nil
-	}
-
-	metadataDir := filepath.Join(repoPath, ".waxseal", "metadata")
-	configFile := filepath.Join(repoPath, ".waxseal", "config.yaml")
-
-	// Check if config exists
-	if _, err := os.Stat(configFile); os.IsNotExist(err) {
-		fmt.Fprintf(os.Stderr, "No waxseal configuration found at %s\n", configFile)
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Run 'waxseal setup' to set up waxseal in this repository.")
-		return false, nil
-	}
-
-	// Check if metadata directory exists
-	if _, err := os.Stat(metadataDir); os.IsNotExist(err) {
-		fmt.Fprintf(os.Stderr, "No secret metadata found at %s\n", metadataDir)
-		fmt.Fprintln(os.Stderr, "")
-
-		if yes {
-			// Auto-run discover with --yes flag
-			fmt.Fprintln(os.Stderr, "Running 'waxseal discover --non-interactive'...")
-			return runDiscoverNonInteractive()
-		}
-
-		// Prompt user
-		ok, err := confirm("Run 'waxseal discover' to find existing SealedSecrets?")
-		if err != nil {
-			return false, err
-		}
-		if ok {
-			return runDiscoverNonInteractive()
-		}
-
-		fmt.Fprintln(os.Stderr, "\nNo metadata found. Run 'waxseal discover' to create metadata stubs.")
-		return false, nil
-	}
-
-	// Check if metadata directory is empty
-	entries, err := os.ReadDir(metadataDir)
-	if err != nil {
-		return false, fmt.Errorf("read metadata directory: %w", err)
-	}
-
-	hasYAML := false
-	for _, e := range entries {
-		if strings.HasSuffix(e.Name(), ".yaml") {
-			hasYAML = true
-			break
-		}
-	}
-
-	if !hasYAML {
-		fmt.Fprintf(os.Stderr, "Metadata directory is empty: %s\n", metadataDir)
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Run 'waxseal discover' to find and register SealedSecrets.")
-		return false, nil
-	}
-
-	return true, nil
-}
-
-// runDiscoverNonInteractive runs the discover command in non-interactive mode.
-func runDiscoverNonInteractive() (bool, error) {
-	// Create metadata directory
-	metadataDir := filepath.Join(repoPath, ".waxseal", "metadata")
-	if err := os.MkdirAll(metadataDir, 0o755); err != nil {
-		return false, fmt.Errorf("create metadata directory: %w", err)
-	}
-
-	// Run discover logic
-	// For now, just create the directory and return success
-	// The discover command will populate it
-	fmt.Fprintln(os.Stderr, "Created metadata directory. Run 'waxseal discover' to populate.")
-	return false, nil
-}
-
-// addMetadataCheck adds the auto-bootstrap check to a command.
-func addMetadataCheck(cmd *cobra.Command) {
-	originalPreRunE := cmd.PreRunE
-	cmd.PreRunE = func(c *cobra.Command, args []string) error {
-		ok, err := checkMetadataExists(c)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			// Exit without error - user declined or needs to run init/discover
-			os.Exit(0)
-		}
-		if originalPreRunE != nil {
-			return originalPreRunE(c, args)
+	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
+		if o := app.Flags.Output; o != "text" && o != "json" {
+			return &usageError{err: errInvalidOutput(o)}
 		}
 		return nil
 	}
+	return root
 }

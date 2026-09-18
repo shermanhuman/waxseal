@@ -47,15 +47,6 @@ func TestKubesealSealer_ScopeMapping(t *testing.T) {
 }
 
 // TestKubesealSealer_GetCertFingerprint tests the fingerprint method.
-func TestKubesealSealer_GetCertFingerprint(t *testing.T) {
-	sealer := NewKubesealSealer("/path/to/cert.pem")
-	fingerprint := sealer.GetCertFingerprint()
-	if fingerprint != "kubeseal-binary" {
-		t.Errorf("expected 'kubeseal-binary', got %q", fingerprint)
-	}
-}
-
-// TestKubesealSealer_InterfaceCompliance verifies KubesealSealer implements Sealer.
 func TestKubesealSealer_InterfaceCompliance(t *testing.T) {
 	var _ Sealer = (*KubesealSealer)(nil)
 }

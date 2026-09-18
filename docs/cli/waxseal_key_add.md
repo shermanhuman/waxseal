@@ -1,0 +1,53 @@
+## waxseal key add
+
+Add a key; creates the secret if it does not exist
+
+### Synopsis
+
+Store a new key's value in Secret Manager, record it in metadata and seal it
+into the manifest. The value comes from --from-file (or - for stdin), from
+--generate, or from a masked prompt on a terminal; it is never taken from
+the command line.
+
+When the secret is not registered yet it is created, which needs
+--namespace; the manifest path, scope and type have defaults.
+
+```
+waxseal key add [secret] [key] [flags]
+```
+
+### Options
+
+```
+      --bytes int           random bytes for the generator (default 32)
+      --expires string      expiry date (YYYY-MM-DD or RFC 3339), or 'none' to clear
+      --from-file string    read the value from a file, or from stdin with -
+      --generate            generate a random value
+      --generator string    generator for generated keys (randomBase64|randomHex)
+  -h, --help                help for add
+      --manifest string     manifest path for the new secret (default: apps/<secret>/sealed-secret.yaml)
+      --name string         name of the new SealedSecret (default: the short name)
+      --namespace string    namespace of the new SealedSecret
+      --param stringArray   template value as name=value (repeatable)
+      --rotation string     how the key is rotated (generated|external|static|unknown)
+      --scope string        sealing scope of the new secret (strict|namespace-wide|cluster-wide)
+      --template string     make this a computed key rendered from the template; {{secret}} is the stored value
+      --type string         Kubernetes secret type of the new secret (Opaque|kubernetes.io/dockerconfigjson|kubernetes.io/tls|kubernetes.io/basic-auth|kubernetes.io/ssh-auth|...)
+```
+
+### Options inherited from parent commands
+
+```
+      --dry-run         show what would change without changing anything
+      --no-color        disable colour
+      --no-input        never prompt; fail if an input is missing
+  -o, --output string   output format: text or json (default "text")
+      --repo string     path to the repository (default ".")
+      --verbose         log subprocess calls and debug detail to stderr
+  -y, --yes             answer yes to confirmations
+```
+
+### SEE ALSO
+
+* [waxseal key](waxseal_key.md)	 - Add keys, set their values and change how they are managed
+

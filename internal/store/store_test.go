@@ -125,34 +125,6 @@ func TestFakeStore_AddVersionToNonexistent(t *testing.T) {
 	}
 }
 
-func TestFakeStore_SecretExists(t *testing.T) {
-	ctx := context.Background()
-	store := NewFakeStore()
-
-	secretResource := "projects/test/secrets/my-secret"
-
-	// Should not exist initially
-	exists, err := store.SecretExists(ctx, secretResource)
-	if err != nil {
-		t.Fatalf("SecretExists failed: %v", err)
-	}
-	if exists {
-		t.Error("secret should not exist initially")
-	}
-
-	// Create it
-	_, _ = store.CreateSecret(ctx, secretResource, []byte("data"))
-
-	// Should exist now
-	exists, err = store.SecretExists(ctx, secretResource)
-	if err != nil {
-		t.Fatalf("SecretExists failed: %v", err)
-	}
-	if !exists {
-		t.Error("secret should exist after creation")
-	}
-}
-
 func TestFakeStore_SetVersion(t *testing.T) {
 	store := NewFakeStore()
 	ctx := context.Background()
@@ -212,5 +184,59 @@ func TestSecretVersionResource(t *testing.T) {
 	want := "projects/my-project/secrets/my-secret/versions/3"
 	if got != want {
 		t.Errorf("SecretVersionResource() = %q, want %q", got, want)
+	}
+}
+
+func TestFakeStore_FailOn(t *testing.T) {
+	ctx := context.Background()
+	boom := errors.New("boom")
+
+	f := NewFakeStore()
+	f.FailOn("CreateSecret", "projects/p/secrets/b", boom)
+
+	if _, _, err := f.EnsureVersion(ctx, "projects/p/secrets/a", []byte("x")); err != nil {
+		t.Fatalf("unrelated resource should succeed: %v", err)
+	}
+	if _, _, err := f.EnsureVersion(ctx, "projects/p/secrets/b", []byte("x")); !errors.Is(err, boom) {
+		t.Fatalf("got %v, want injected error", err)
+	}
+	if got := f.Resources(); len(got) != 1 || got[0] != "projects/p/secrets/a" {
+		t.Errorf("Resources() = %v, want only secret a", got)
+	}
+
+	f.FailOn("DeleteSecret", "", boom)
+	if err := f.DeleteSecret(ctx, "projects/p/secrets/a"); !errors.Is(err, boom) {
+		t.Errorf("wildcard failure: got %v, want injected error", err)
+	}
+}
+
+func TestFakeStore_EnsureVersion(t *testing.T) {
+	ctx := context.Background()
+	f := NewFakeStore()
+	const res = "projects/p/secrets/a"
+
+	v, created, err := f.EnsureVersion(ctx, res, []byte("one"))
+	if err != nil || v != "1" || !created {
+		t.Fatalf("first: %q %v %v", v, created, err)
+	}
+	v, created, err = f.EnsureVersion(ctx, res, []byte("two"))
+	if err != nil || v != "2" || created {
+		t.Fatalf("second: %q %v %v", v, created, err)
+	}
+
+	for _, tc := range []struct {
+		version string
+		want    bool
+	}{{"1", true}, {"2", true}, {"3", false}} {
+		got, err := f.VersionExists(ctx, res, tc.version)
+		if err != nil || got != tc.want {
+			t.Errorf("VersionExists(%s) = %v, %v; want %v", tc.version, got, err, tc.want)
+		}
+	}
+	if _, err := f.VersionExists(ctx, res, "latest"); err == nil {
+		t.Error("alias versions must be rejected")
+	}
+	if got, err := f.VersionExists(ctx, "projects/p/secrets/missing", "1"); err != nil || got {
+		t.Errorf("missing secret: got %v, %v", got, err)
 	}
 }

@@ -25,17 +25,17 @@ type Store interface {
 	// Returns ErrAlreadyExists if the secret already exists.
 	CreateSecret(ctx context.Context, secretResource string, data []byte) (string, error)
 
-	// CreateSecretVersion creates a secret if needed and adds a version.
-	// This is an idempotent operation - it won't fail if secret already exists.
-	// Useful for bootstrapping where you want to ensure data is stored.
-	CreateSecretVersion(ctx context.Context, secretResource string, data []byte) (string, error)
-
 	// DeleteSecret permanently deletes a secret and all its versions.
 	// Returns ErrNotFound if the secret doesn't exist.
 	DeleteSecret(ctx context.Context, secretResource string) error
 
-	// SecretExists checks if a secret exists.
-	SecretExists(ctx context.Context, secretResource string) (bool, error)
+	// EnsureVersion adds a version to the secret, creating the secret first
+	// if it does not exist. created reports whether this call created it,
+	// which is what a caller needs to know to roll back safely.
+	EnsureVersion(ctx context.Context, secretResource string, data []byte) (version string, created bool, err error)
+
+	// VersionExists reports whether the numeric version exists and is enabled.
+	VersionExists(ctx context.Context, secretResource string, version string) (bool, error)
 }
 
 // SecretResource constructs a GSM secret resource path.

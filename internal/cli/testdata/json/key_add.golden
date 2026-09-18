@@ -1,0 +1,24 @@
+{
+  "summary": "web/password stored as GSM version ",
+  "dryRun": true,
+  "changes": [
+    {
+      "op": "create",
+      "kind": "gsm-version",
+      "target": "projects/waxseal-test-project/secrets/web-password"
+    },
+    {
+      "op": "update",
+      "kind": "metadata",
+      "target": ".waxseal/metadata/web.yaml"
+    },
+    {
+      "op": "create",
+      "kind": "manifest",
+      "target": "apps/web/sealed-secret.yaml"
+    }
+  ],
+  "next": [
+    "commit the changed files: .waxseal/metadata/web.yaml apps/web/sealed-secret.yaml"
+  ]
+}

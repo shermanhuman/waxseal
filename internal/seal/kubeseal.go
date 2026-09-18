@@ -1,16 +1,18 @@
 package seal
 
 import (
-	"bytes"
+	"context"
 	"fmt"
-	"os/exec"
 	"strings"
+
+	"github.com/shermanhuman/waxseal/internal/proc"
 )
 
 // KubesealSealer delegates to the kubeseal binary for encryption.
 // This ensures compatibility with the sealed secrets controller.
 type KubesealSealer struct {
 	certPath string
+	run      proc.Runner
 }
 
 // NewKubesealSealer creates a sealer that uses the kubeseal binary.
@@ -44,23 +46,39 @@ func (s *KubesealSealer) Seal(name, namespace, key string, value []byte, scope s
 		args = append(args, "--name", name)
 	}
 
-	cmd := exec.Command("kubeseal", args...)
-	cmd.Stdin = bytes.NewReader(value)
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("kubeseal: %w: %s", err, stderr.String())
+	run := s.run
+	if run == nil {
+		run = proc.Run
 	}
-
-	return strings.TrimSpace(stdout.String()), nil
+	out, err := run(context.Background(), value, "kubeseal", args...)
+	if err != nil {
+		return "", fmt.Errorf("seal %s: %w", key, err)
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
-// GetCertFingerprint returns a placeholder since we don't parse the cert.
-func (s *KubesealSealer) GetCertFingerprint() string {
-	return "kubeseal-binary"
+// Kubeseal exposes the kubeseal binary's cluster operations. The zero value
+// is usable.
+type Kubeseal struct {
+	run proc.Runner
+}
+
+// FetchCert asks the controller for its current sealing certificate.
+func (k Kubeseal) FetchCert(ctx context.Context, controllerNamespace, controllerName string) ([]byte, error) {
+	run := k.run
+	if run == nil {
+		run = proc.Run
+	}
+	out, err := run(ctx, nil, "kubeseal", "--fetch-cert",
+		"--controller-namespace="+controllerNamespace,
+		"--controller-name="+controllerName)
+	if err != nil {
+		return nil, fmt.Errorf("fetch certificate: %w", err)
+	}
+	if _, err := ParseCert(out); err != nil {
+		return nil, fmt.Errorf("fetch certificate: controller returned %w", err)
+	}
+	return out, nil
 }
 
 // Compile-time check

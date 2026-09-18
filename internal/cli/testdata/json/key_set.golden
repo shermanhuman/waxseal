@@ -1,0 +1,24 @@
+{
+  "summary": "my-app-secrets/database_password set to GSM version ",
+  "dryRun": true,
+  "changes": [
+    {
+      "op": "create",
+      "kind": "gsm-version",
+      "target": "projects/waxseal-test-project/secrets/my-app-database-password"
+    },
+    {
+      "op": "update",
+      "kind": "metadata",
+      "target": ".waxseal/metadata/my-app-secrets.yaml"
+    },
+    {
+      "op": "update",
+      "kind": "manifest",
+      "target": "apps/my-app/sealed-secret.yaml"
+    }
+  ],
+  "next": [
+    "commit the changed files: .waxseal/metadata/my-app-secrets.yaml apps/my-app/sealed-secret.yaml"
+  ]
+}

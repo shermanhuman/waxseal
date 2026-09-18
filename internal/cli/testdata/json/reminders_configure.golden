@@ -1,0 +1,14 @@
+{
+  "summary": "reminders provider set to tasks",
+  "dryRun": true,
+  "changes": [
+    {
+      "op": "update",
+      "kind": "config",
+      "target": ".waxseal/config.yaml"
+    }
+  ],
+  "next": [
+    "create the reminders: waxseal reminders sync"
+  ]
+}

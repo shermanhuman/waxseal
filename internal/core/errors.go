@@ -106,3 +106,11 @@ func WrapUnauthenticated(resource string, err error) error {
 func IsUnauthenticated(err error) bool {
 	return errors.Is(err, ErrUnauthenticated)
 }
+
+// MissingInputError reports a value an operation needed but was not given.
+// Field names the flag or argument the user can pass to supply it.
+type MissingInputError struct {
+	Field string
+}
+
+func (e *MissingInputError) Error() string { return "missing required input: " + e.Field }

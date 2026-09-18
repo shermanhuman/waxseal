@@ -2,498 +2,204 @@
 
 ![waxseal-logo](https://github.com/user-attachments/assets/a914aa45-7945-429e-ac22-723654557e4e)
 
-> GitOps-friendly SealedSecrets management with Google Secret Manager as the source of truth.
+> SealedSecrets for GitOps, with Google Secret Manager as the source of truth.
 
-WaxSeal keeps plaintext out of Git by synchronizing Kubernetes SealedSecrets with Google Secret Manager (GSM). All secret values live in GSM; Git stores only encrypted ciphertext and metadata.
+waxseal keeps the plaintext of every Kubernetes secret in Google Secret
+Manager (GSM) and only ciphertext in Git. Metadata under `.waxseal/` pins
+each key to a GSM secret and version, so manifests can be re-encrypted at
+any time: after a controller certificate rotation, after a value changes,
+or to rebuild a repository from scratch.
 
-## Installation
+Every command can be driven entirely by flags. On a terminal, waxseal
+prompts for whatever you leave out; with `--no-input` or in CI it fails
+instead, naming the missing flag.
 
-```bash
+## Install
+
+```sh
 go install github.com/shermanhuman/waxseal/cmd/waxseal@latest
 ```
 
-Or build from source:
+Or download a release from the
+[releases page](https://github.com/shermanhuman/waxseal/releases).
 
-```bash
-git clone https://github.com/shermanhuman/waxseal.git
-cd waxseal
-go build -o waxseal ./cmd/waxseal
+You also need `gcloud` (authenticated with
+`gcloud auth application-default login`), `kubeseal`, and `kubectl`
+pointed at a cluster running the
+[sealed-secrets controller](https://github.com/bitnami-labs/sealed-secrets).
+
+## Five-minute start
+
+```sh
+cd my-gitops-repo
+
+# 1. Point waxseal at the GCP project that holds the values.
+waxseal init --project my-gcp-project
+
+# 2. Enable Secret Manager and create the service account (once per project).
+waxseal gcp provision --project my-gcp-project
+
+# 3. Store the controller's certificate in the repo.
+waxseal cert fetch
+
+# 4. Register the SealedSecret manifests you already have.
+waxseal discover          # lists them and whether metadata covers them
+waxseal import            # reads their values from the cluster into GSM
+
+# 5. Or add a brand-new secret.
+echo -n 'hunter2' | waxseal key add my-app db_password --namespace prod --rotation external --from-file -
+waxseal key add my-app api_token --generate
+
+git add .waxseal keys apps && git commit -m "Manage secrets with waxseal"
 ```
 
-## Prerequisites
+On a terminal, `waxseal setup` walks through the same steps.
 
-Before using waxseal, ensure you have:
+## Day to day
 
-- **gcloud CLI** - Authenticated with `gcloud auth application-default login`
-- **kubeseal CLI** - Available on PATH (used for encryption)
-- **kubectl** - Configured to access your cluster
-- **A Kubernetes cluster** with [SealedSecrets controller](https://github.com/bitnami-labs/sealed-secrets) installed
-- **A GitOps repository** with existing SealedSecret manifests (or starting fresh)
+```sh
+waxseal secret list                        # what is managed
+waxseal secret show my-app                 # keys, where their values live, expiry
 
-## Quick Start
+waxseal key set my-app db_password --from-file -    # a value changed elsewhere
+waxseal rotate my-app                      # new values for every generated key
+waxseal key edit my-app api_token --expires 2027-01-01
 
-### 1. Initialize in your GitOps repo
-
-```bash
-cd my-infra-repo
-waxseal setup
+waxseal reseal                             # re-encrypt everything (detects a rotated certificate)
+waxseal check                              # cert, expiry, metadata, GSM, cluster
+waxseal secret retire old-app --replaced-by new-app --delete-manifest
 ```
 
-The interactive wizard will:
-
-- Create/configure your GCP project for secret storage
-- Enable required APIs (Secret Manager)
-- Set up billing if needed
-- Fetch the sealing certificate from your cluster
-- Create configuration files
-
-This creates:
-
-- `.waxseal/config.yaml` - Configuration file
-- `.waxseal/metadata/` - Directory for secret metadata
-- `keys/pub-cert.pem` - Controller certificate (fetched from cluster)
-
-### 2. Discover existing SealedSecrets
-
-```bash
-waxseal discover
-```
-
-This finds SealedSecret manifests and creates metadata stubs in `.waxseal/metadata/`.
-
-### 3. Bootstrap secrets to GSM
-
-```bash
-# Push existing cluster secret values to GSM
-waxseal bootstrap my-app-secrets
-```
-
-### 4. Reseal secrets
-
-```bash
-# Reseal a single secret
-waxseal reseal my-app-secrets
-
-# Reseal all active secrets (default when no shortName given)
-waxseal reseal
-
-# Dry run to see what would be done
-waxseal reseal --dry-run
-```
+Add `--dry-run` to any command that changes something to see what it would
+do, and `-o json` to any command for machine-readable output.
 
 ## Commands
 
-### Primary Commands
+| Command | What it does |
+|---|---|
+| `secret list`, `secret show`, `secret retire` | inspect and retire secrets |
+| `key add`, `key set`, `key edit` | add a key (creating the secret if needed), store a new value, change rotation/expiry/template |
+| `rotate` | generate new values for generated keys and reseal |
+| `reseal` | re-encrypt manifests from GSM; adopts a rotated controller certificate |
+| `check` | health checks; exit 1 on errors, 2 on warnings with `--fail-on-warning` |
+| `reminders sync`, `reminders clear`, `reminders configure` | expiry reminders in Google Tasks or Calendar |
+| `init`, `gcp provision`, `cert fetch`, `discover`, `import`, `setup` | first-time setup |
 
-| Command    | Description                                             |
-| ---------- | ------------------------------------------------------- |
-| `setup`    | Interactive setup wizard for waxseal                    |
-| `edit`     | Interactive wizard for creating/updating/retiring keys  |
-| `rotate`   | Rotate secret values and reseal                         |
-| `reseal`   | Reseal secrets from GSM to SealedSecret manifests       |
-| `check`    | Health checks (cert, expiry, metadata, gsm, cluster)    |
-| `meta`     | View secret metadata (`meta list secrets`, `meta list keys`, `meta showkey`) |
+Global flags: `--repo`, `--dry-run`, `-y/--yes` (accept confirmations),
+`--no-input` (never prompt), `-o text|json`, `--no-color`, `--verbose`.
 
-### Advanced Commands (Scripting/LLM)
+The full reference is in [docs/cli](docs/cli/waxseal.md) and in
+`waxseal <command> --help`.
 
-For non-interactive automation, use `waxseal advanced` to see:
+### Where a value comes from
 
-| Command       | Description                                              |
-| ------------- | -------------------------------------------------------- |
-| `addkey`      | Create a new secret (non-interactive)                    |
-| `updatekey`   | Update key value or computed key params/template         |
-| `retirekey`   | Mark a secret as retired                                 |
-| `discover`    | Scan repo for SealedSecret manifests                     |
-| `gsm bootstrap` | Push cluster secrets to GSM                            |
-| `reminders *` | Calendar/task reminder management                        |
+Secret values are never taken from the command line. `key add` and
+`key set` read them from `--from-file PATH` (or `-` for stdin), generate
+them with `--generate`, or ask at a masked prompt on a terminal. One
+trailing newline is stripped, so `echo` works as expected.
 
-### Global Flags
+### Rotation modes
 
-| Flag        | Description                                           |
-| ----------- | ----------------------------------------------------- |
-| `--repo`    | Path to GitOps repository (default: `.`)              |
-| `--config`  | Path to config file (default: `.waxseal/config.yaml`) |
-| `--dry-run` | Preview changes without writing                       |
-| `--yes`     | Skip confirmation prompts                             |
+| Mode | Meaning |
+|---|---|
+| `generated` | waxseal generates a new value on `rotate` (`randomBase64` or `randomHex`, `--bytes N`) |
+| `external` | rotated at a vendor; give waxseal the new value with `key set` |
+| `static` | not expected to change |
+| `unknown` | not decided yet |
 
-## Configuration
+### Computed keys
 
-`.waxseal/config.yaml`:
+A computed key is rendered from a template whose `{{secret}}` part is the
+rotatable value, for example a `DATABASE_URL`:
 
-```yaml
-version: "1"
-
-store:
-  kind: gsm
-  projectId: my-gcp-project
-
-controller:
-  namespace: kube-system
-  serviceName: sealed-secrets
-
-cert:
-  repoCertPath: keys/pub-cert.pem
-  verifyAgainstCluster: true
-
-discovery:
-  includeGlobs:
-    - "apps/**/*.yaml"
-  excludeGlobs:
-    - "**/kustomization.yaml"
-
-# Optional: Expiry reminders (tasks, calendar, both, none)
-reminders:
-  enabled: true
-  provider: tasks
-  # tasklistId: "@default"    # Optional for tasks provider
-  # calendarId: primary       # Only needed for calendar/both provider
-  leadTimeDays: [30, 7, 1]
-  auth:
-    kind: adc
+```sh
+waxseal key add my-app DATABASE_URL --generate \
+  --template 'postgresql://app:{{secret}}@{{host}}:{{port}}/{{database}}' \
+  --param host=db.internal --param port=5432 --param database=app
+waxseal key edit my-app DATABASE_URL --param host=db2.internal   # change a value
+waxseal rotate my-app DATABASE_URL                              # new password, re-rendered
 ```
 
-## Metadata Schema
+`import` recognises connection strings in cluster secrets and turns them
+into computed keys automatically.
 
-Each secret has a metadata file in `.waxseal/metadata/<shortName>.yaml`:
+## Files in the repository
+
+```
+.waxseal/config.yaml           project, controller location, reminders
+.waxseal/metadata/<name>.yaml  one file per secret: keys, GSM references, rotation, expiry
+keys/pub-cert.pem              the controller's sealing certificate
+apps/<name>/sealed-secret.yaml the SealedSecret manifest (path is configurable per secret)
+```
+
+Metadata for a secret looks like this:
 
 ```yaml
-shortName: my-app-secrets
+shortName: my-app
 manifestPath: apps/my-app/sealed-secret.yaml
 sealedSecret:
-  name: my-app-secrets
-  namespace: my-app
+  name: my-app
+  namespace: prod
   scope: strict
-  type: Opaque
 status: active
-
 keys:
-  # GSM-backed key with auto-rotation
-  - keyName: api_key
+  - keyName: db_password
     source:
       kind: gsm
     gsm:
-      secretResource: projects/my-project/secrets/my-app-api-key
+      secretResource: projects/my-gcp-project/secrets/my-app-db_password
       version: "3"
+    rotation:
+      mode: external
+    expiry:
+      expiresAt: "2027-01-01T00:00:00Z"
+  - keyName: api_token
+    source:
+      kind: gsm
+    gsm:
+      secretResource: projects/my-gcp-project/secrets/my-app-api_token
+      version: "1"
     rotation:
       mode: generated
       generator:
         kind: randomBase64
         bytes: 32
-
-  # External credential (OAuth, third-party API, etc.)
-  - keyName: oauth_secret
-    source:
-      kind: gsm
-    gsm:
-      secretResource: projects/my-project/secrets/my-app-oauth
-      version: "1"
-    rotation:
-      mode: external
-    expiry:
-      expiresAt: "2026-06-15T00:00:00Z"
-
-  # Computed key (DATABASE_URL pattern)
-  - keyName: DATABASE_URL
-    source:
-      kind: computed
-    computed:
-      kind: template
-      template: "postgresql://{{user}}:{{pass}}@{{host}}:5432/{{db}}"
-      inputs:
-        - var: user
-          ref:
-            keyName: db_username
-        - var: pass
-          ref:
-            keyName: db_password
-      params:
-        host: "db.example.com"
-        db: "myapp"
 ```
 
-## Interactive Wizard (`edit`)
+waxseal owns these files: it rewrites them whole, and comments do not
+survive a write.
 
-The `edit` command provides an interactive TUI for managing secrets:
-
-```bash
-# Pick a secret (or create new), then pick an action
-waxseal edit
-
-# Jump to a specific secret
-waxseal edit my-app-secrets
-
-# Jump directly to an action
-waxseal edit addkey
-waxseal edit updatekey
-waxseal edit retirekey
-```
-
-### Creating a Secret
-
-The create wizard walks you through:
-1. Secret name and namespace
-2. Adding keys (static, generated random, or computed/templated)
-3. For computed keys: auto-detects connection string patterns
-4. Creates metadata, GSM secrets, and SealedSecret manifest
-
-### Key Types in the Wizard
-
-| Type | Description |
-| ---- | ----------- |
-| Static | You provide the value (masked input) |
-| Generated | Auto-generates random value (configurable length) |
-| Computed | Templated value like `DATABASE_URL` from other keys |
-
-## Rotation Modes
-
-| Mode        | Description                         | Use Case                          |
-| ----------- | ----------------------------------- | --------------------------------- |
-| `generated` | Auto-generate new value on rotate   | API keys, passwords, tokens       |
-| `external`  | Manual update, waxseal reseals      | OAuth secrets, third-party tokens |
-| `static`    | Operator provides value at rotation | Legacy systems, shared secrets    |
-
-### Rotating Secrets
-
-```bash
-# Rotate a specific key (auto-generates if mode=generated)
-waxseal rotate my-app-secrets api_key
-
-# Rotate all generated keys in a secret
-waxseal rotate my-app-secrets --generated
-```
-
-## Computed Keys
-
-Computed keys are derived from other keys using templates. Common use case: `DATABASE_URL` from individual credentials.
-
-Template syntax: `{{variable_name}}`
+## CI
 
 ```yaml
-- keyName: DATABASE_URL
-  source:
-    kind: computed
-  computed:
-    kind: template
-    template: "postgresql://{{user}}:{{pass}}@{{host}}:{{port}}/{{db}}"
-    inputs:
-      - var: user
-        ref:
-          keyName: db_username # Same secret
-      - var: pass
-        ref:
-          keyName: db_password
-    params:
-      host: "db.example.com"
-      port: "5432"
-      db: "myapp"
-```
-
-## Expiry and Reminders
-
-Track secret expiration and get calendar reminders:
-
-```yaml
-- keyName: tls_cert
-  expiry:
-    expiresAt: "2026-03-01T00:00:00Z"
-    source: "cert-notAfter"
-```
-
-Sync to Google Calendar:
-
-```bash
-waxseal reminders sync
-```
-
-This creates events at 30, 7, and 1 days before expiry.
-
-## Retiring Secrets
-
-When a secret is no longer needed, retire it instead of deleting:
-
-```bash
-# Mark as retired
-waxseal retire my-app-secrets --reason "Migrated to new service"
-
-# Retire and delete the manifest file
-waxseal retire my-app-secrets --delete-manifest
-
-# Retire and link to replacement
-waxseal retire old-secret --replaced-by new-secret
-```
-
-Retired secrets are skipped during `reseal --all` operations.
-
-## Re-encrypting After Cert Rotation
-
-When the SealedSecrets controller certificate rotates, `reseal --all` detects the
-change automatically:
-
-```bash
-# Reseal all secrets (auto-detects cert rotation)
-waxseal reseal
-
-# Skip cert check for offline/CI use
-waxseal reseal --skip-cert-check
-
-# Preview what would be done
-waxseal reseal --dry-run
-```
-
-## Bootstrapping Existing Secrets
-
-Import existing Kubernetes secrets to GSM:
-
-```bash
-# Push a discovered secret's values to GSM
-waxseal bootstrap my-app-secrets
-
-# Preview without making changes
-waxseal bootstrap my-app-secrets --dry-run
-```
-
-This reads the secret from the cluster and pushes values to GSM.
-
-## Health Checks
-
-Monitor certificate and secret expiration:
-
-```bash
-# Check both cert and secret expiry
-waxseal check
-
-# Check only certificate expiry
-waxseal check --cert
-
-# Check only secret expiration
-waxseal check --expiry
-
-# Warn if anything expires within 90 days
-waxseal check --warn-days 90
-
-# Fail in CI if warnings exist
-waxseal check --fail-on-warning
-```
-
-Exit codes:
-
-- `0` - All checks passed
-- `1` - Expired certificate or secrets
-- `2` - Expiring soon (with `--fail-on-warning`)
-
-## GCP Infrastructure Setup
-
-Set up GCP project for WaxSeal:
-
-```bash
-# Interactive wizard (prompts for project, billing, service account, etc.)
-waxseal gcp bootstrap
-
-# Preview what would be done
-waxseal gcp bootstrap --dry-run
-```
-
-The wizard walks through:
-
-- Creating or selecting a GCP project
-- Enabling Secret Manager API
-- Setting up billing
-- Creating a service account
-- Optionally enabling Calendar API for reminders
-- Optionally configuring Workload Identity for GitHub Actions
-
-## Operator Hints
-
-Provide guidance for manual rotation:
-
-```yaml
-- keyName: stripe_key
-  operatorHints:
-    provider: stripe
-    rotationUrl: https://dashboard.stripe.com/apikeys
-    docUrl: https://stripe.com/docs/keys
-    contact: platform-team@company.com
-    notes: "Regenerate in Stripe Dashboard, then update GSM"
-```
-
-During `waxseal rotate`, hints are displayed to guide operators.
-
-## CI/CD Integration
-
-### Validation
-
-```yaml
-# GitHub Actions example
-- name: Validate waxseal structure
-  run: waxseal validate
-
-- name: Check expiration health
-  run: waxseal check --fail-on-warning --warn-days=30
-```
-
-Exit codes:
-
-- `0` - Success
-- `2` - Validation failed
-
-### Automated Reseal
-
-```yaml
-- name: Reseal all secrets
-  run: waxseal reseal
+- run: waxseal check --fail-on-warning --warn-days 30
+- run: waxseal reseal --skip-cert-check --no-input
   env:
     GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GCP_SA_KEY }}
 ```
 
+`waxseal gcp provision --github-repo owner/repo` sets up Workload Identity
+so Actions can authenticate without a key file.
+
 ## Security
 
-**Critical invariants enforced by waxseal:**
+- No plaintext on disk. Results, logs and error messages never carry
+  values.
+- GSM versions are pinned numerically; `latest` is rejected.
+- Every file waxseal writes is validated first and written atomically.
+- Encryption is delegated to `kubeseal`, so ciphertext is exactly what the
+  controller expects.
+- Authentication is Application Default Credentials; nothing is stored in
+  the repository.
 
-1. **No plaintext on disk** - Secrets are never written unencrypted
-2. **No secrets in logs** - The `Redacted` type prevents accidental logging
-3. **Numeric GSM versions only** - Aliases like `latest` are rejected to ensure reproducibility
-4. **Atomic writes** - Files are written to temp then renamed, preventing corruption
-5. **Validation before write** - Output is validated before replacing files
-6. **Controller-compatible encryption** - Uses `kubeseal` binary for encryption to guarantee compatibility
-
-## Authentication
-
-WaxSeal uses Application Default Credentials (ADC) for GCP authentication:
-
-```bash
-# Development
-gcloud auth application-default login
-
-# Production (Service Account)
-export GOOGLE_APPLICATION_CREDENTIALS=/path/to/sa-key.json
-
-# GKE Workload Identity
-# Automatic when running in GKE with configured Workload Identity
-```
-
-Required IAM roles:
-
-- `roles/secretmanager.secretAccessor` - Read secret values
-- `roles/secretmanager.secretVersionAdder` - Add new versions (for rotation)
+Required IAM: `roles/secretmanager.secretAccessor` to reseal;
+`roles/secretmanager.secretVersionAdder` (plus create/delete for new
+secrets) to add keys, set values and rotate.
 
 ## Development
 
-```bash
-# Build
-go build ./...
-
-# Unit tests
-go test ./...
-
-# E2E tests (requires Docker Desktop only)
-docker compose -f docker-compose.e2e.yaml up --build
-
-# Lint
-golangci-lint run ./...
-
-# Release builds
-GOOS=linux go build -o waxseal-linux ./cmd/waxseal
-```
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the package layout and the
+rules CI enforces, and [AGENTS.md](AGENTS.md) for the commands.
 
 ## License
 

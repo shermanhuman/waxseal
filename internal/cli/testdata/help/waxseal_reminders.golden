@@ -1,0 +1,23 @@
+Expiry reminders in Google Tasks or Calendar
+
+Usage:
+  waxseal reminders [command]
+
+Available Commands:
+  clear       Remove a secret's reminders
+  configure   Enable reminders and choose where they go
+  sync        Create or update reminders for every key with an expiry
+
+Flags:
+  -h, --help   help for reminders
+
+Global Flags:
+      --dry-run         show what would change without changing anything
+      --no-color        disable colour
+      --no-input        never prompt; fail if an input is missing
+  -o, --output string   output format: text or json (default "text")
+      --repo string     path to the repository (default ".")
+      --verbose         log subprocess calls and debug detail to stderr
+  -y, --yes             answer yes to confirmations
+
+Use "waxseal reminders [command] --help" for more information about a command.
