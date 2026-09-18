@@ -320,17 +320,3 @@ func (m *SecretMetadata) ExpiresBefore(t time.Time) bool {
 	}
 	return false
 }
-
-// IsExpired returns true if any key is expired.
-//
-// Deprecated: use ExpiresBefore; removed with the old CLI.
-func (m *SecretMetadata) IsExpired() bool {
-	return m.ExpiresBefore(time.Now())
-}
-
-// ExpiresWithinDays returns true if any key expires within the given days.
-//
-// Deprecated: use ExpiresBefore; removed with the old CLI.
-func (m *SecretMetadata) ExpiresWithinDays(days int) bool {
-	return m.ExpiresBefore(time.Now().AddDate(0, 0, days))
-}

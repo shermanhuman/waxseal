@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shermanhuman/waxseal/internal/computed"
 	"github.com/shermanhuman/waxseal/internal/core"
 	"github.com/shermanhuman/waxseal/internal/reminder"
-	"github.com/shermanhuman/waxseal/internal/template"
 )
 
 func TestAddKey_ExistingSecret(t *testing.T) {
@@ -134,7 +134,7 @@ func TestSetKeyValue_PlainAndComputed(t *testing.T) {
 		t.Errorf("payload version = %s", ref.Version)
 	}
 	data, _ := st.AccessVersion(ctx, ref.SecretResource, "2")
-	p, _ := template.ParsePayload(data)
+	p, _ := computed.ParsePayload(data)
 	if p.Secret != "pw2" || p.Computed != "redis://:pw2@cache:6379" {
 		t.Errorf("payload = %+v", p)
 	}
@@ -222,7 +222,7 @@ func TestRotate(t *testing.T) {
 	}
 	m, _ = s.Repo.Metadata("my-app-secrets")
 	data, _ := st.AccessVersion(ctx, m.Key("conn").Computed.GSM.SecretResource, "2")
-	p, _ := template.ParsePayload(data)
+	p, _ := computed.ParsePayload(data)
 	if len(p.Secret) != 16 || !strings.HasPrefix(p.Computed, "redis://:"+p.Secret+"@cache") {
 		t.Errorf("payload = %+v", p)
 	}
@@ -399,7 +399,7 @@ func TestImport(t *testing.T) {
 		t.Errorf("DB_URL = %+v", db.Computed)
 	}
 	data, _ := st.AccessVersion(ctx, db.Computed.GSM.SecretResource, db.Computed.GSM.Version)
-	p, _ := template.ParsePayload(data)
+	p, _ := computed.ParsePayload(data)
 	if p.Secret != "s3cret" || p.Computed != "postgresql://admin:s3cret@db.internal:5432/app" {
 		t.Errorf("payload = %+v", p)
 	}

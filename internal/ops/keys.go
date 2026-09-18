@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/shermanhuman/waxseal/internal/computed"
 	"github.com/shermanhuman/waxseal/internal/core"
-	"github.com/shermanhuman/waxseal/internal/template"
 )
 
 // KeySpec describes a key to add. Exactly one of Value or Generator
@@ -66,11 +66,7 @@ func (k KeySpec) build(resource string) (core.KeyMetadata, keyWrite, error) {
 		return meta, keyWrite{name: k.Name, ref: ref, gsm: value, seal: value}, nil
 	}
 
-	var gen *template.GeneratorConfig
-	if k.Generator != nil {
-		gen = &template.GeneratorConfig{Kind: k.Generator.Kind, Bytes: k.Generator.Bytes}
-	}
-	payload, err := template.NewPayload(k.Template.Template, k.Template.Values, string(value), gen)
+	payload, err := computed.NewPayload(k.Template.Template, k.Template.Values, string(value), k.Generator)
 	if err != nil {
 		return core.KeyMetadata{}, keyWrite{}, core.WrapValidation("template", err)
 	}
@@ -160,7 +156,7 @@ type SetKeyValueInput struct {
 }
 
 // SetKeyValue stores a new version of a key's value and re-seals it. For a
-// computed key the value is the {{secret}} part of its template.
+// computed key the value is the {{secret}} part of its computed.
 func (s *Service) SetKeyValue(ctx context.Context, in SetKeyValueInput) (*MutationResult, error) {
 	m, k, err := s.activeKey(in.ShortName, in.Key)
 	if err != nil {
@@ -207,13 +203,13 @@ func (s *Service) valueWrite(ctx context.Context, k *core.KeyMetadata, value []b
 	return keyWrite{name: k.KeyName, ref: ref, gsm: data, seal: []byte(p.Computed)}, nil
 }
 
-func (s *Service) payload(ctx context.Context, k *core.KeyMetadata) (*template.Payload, error) {
+func (s *Service) payload(ctx context.Context, k *core.KeyMetadata) (*computed.Payload, error) {
 	ref := k.Computed.GSM
 	data, err := s.Store.AccessVersion(ctx, ref.SecretResource, ref.Version)
 	if err != nil {
 		return nil, fmt.Errorf("fetch payload for %s: %w", k.KeyName, err)
 	}
-	p, err := template.ParsePayload(data)
+	p, err := computed.ParsePayload(data)
 	if err != nil {
 		return nil, fmt.Errorf("payload for %s: %w", k.KeyName, err)
 	}

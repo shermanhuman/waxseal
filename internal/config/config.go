@@ -138,10 +138,8 @@ func (c *Config) Validate() error {
 	}
 
 	if r := c.Reminders; r != nil && r.Enabled && r.Provider != "" {
-		switch r.Provider {
-		case "tasks", "calendar", "both", "none":
-		default:
-			return core.NewValidationError("reminders.provider", "must be 'tasks', 'calendar', 'both' or 'none'")
+		if err := core.ReminderProviders.Validate("reminders.provider", r.Provider); err != nil {
+			return err
 		}
 	}
 

@@ -81,10 +81,5 @@ func (k Kubeseal) FetchCert(ctx context.Context, controllerNamespace, controller
 	return out, nil
 }
 
-// GetCertFingerprint returns a placeholder since we don't parse the cert.
-func (s *KubesealSealer) GetCertFingerprint() string {
-	return "kubeseal-binary"
-}
-
 // Compile-time check
 var _ Sealer = (*KubesealSealer)(nil)

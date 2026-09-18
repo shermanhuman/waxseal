@@ -105,6 +105,13 @@ var (
 		{ScopeClusterWide, "Cluster-wide", "can be moved to any namespace"},
 	}}
 
+	ReminderProviders = Enum{Name: "provider", Choices: []Choice{
+		{"tasks", "Google Tasks", "tasks also appear in Google Calendar"},
+		{"calendar", "Google Calendar", "calendar events"},
+		{"both", "Both", "tasks and calendar events"},
+		{"none", "None", "disable reminders"},
+	}}
+
 	SecretTypes = Enum{Name: "secret type", Open: true, Choices: []Choice{
 		{"Opaque", "Opaque", "arbitrary key/value pairs"},
 		{"kubernetes.io/dockerconfigjson", "Docker config", "image pull credentials"},

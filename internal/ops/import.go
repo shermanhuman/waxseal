@@ -7,8 +7,8 @@ import (
 	"net/url"
 	"slices"
 
+	"github.com/shermanhuman/waxseal/internal/computed"
 	"github.com/shermanhuman/waxseal/internal/core"
-	"github.com/shermanhuman/waxseal/internal/template"
 )
 
 // ImportInput registers a manifest by reading its plaintext from the
@@ -78,7 +78,7 @@ func (s *Service) Import(ctx context.Context, in ImportInput) (*ImportResult, er
 		ref := &core.GSMRef{SecretResource: resource}
 
 		if tmpl, values, secret, ok := detectTemplate(string(value)); ok && (k.Source.Kind == "computed" || k.Source.Kind == "") {
-			payload, err := template.NewPayload(tmpl, values, secret, nil)
+			payload, err := computed.NewPayload(tmpl, values, secret, nil)
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", name, err)
 			}
@@ -137,7 +137,7 @@ func typeOrEmpty(t string) string {
 // detectTemplate recognises a connection string and splits it into a
 // template, its non-secret values and the password.
 func detectTemplate(value string) (tmpl string, values map[string]string, secret string, ok bool) {
-	ok, tmpl, values = template.DetectConnectionString(value, nil)
+	ok, tmpl, values = computed.DetectConnectionString(value, nil)
 	if !ok {
 		return "", nil, "", false
 	}

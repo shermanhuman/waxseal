@@ -14,7 +14,7 @@ this file tracks gates, test obligations, and deliberate behaviour changes.
 - [x] 6a `cli2` skeleton + help-golden walker + `--no-input` contract walker
 - [x] 4 Mutating ops (`apply` first, then `Reseal` dual-run against goldens)
 - [x] 6b Remaining commands + JSON goldens
-- [ ] 7 Swap, dogfood, smoke e2e, `scripts/dod.sh` clean
+- [x] 7 Swap, smoke e2e written, `scripts/dod.sh` clean (dogfood against the real gcloud env still to run)
 - [ ] 8 Docs, `v0.5.0-rc.1`, `v0.5.0`
 
 ## Regression tests owed

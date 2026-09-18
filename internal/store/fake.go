@@ -112,19 +112,6 @@ func (f *FakeStore) CreateSecret(ctx context.Context, secretResource string, dat
 	return "1", nil
 }
 
-// SecretExists checks if a secret exists.
-func (f *FakeStore) SecretExists(ctx context.Context, secretResource string) (bool, error) {
-	if err := f.failure("SecretExists", secretResource); err != nil {
-		return false, err
-	}
-
-	f.mu.RLock()
-	defer f.mu.RUnlock()
-
-	_, ok := f.secrets[secretResource]
-	return ok, nil
-}
-
 // DeleteSecret permanently deletes a secret.
 func (f *FakeStore) DeleteSecret(ctx context.Context, secretResource string) error {
 	if err := f.failure("DeleteSecret", secretResource); err != nil {
@@ -140,22 +127,6 @@ func (f *FakeStore) DeleteSecret(ctx context.Context, secretResource string) err
 
 	delete(f.secrets, secretResource)
 	return nil
-}
-
-// CreateSecretVersion creates a secret if needed and adds a version.
-func (f *FakeStore) CreateSecretVersion(ctx context.Context, secretResource string, data []byte) (string, error) {
-	// Try to add a version first
-	version, err := f.AddVersion(ctx, secretResource, data)
-	if err == nil {
-		return version, nil
-	}
-
-	// If secret doesn't exist, create it
-	if core.IsNotFound(err) {
-		return f.CreateSecret(ctx, secretResource, data)
-	}
-
-	return "", err
 }
 
 // EnsureVersion adds a version, creating the secret first when needed.
@@ -209,7 +180,7 @@ func (f *FakeStore) SetVersion(secretResource, version string, data []byte) {
 }
 
 // FailOn makes op ("AccessVersion", "AddVersion", "CreateSecret",
-// "SecretExists", "DeleteSecret") return err for secretResource, or for every
+// "DeleteSecret") return err for secretResource, or for every
 // resource when secretResource is empty. Tests use it to exercise rollback.
 func (f *FakeStore) FailOn(op, secretResource string, err error) {
 	f.mu.Lock()

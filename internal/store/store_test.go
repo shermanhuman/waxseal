@@ -125,34 +125,6 @@ func TestFakeStore_AddVersionToNonexistent(t *testing.T) {
 	}
 }
 
-func TestFakeStore_SecretExists(t *testing.T) {
-	ctx := context.Background()
-	store := NewFakeStore()
-
-	secretResource := "projects/test/secrets/my-secret"
-
-	// Should not exist initially
-	exists, err := store.SecretExists(ctx, secretResource)
-	if err != nil {
-		t.Fatalf("SecretExists failed: %v", err)
-	}
-	if exists {
-		t.Error("secret should not exist initially")
-	}
-
-	// Create it
-	_, _ = store.CreateSecret(ctx, secretResource, []byte("data"))
-
-	// Should exist now
-	exists, err = store.SecretExists(ctx, secretResource)
-	if err != nil {
-		t.Fatalf("SecretExists failed: %v", err)
-	}
-	if !exists {
-		t.Error("secret should exist after creation")
-	}
-}
-
 func TestFakeStore_SetVersion(t *testing.T) {
 	store := NewFakeStore()
 	ctx := context.Background()
@@ -222,10 +194,10 @@ func TestFakeStore_FailOn(t *testing.T) {
 	f := NewFakeStore()
 	f.FailOn("CreateSecret", "projects/p/secrets/b", boom)
 
-	if _, err := f.CreateSecretVersion(ctx, "projects/p/secrets/a", []byte("x")); err != nil {
+	if _, _, err := f.EnsureVersion(ctx, "projects/p/secrets/a", []byte("x")); err != nil {
 		t.Fatalf("unrelated resource should succeed: %v", err)
 	}
-	if _, err := f.CreateSecretVersion(ctx, "projects/p/secrets/b", []byte("x")); !errors.Is(err, boom) {
+	if _, _, err := f.EnsureVersion(ctx, "projects/p/secrets/b", []byte("x")); !errors.Is(err, boom) {
 		t.Fatalf("got %v, want injected error", err)
 	}
 	if got := f.Resources(); len(got) != 1 || got[0] != "projects/p/secrets/a" {

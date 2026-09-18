@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/shermanhuman/waxseal/internal/computed"
 	"github.com/shermanhuman/waxseal/internal/core"
-	"github.com/shermanhuman/waxseal/internal/template"
 )
 
 // materialize fetches every key's plaintext: GSM values, then computed
@@ -47,7 +47,7 @@ func (s *Service) computeKey(ctx context.Context, m *core.SecretMetadata, k *cor
 		if err != nil {
 			return nil, err
 		}
-		p, err := template.ParsePayload(data)
+		p, err := computed.ParsePayload(data)
 		if err != nil {
 			return nil, err
 		}
@@ -58,7 +58,7 @@ func (s *Service) computeKey(ctx context.Context, m *core.SecretMetadata, k *cor
 		return []byte(out), nil
 	}
 
-	tmpl, err := template.Parse(c.Template)
+	tmpl, err := computed.Parse(c.Template)
 	if err != nil {
 		return nil, err
 	}

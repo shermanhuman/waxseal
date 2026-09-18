@@ -8,6 +8,7 @@ linters:
     - errcheck
     - ineffassign
     - unused
+    - forbidigo
   settings:
     errcheck:
       exclude-functions:
@@ -17,12 +18,31 @@ linters:
     staticcheck:
       # Quickfix suggestions are style, not defects.
       checks: ["all", "-QF*", "-ST*"]
+    forbidigo:
+      forbid:
+        # Layering rules. Output goes through ui.Printer; subprocesses
+        # through proc; file writes through repo; exit codes through main.
+        - pattern: ^fmt\.Print.*$
+          msg: print through ui.Printer
+        - pattern: ^os\.Exit$
+          msg: return an error; cli.Main decides the exit code
+        - pattern: ^exec\.Command(Context)?$
+          msg: run subprocesses through internal/proc
+        - pattern: ^os\.(WriteFile|Create|Rename|Remove|RemoveAll|MkdirAll)$
+          msg: write files through internal/repo
   exclusions:
     rules:
       - path: _test\.go
-        linters: [errcheck]
-    paths:
-      # Frozen until the rewrite swaps it out; remove this entry in the swap.
-      - internal/cli
-      # Targets a deleted CLI surface; replaced by a smoke suite in the swap.
-      - tests/e2e
+        linters: [errcheck, forbidigo]
+      - path: ^internal/ui/
+        linters: [forbidigo]
+      - path: ^internal/(proc|gcp)/
+        linters: [forbidigo]
+      - path: ^internal/repo/
+        linters: [forbidigo]
+      - path: ^internal/testutil/
+        linters: [forbidigo]
+      - path: ^cmd/
+        linters: [forbidigo]
+      - path: ^scripts/
+        linters: [forbidigo]
