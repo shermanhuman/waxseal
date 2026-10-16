@@ -31,6 +31,10 @@
   value.
 - Conflicting value flags (for example `--from-file` with `--generate`)
   exit 2 (usage) instead of 1.
+- `key add` refuses a key whose Secret Manager secret another registered
+  key already uses. Names map to `<secret>-<key>`, so `a-b`/`c` and
+  `a`/`b-c` collide; the second add used to add a version to the first
+  key's secret, silently sharing it.
 
 ### Upgrading
 
