@@ -40,6 +40,34 @@ type KeyMetadata struct {
 	Expiry        *ExpiryConfig   `json:"expiry,omitempty" yaml:"expiry,omitempty"`
 	OperatorHints *OperatorHints  `json:"operatorHints,omitempty" yaml:"operatorHints,omitempty"`
 	Computed      *ComputedConfig `json:"computed,omitempty" yaml:"computed,omitempty"`
+	// CopiedFrom records that the value was copied from another key with
+	// --from-key, and which of its versions. It is cleared when the value
+	// changes any other way.
+	CopiedFrom *CopiedFrom `json:"copiedFrom,omitempty" yaml:"copiedFrom,omitempty"`
+}
+
+// CopiedFrom names the key and GSM version a key's value was copied from.
+type CopiedFrom struct {
+	ShortName string `json:"shortName" yaml:"shortName"`
+	KeyName   string `json:"keyName" yaml:"keyName"`
+	Version   string `json:"version" yaml:"version"` // the source's pinned GSM version at the time of the copy
+}
+
+// String renders the reference as <shortName>/<keyName>@<version>.
+func (c *CopiedFrom) String() string { return c.ShortName + "/" + c.KeyName + "@" + c.Version }
+
+// Validate checks the CopiedFrom reference.
+func (c *CopiedFrom) Validate() error {
+	if c.ShortName == "" {
+		return NewValidationError("copiedFrom.shortName", "required")
+	}
+	if c.KeyName == "" {
+		return NewValidationError("copiedFrom.keyName", "required")
+	}
+	if !numericVersionRegex.MatchString(c.Version) {
+		return NewValidationError("copiedFrom.version", "must be numeric")
+	}
+	return nil
 }
 
 // SourceConfig specifies where a key's value comes from.
@@ -213,6 +241,11 @@ func (k *KeyMetadata) Validate() error {
 	}
 	if k.Expiry != nil {
 		if err := k.Expiry.Validate(); err != nil {
+			return err
+		}
+	}
+	if k.CopiedFrom != nil {
+		if err := k.CopiedFrom.Validate(); err != nil {
 			return err
 		}
 	}

@@ -63,7 +63,9 @@ func (s *Service) Rotate(ctx context.Context, in RotateInput) (*RotateResult, er
 	}
 
 	writes := make([]keyWrite, 0, len(targets))
+	var detached []CopyRef
 	for _, k := range targets {
+		detached = append(detached, detach(m.ShortName, k)...)
 		value, err := core.GenerateValue(k.Rotation.Generator)
 		if err != nil {
 			return nil, fmt.Errorf("generate %s/%s: %w", m.ShortName, k.KeyName, err)
@@ -78,6 +80,10 @@ func (s *Service) Rotate(ctx context.Context, in RotateInput) (*RotateResult, er
 	res.MutationResult, err = s.apply(ctx, m, writes, false, in.DryRun)
 	if err != nil {
 		return nil, err
+	}
+	res.Detached = detached
+	for _, name := range res.Rotated {
+		res.Copies = append(res.Copies, s.copiesOf(m.ShortName, name)...)
 	}
 	return res, nil
 }

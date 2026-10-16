@@ -12,15 +12,21 @@ import (
 	"github.com/shermanhuman/waxseal/internal/repo"
 )
 
-// KeySpec describes a key to add. Exactly one of Value or Generator
-// supplies the secret; Template makes it a computed key whose {{secret}}
-// is that value.
+// KeySpec describes a key to add. Exactly one of Value, Generator or
+// CopyFrom supplies the secret; Template makes it a computed key whose
+// {{secret}} is that value. CopyFrom copies another registered key's stored
+// value and definition instead, and cannot be combined with Template.
 type KeySpec struct {
 	Name      string
 	Value     []byte
 	Generator *core.GeneratorConfig
+	CopyFrom  *core.KeyRef
 	Template  *TemplateSpec
-	Mode      string // rotation mode; defaults to generated with a Generator, external otherwise
+	// Mode is the rotation mode; it defaults to generated with a Generator,
+	// to the source's mode with CopyFrom, and to external otherwise. With
+	// any mode but generated, a Generator only makes the first value and is
+	// not recorded.
+	Mode      string
 	ExpiresAt string // RFC3339, optional
 }
 
@@ -36,8 +42,14 @@ func (k KeySpec) build(resource string) (core.KeyMetadata, keyWrite, error) {
 	if k.Name == "" {
 		return core.KeyMetadata{}, keyWrite{}, &core.MissingInputError{Field: "<key>"}
 	}
-	if (k.Value == nil) == (k.Generator == nil) {
-		return core.KeyMetadata{}, keyWrite{}, &core.MissingInputError{Field: "--from-file or --generate"}
+	if sources := btoi(k.Value != nil) + btoi(k.Generator != nil) + btoi(k.CopyFrom != nil); sources != 1 {
+		if sources == 0 {
+			return core.KeyMetadata{}, keyWrite{}, &core.MissingInputError{Field: valueFlagNames}
+		}
+		return core.KeyMetadata{}, keyWrite{}, core.NewValidationError("value", "give exactly one of "+valueFlagNames)
+	}
+	if k.CopyFrom != nil {
+		return core.KeyMetadata{}, keyWrite{}, errors.New("a copied key is built from its source, not by build")
 	}
 	value := k.Value
 	if k.Generator != nil {
@@ -53,9 +65,15 @@ func (k KeySpec) build(resource string) (core.KeyMetadata, keyWrite, error) {
 			mode = core.RotationGenerated
 		}
 	}
+	// A generator is recorded only for a generated key: anything else would
+	// invite `key set --generate` to replace a value meant to be kept.
+	gen := k.Generator
+	if mode != core.RotationGenerated {
+		gen = nil
+	}
 	meta := core.KeyMetadata{
 		KeyName:  k.Name,
-		Rotation: &core.RotationConfig{Mode: mode, Generator: k.Generator},
+		Rotation: &core.RotationConfig{Mode: mode, Generator: gen},
 	}
 	if k.ExpiresAt != "" {
 		meta.Expiry = &core.ExpiryConfig{ExpiresAt: k.ExpiresAt}
@@ -68,7 +86,7 @@ func (k KeySpec) build(resource string) (core.KeyMetadata, keyWrite, error) {
 		return meta, keyWrite{name: k.Name, ref: ref, gsm: value, seal: value}, nil
 	}
 
-	payload, err := computed.NewPayload(k.Template.Template, k.Template.Values, string(value), k.Generator)
+	payload, err := computed.NewPayload(k.Template.Template, k.Template.Values, string(value), gen)
 	if err != nil {
 		return core.KeyMetadata{}, keyWrite{}, core.WrapValidation("template", err)
 	}
@@ -82,6 +100,16 @@ func (k KeySpec) build(resource string) (core.KeyMetadata, keyWrite, error) {
 	meta.Source = core.SourceConfig{Kind: "computed"}
 	meta.Computed = &core.ComputedConfig{Kind: "template", Template: k.Template.Template, GSM: ref}
 	return meta, keyWrite{name: k.Name, ref: ref, gsm: data, seal: []byte(payload.Computed)}, nil
+}
+
+// valueFlagNames names the inputs that can supply a key's value.
+const valueFlagNames = "--from-file, --generate or --from-key"
+
+func btoi(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // NewSecret describes a secret to create when AddKey targets one that is
@@ -112,6 +140,19 @@ var ErrNeedsNamespace = errors.New("secret is not registered; a namespace is nee
 // AddKey stores a new key's value in GSM, records it in metadata and seals
 // it into the manifest.
 func (s *Service) AddKey(ctx context.Context, in AddKeyInput) (*MutationResult, error) {
+	var src *copySource
+	if in.Key.CopyFrom != nil {
+		if in.Key.Value != nil || in.Key.Generator != nil {
+			return nil, core.NewValidationError("value", "give exactly one of "+valueFlagNames)
+		}
+		if in.Key.Template != nil {
+			return nil, core.NewValidationError("--from-key", "a copied key keeps its source's template; change it afterwards with `key edit`")
+		}
+		var err error
+		if src, err = s.copySource(ctx, *in.Key.CopyFrom); err != nil {
+			return nil, err
+		}
+	}
 	m, err := s.activeMetadata(in.ShortName)
 	switch {
 	case errors.Is(err, ErrNotRegistered):
@@ -132,13 +173,26 @@ func (s *Service) AddKey(ctx context.Context, in AddKeyInput) (*MutationResult, 
 			},
 			Status: "active",
 		}
+		if src != nil && m.SealedSecret.Type == "" {
+			// A copied .dockerconfigjson is useless in an Opaque secret.
+			m.SealedSecret.Type = src.secret.SealedSecret.Type
+		}
 	case err != nil:
 		return nil, err
 	}
 	if m.Key(in.Key.Name) != nil {
 		return nil, fmt.Errorf("%s/%s: %w", m.ShortName, in.Key.Name, ErrKeyExists)
 	}
-	meta, write, err := in.Key.build(s.gsmResource(m.ShortName, in.Key.Name))
+	var meta core.KeyMetadata
+	var write keyWrite
+	if src != nil {
+		if in.Key.Name == "" {
+			return nil, &core.MissingInputError{Field: "<key>"}
+		}
+		meta, write, err = src.newKey(in.Key, s.gsmResource(m.ShortName, in.Key.Name))
+	} else {
+		meta, write, err = in.Key.build(s.gsmResource(m.ShortName, in.Key.Name))
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -154,6 +208,10 @@ type SetKeyValueInput struct {
 	Value     []byte
 	// Generate produces the value with the key's own generator instead.
 	Generate bool
+	// CopyFrom copies another registered key's current value instead (for
+	// a computed key, its {{secret}}), and records the copy. Without it,
+	// a key that was a copy stops being one.
+	CopyFrom *core.KeyRef
 	// ExpiresAt: nil leaves expiry alone; "" clears it; otherwise RFC3339.
 	ExpiresAt *string
 	DryRun    bool
@@ -166,6 +224,21 @@ func (s *Service) SetKeyValue(ctx context.Context, in SetKeyValueInput) (*Mutati
 	if err != nil {
 		return nil, err
 	}
+	if btoi(len(in.Value) > 0)+btoi(in.Generate)+btoi(in.CopyFrom != nil) > 1 {
+		return nil, core.NewValidationError("value", "give exactly one of "+valueFlagNames)
+	}
+	var src *copySource
+	if in.CopyFrom != nil {
+		if in.CopyFrom.ShortName == m.ShortName && in.CopyFrom.KeyName == k.KeyName {
+			return nil, core.NewValidationError("--from-key", "a key cannot be copied from itself")
+		}
+		if src, err = s.copySource(ctx, *in.CopyFrom); err != nil {
+			return nil, err
+		}
+		if in.Value, err = src.valueFor(k, m.ShortName+"/"+k.KeyName); err != nil {
+			return nil, err
+		}
+	}
 	if in.Generate {
 		if k.Rotation == nil || k.Rotation.Generator == nil {
 			return nil, &core.MissingInputError{Field: "--generator (the key has none; set one with `key edit`)"}
@@ -175,11 +248,23 @@ func (s *Service) SetKeyValue(ctx context.Context, in SetKeyValueInput) (*Mutati
 		}
 	}
 	if len(in.Value) == 0 {
-		return nil, &core.MissingInputError{Field: "--from-file or --generate"}
+		return nil, &core.MissingInputError{Field: valueFlagNames}
 	}
 	write, err := s.valueWrite(ctx, k, in.Value)
 	if err != nil {
 		return nil, err
+	}
+	var detached []CopyRef
+	if src != nil {
+		k.CopiedFrom = src.provenance()
+		write.source = k.CopiedFrom.String()
+		if in.ExpiresAt == nil && src.key.Expiry != nil {
+			// The same credential expires when its source does.
+			exp := *src.key.Expiry
+			k.Expiry = &exp
+		}
+	} else {
+		detached = detach(m.ShortName, k)
 	}
 	if in.ExpiresAt != nil {
 		if *in.ExpiresAt == "" {
@@ -188,7 +273,13 @@ func (s *Service) SetKeyValue(ctx context.Context, in SetKeyValueInput) (*Mutati
 			k.Expiry = &core.ExpiryConfig{ExpiresAt: *in.ExpiresAt}
 		}
 	}
-	return s.apply(ctx, m, []keyWrite{write}, false, in.DryRun)
+	res, err := s.apply(ctx, m, []keyWrite{write}, false, in.DryRun)
+	if err != nil {
+		return nil, err
+	}
+	res.Detached = detached
+	res.Copies = s.copiesOf(m.ShortName, k.KeyName)
+	return res, nil
 }
 
 // valueWrite prepares storing value as the key's new plaintext (plain key)

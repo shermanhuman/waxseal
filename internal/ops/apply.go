@@ -18,6 +18,8 @@ type keyWrite struct {
 	ref  *core.GSMRef // where the new GSM version is recorded; resource must be set
 	gsm  []byte       // bytes for a new GSM version, or nil
 	seal []byte       // plaintext to seal, or nil to leave the ciphertext alone
+	// source names the key a copied value came from, as short/key@version.
+	source string
 }
 
 // MutationResult is what every secret mutation returns.
@@ -26,6 +28,12 @@ type MutationResult struct {
 	DryRun    bool              `json:"dryRun"`
 	Changes   []Change          `json:"changes"`
 	Versions  map[string]string `json:"versions,omitempty"` // key -> new GSM version
+	// Copies are other keys recorded as copies of a key whose value changed;
+	// they keep the old value until re-copied with `key set --from-key`.
+	Copies []CopyRef `json:"copies,omitempty"`
+	// Detached are copies whose value changed some other way, so they are
+	// no longer recorded as copies.
+	Detached []CopyRef `json:"detached,omitempty"`
 }
 
 // UnrecordedVersionError is returned when GSM versions were created but the
@@ -95,7 +103,7 @@ func (s *Service) apply(ctx context.Context, m *core.SecretMetadata, writes []ke
 	}
 	for _, w := range writes {
 		if w.gsm != nil {
-			res.Changes = append(res.Changes, Change{Op: "create", Kind: "gsm-version", Target: w.ref.SecretResource})
+			res.Changes = append(res.Changes, Change{Op: "create", Kind: "gsm-version", Target: w.ref.SecretResource, Source: w.source})
 		}
 	}
 	res.Changes = append(res.Changes, Change{Op: "update", Kind: "metadata", Target: repo.MetadataRel(m.ShortName)})

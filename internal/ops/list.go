@@ -63,6 +63,9 @@ type KeyView struct {
 	GSMVersion   string `json:"gsmVersion,omitempty"`
 	Template     string `json:"template,omitempty"`
 	ExpiresAt    string `json:"expiresAt,omitempty"`
+	// CopiedFrom is the key and version the value was copied from, as
+	// short/key@version.
+	CopiedFrom string `json:"copiedFrom,omitempty"`
 	// DaysLeft is nil when the key has no expiry.
 	DaysLeft *int `json:"daysLeft,omitempty"`
 }
@@ -112,6 +115,9 @@ func (s *Service) Show(shortName string) (*SecretView, error) {
 		}
 		if k.Computed != nil {
 			kv.Template = k.Computed.Template
+		}
+		if k.CopiedFrom != nil {
+			kv.CopiedFrom = k.CopiedFrom.String()
 		}
 		if exp, ok := k.ExpiresAt(); ok {
 			kv.ExpiresAt = k.Expiry.ExpiresAt

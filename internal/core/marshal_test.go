@@ -73,6 +73,13 @@ func TestMarshal_RoundTrip(t *testing.T) {
 						Rotation: &RotationConfig{Mode: "static"},
 						Computed: &ComputedConfig{Kind: "template", Template: "{{secret}}", GSM: gsm("app-payload", "12")},
 					},
+					{
+						KeyName:    "copied",
+						Source:     SourceConfig{Kind: "gsm"},
+						GSM:        gsm("app-copied", "1"),
+						Rotation:   &RotationConfig{Mode: "external"},
+						CopiedFrom: &CopiedFrom{ShortName: "other", KeyName: "token", Version: "4"},
+					},
 				},
 			},
 		},

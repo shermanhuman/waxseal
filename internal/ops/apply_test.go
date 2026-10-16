@@ -153,12 +153,25 @@ func TestResults_NeverContainSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	r6, err := s.AddKey(context.Background(), AddKeyInput{ShortName: "copy", Key: KeySpec{Name: "pw", CopyFrom: &core.KeyRef{ShortName: "my-app-secrets", KeyName: "pw"}},
+		New: &NewSecret{Namespace: "elsewhere"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r7, err := s.SetKeyValue(context.Background(), SetKeyValueInput{ShortName: "copy", Key: "pw", CopyFrom: &core.KeyRef{ShortName: "my-app-secrets", KeyName: "pw"}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	r5, err := s.Show("my-app-secrets")
 	if err != nil {
 		t.Fatal(err)
 	}
+	r8, err := s.Show("copy")
+	if err != nil || r8.Keys[0].CopiedFrom != "my-app-secrets/pw@2" {
+		t.Fatalf("show copy: %+v %v", r8, err)
+	}
 	f, _ := s.Check(context.Background(), CheckInput{})
-	results = append(results, r1, r2, r3, r4, r5, f)
+	results = append(results, r1, r2, r3, r4, r5, r6, r7, r8, f)
 
 	for i, r := range results {
 		b, err := json.Marshal(r)
