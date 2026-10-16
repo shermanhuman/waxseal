@@ -26,8 +26,18 @@ func newKeyCmd(app *App) *cobra.Command {
 // needsMutate is what every command that changes a secret needs.
 func needsMutate() Needs { return Needs{Config: true, GSM: true, Kubeseal: true} }
 
+// mutation renders an ops result. Copies of a changed key get the command
+// that re-copies each, after next; keys that stopped being copies are
+// noted in the summary.
 func mutation(app *App, res *ops.MutationResult, summary string, next ...string) *mutationResult {
-	return &mutationResult{Summary: summary, DryRun: res.DryRun, Changes: res.Changes, Next: next}
+	for _, d := range res.Detached {
+		summary += fmt.Sprintf("; %s/%s is no longer a copy of %s/%s", d.Target.ShortName, d.Target.KeyName, d.Source.ShortName, d.Source.KeyName)
+	}
+	for _, c := range res.Copies {
+		next = append(next, fmt.Sprintf("re-copy into %s/%s: waxseal key set %s %s --from-key %s/%s",
+			c.Target.ShortName, c.Target.KeyName, c.Target.ShortName, c.Target.KeyName, c.Source.ShortName, c.Source.KeyName))
+	}
+	return &mutationResult{Summary: summary, DryRun: res.DryRun, Changes: res.Changes, Next: next, Copies: res.Copies, Detached: res.Detached}
 }
 
 func commitNext(res *ops.MutationResult) []string {
@@ -54,11 +64,26 @@ func newKeyAddCmd(app *App) *cobra.Command {
 		Short: "Add a key; creates the secret if it does not exist",
 		Long: `Store a new key's value in Secret Manager, record it in metadata and seal it
 into the manifest. The value comes from --from-file (or - for stdin), from
---generate, or from a masked prompt on a terminal; it is never taken from
-the command line.
+--generate, from --from-key, or from a masked prompt on a terminal; it is
+never taken from the command line.
+
+--from-key <secret>/<key> copies another registered key, in any namespace
+and retired or not: its pinned Secret Manager version is copied into this
+key's own Secret Manager secret, and its kind, template, rotation and expiry
+come with it (--rotation and --expires override them). The copy is recorded
+as copiedFrom; when the source changes, re-copy with
+` + "`waxseal key set <secret> <key> --from-key <source>/<key>`" + `.
+
+With --template, the stored value is the template's {{secret}} part, so
+--generate makes values of a fixed shape. A keyring that rotates by adding
+entries must not be rotated by waxseal; give it --rotation static:
+
+  waxseal key add app ENCRYPTION_KEYS --template 'v1:{{secret}}' \
+    --generate --generator randomBase64 --bytes 32 --rotation static
 
 When the secret is not registered yet it is created, which needs
---namespace; the manifest path, scope and type have defaults.`,
+--namespace; the manifest path and scope have defaults, and the type
+defaults to Opaque, or to the source secret's type with --from-key.`,
 		Args:              argsUsage(cobra.MaximumNArgs(2)),
 		ValidArgsFunction: app.completeSecretKey,
 	}
@@ -104,7 +129,11 @@ When the secret is not registered yet it is created, which needs
 		if err != nil {
 			return nil, err
 		}
-		return mutation(app, res, fmt.Sprintf("%s/%s stored as GSM version %s", secretName, keyName, res.Versions[keyName]), commitNext(res)...), nil
+		summary := fmt.Sprintf("%s/%s stored as GSM version %s", secretName, keyName, res.Versions[keyName])
+		if spec.CopyFrom != nil {
+			summary = fmt.Sprintf("%s/%s copied from %s/%s", secretName, keyName, spec.CopyFrom.ShortName, spec.CopyFrom.KeyName)
+		}
+		return mutation(app, res, summary, commitNext(res)...), nil
 	})
 	value.register(cmd)
 	kc.register(cmd)
@@ -119,6 +148,27 @@ When the secret is not registered yet it is created, which needs
 // keySpec resolves value and configuration flags into an ops.KeySpec.
 func keySpec(cmd *cobra.Command, io *IO, app *App, value *valueFlags, kc *keyConfigFlags, keyName string) (ops.KeySpec, error) {
 	spec := ops.KeySpec{Name: keyName}
+	from, err := value.copyRef()
+	if err != nil {
+		return spec, err
+	}
+	if from != nil {
+		// A copy inherits its source's definition; only rotation mode and
+		// expiry may be overridden here.
+		if cmd.Flags().Changed("template") || cmd.Flags().Changed("param") {
+			return spec, core.NewValidationError("--from-key", "cannot be combined with --template or --param; a copied key keeps its source's template (change it afterwards with `key edit`)")
+		}
+		if cmd.Flags().Changed("generator") || cmd.Flags().Changed("bytes") {
+			return spec, core.NewValidationError("--from-key", "cannot be combined with --generator or --bytes; a copied key keeps its source's generator (change it afterwards with `key edit`)")
+		}
+		spec.CopyFrom, spec.Mode = from, kc.rotation
+		if kc.expires != "" {
+			if spec.ExpiresAt, err = parseExpiry(kc.expires); err != nil {
+				return spec, err
+			}
+		}
+		return spec, nil
+	}
 	if kc.template != "" {
 		values, err := kc.paramMap()
 		if err != nil {
@@ -132,7 +182,10 @@ func keySpec(cmd *cobra.Command, io *IO, app *App, value *valueFlags, kc *keyCon
 		return spec, err
 	}
 	spec.Mode = rotation
-	if rotation == core.RotationGenerated {
+	// A generated key needs a generator for its rotations; --generate needs
+	// one for the first value whatever the mode (ops records it only for a
+	// generated key).
+	if rotation == core.RotationGenerated || value.generate {
 		kind, err := io.In.Choice(ui.Spec{Flag: "--generator", Title: "Generator"}, cmd.Flags().Changed("generator"), kc.generator, core.OfferedGeneratorKinds, core.GeneratorRandomBase64)
 		if err != nil {
 			return spec, err
@@ -143,7 +196,7 @@ func keySpec(cmd *cobra.Command, io *IO, app *App, value *valueFlags, kc *keyCon
 			value.generate = true
 		}
 	}
-	v, _, err := value.resolve(io, app.Stdin, spec.Generator, ui.Spec{Flag: "--from-file or --generate", Title: "Value for " + keyName})
+	v, _, err := value.resolve(io, app.Stdin, spec.Generator, ui.Spec{Flag: valueFlagNames, Title: "Value for " + keyName})
 	if err != nil {
 		return spec, err
 	}
@@ -179,7 +232,19 @@ func newKeySetCmd(app *App) *cobra.Command {
 into the manifest. For a computed key the value is its {{secret}} part.
 
 The value comes from --from-file (or - for stdin), from --generate for a
-key with a generator, or from a masked prompt on a terminal.`,
+key with a generator, from --from-key, or from a masked prompt on a
+terminal.
+
+--from-key <secret>/<key> copies another registered key's current value
+(for computed keys, its {{secret}} part; both keys must be the same kind)
+and records the copy, which is how a copy follows its rotated source:
+
+  waxseal key set support-cannon-ghcr .dockerconfigjson \
+    --from-key default-ghcr/.dockerconfigjson
+
+A key that was a copy stops being one when its value is set any other way.
+When other keys are copies of this one, Next lists the command that
+re-copies each.`,
 		Args:              argsUsage(cobra.MaximumNArgs(2)),
 		ValidArgsFunction: app.completeSecretKey,
 	}
@@ -192,21 +257,39 @@ key with a generator, or from a masked prompt on a terminal.`,
 		if err != nil {
 			return nil, err
 		}
-		var gen *core.GeneratorConfig
-		if key.Generator != "" {
-			gen = &core.GeneratorConfig{Kind: key.Generator}
-		}
-		v, gen, err := value.resolve(io, app.Stdin, gen, ui.Spec{Flag: "--from-file or --generate", Title: "New value for " + keyName})
-		if err != nil {
+		in := ops.SetKeyValueInput{ShortName: secretName, Key: keyName, DryRun: app.Flags.DryRun}
+		if in.CopyFrom, err = value.copyRef(); err != nil {
 			return nil, err
 		}
-		if gen != nil {
-			if v, err = core.GenerateValue(gen); err != nil {
+		if in.CopyFrom == nil {
+			var gen *core.GeneratorConfig
+			if key.Generator != "" {
+				gen = &core.GeneratorConfig{Kind: key.Generator}
+			}
+			v, gen, err := value.resolve(io, app.Stdin, gen, ui.Spec{Flag: valueFlagNames, Title: "New value for " + keyName})
+			if err != nil {
 				return nil, err
 			}
+			if gen != nil {
+				if v, err = core.GenerateValue(gen); err != nil {
+					return nil, err
+				}
+			}
+			in.Value = v
 		}
-		in := ops.SetKeyValueInput{ShortName: secretName, Key: keyName, Value: v, DryRun: app.Flags.DryRun}
-		if key.ExpiresAt != "" || cmd.Flags().Changed("expires") {
+		// A key that expires needs a new expiry with its new value; a copy
+		// takes its source's expiry when the source has one.
+		needExpiry := key.ExpiresAt != "" || cmd.Flags().Changed("expires")
+		if in.CopyFrom != nil && !cmd.Flags().Changed("expires") {
+			if src, err := svc.Show(in.CopyFrom.ShortName); err == nil {
+				for _, k := range src.Keys {
+					if k.Name == in.CopyFrom.KeyName && k.ExpiresAt != "" {
+						needExpiry = false
+					}
+				}
+			}
+		}
+		if needExpiry {
 			// A key that expires needs a new expiry with its new value.
 			exp, err := io.In.String(ui.Spec{Flag: "--expires", Title: "New expiry (YYYY-MM-DD or none)"}, cmd.Flags().Changed("expires"), expires, "", nonEmpty)
 			if err != nil {
@@ -222,7 +305,11 @@ key with a generator, or from a masked prompt on a terminal.`,
 		if err != nil {
 			return nil, err
 		}
-		return mutation(app, res, fmt.Sprintf("%s/%s set to GSM version %s", secretName, keyName, res.Versions[keyName]), commitNext(res)...), nil
+		summary := fmt.Sprintf("%s/%s set to GSM version %s", secretName, keyName, res.Versions[keyName])
+		if in.CopyFrom != nil {
+			summary = fmt.Sprintf("%s/%s copied from %s/%s as GSM version %s", secretName, keyName, in.CopyFrom.ShortName, in.CopyFrom.KeyName, res.Versions[keyName])
+		}
+		return mutation(app, res, summary, commitNext(res)...), nil
 	})
 	value.register(cmd)
 	cmd.Flags().StringVar(&expires, "expires", "", "new expiry date (YYYY-MM-DD or RFC 3339), or 'none' to clear")

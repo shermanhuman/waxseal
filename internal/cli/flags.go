@@ -16,18 +16,36 @@ import (
 	"github.com/shermanhuman/waxseal/internal/ui"
 )
 
-// valueFlags supply a secret value without putting it in argv. Exactly one
-// of --from-file and --generate may be given; on a terminal a masked prompt
-// is the fallback.
+// valueFlags supply a secret value without putting it in argv. At most one
+// of --from-file, --generate and --from-key may be given; on a terminal a
+// masked prompt is the fallback. --from-key names another key whose stored
+// value ops copies; the value itself never passes through the CLI.
 type valueFlags struct {
 	fromFile string
 	generate bool
+	fromKey  string
 }
+
+// valueFlagNames names the value flags in errors and prompts.
+const valueFlagNames = "--from-file, --generate or --from-key"
 
 func (v *valueFlags) register(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&v.fromFile, "from-file", "", "read the value from a file, or from stdin with -")
 	cmd.Flags().BoolVar(&v.generate, "generate", false, "generate a random value")
-	cmd.MarkFlagsMutuallyExclusive("from-file", "generate")
+	cmd.Flags().StringVar(&v.fromKey, "from-key", "", "copy the stored value of another registered key, as <secret>/<key>")
+	cmd.MarkFlagsMutuallyExclusive("from-file", "generate", "from-key")
+}
+
+// copyRef parses --from-key, or returns nil when it was not given.
+func (v *valueFlags) copyRef() (*core.KeyRef, error) {
+	if v.fromKey == "" {
+		return nil, nil
+	}
+	short, key, ok := strings.Cut(v.fromKey, "/")
+	if !ok || short == "" || key == "" {
+		return nil, core.NewValidationError("--from-key", fmt.Sprintf("%q is not <secret>/<key>", v.fromKey))
+	}
+	return &core.KeyRef{ShortName: short, KeyName: key}, nil
 }
 
 // resolve returns the value, or a generator when --generate was given. A

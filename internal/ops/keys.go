@@ -42,17 +42,16 @@ func (k KeySpec) build(resource string) (core.KeyMetadata, keyWrite, error) {
 	if k.Name == "" {
 		return core.KeyMetadata{}, keyWrite{}, &core.MissingInputError{Field: "<key>"}
 	}
-	if sources := btoi(k.Value != nil) + btoi(k.Generator != nil) + btoi(k.CopyFrom != nil); sources != 1 {
-		if sources == 0 {
-			return core.KeyMetadata{}, keyWrite{}, &core.MissingInputError{Field: valueFlagNames}
-		}
-		return core.KeyMetadata{}, keyWrite{}, core.NewValidationError("value", "give exactly one of "+valueFlagNames)
-	}
 	if k.CopyFrom != nil {
 		return core.KeyMetadata{}, keyWrite{}, errors.New("a copied key is built from its source, not by build")
 	}
+	if k.Value == nil && k.Generator == nil {
+		return core.KeyMetadata{}, keyWrite{}, &core.MissingInputError{Field: valueFlagNames}
+	}
+	// A Value given with a Generator is the first value; the generator is
+	// kept for future rotations.
 	value := k.Value
-	if k.Generator != nil {
+	if value == nil {
 		var err error
 		if value, err = core.GenerateValue(k.Generator); err != nil {
 			return core.KeyMetadata{}, keyWrite{}, err

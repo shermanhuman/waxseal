@@ -86,8 +86,11 @@ func codeFor(err error) int {
 	switch {
 	case errors.As(err, &usage), errors.As(err, &missing), errors.As(err, &confirm), errors.Is(err, core.ErrValidation):
 		return ExitUsage
-	case strings.HasPrefix(err.Error(), "unknown command"):
-		// cobra reports an unknown subcommand as a plain error with no hook.
+	case strings.HasPrefix(err.Error(), "unknown command"),
+		strings.HasPrefix(err.Error(), "if any flags in the group"),
+		strings.HasPrefix(err.Error(), "at least one of the flags in the group"):
+		// cobra reports an unknown subcommand and flag-group conflicts as
+		// plain errors with no hook.
 		return ExitUsage
 	}
 	return ExitFailure

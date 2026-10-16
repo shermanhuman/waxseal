@@ -1,0 +1,25 @@
+{
+  "summary": "ghcr/.dockerconfigjson copied from docker-registry/.dockerconfigjson",
+  "dryRun": true,
+  "changes": [
+    {
+      "op": "create",
+      "kind": "gsm-version",
+      "target": "projects/waxseal-test-project/secrets/ghcr-dockerconfigjson",
+      "source": "docker-registry/.dockerconfigjson@2"
+    },
+    {
+      "op": "update",
+      "kind": "metadata",
+      "target": ".waxseal/metadata/ghcr.yaml"
+    },
+    {
+      "op": "create",
+      "kind": "manifest",
+      "target": "apps/ghcr/sealed-secret.yaml"
+    }
+  ],
+  "next": [
+    "commit the changed files: .waxseal/metadata/ghcr.yaml apps/ghcr/sealed-secret.yaml"
+  ]
+}
