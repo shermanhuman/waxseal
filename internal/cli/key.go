@@ -291,13 +291,15 @@ re-copies each.`,
 		if in.CopyFrom != nil && !cmd.Flags().Changed("expires") {
 			// When the source can't be read, ops reports why; don't ask
 			// for an expiry first.
-			src, err := svc.Show(in.CopyFrom.ShortName)
-			needExpiry = err == nil && needExpiry
+			src, _ := svc.Show(in.CopyFrom.ShortName)
+			found := false
 			for _, k := range viewKeys(src) {
-				if k.Name == in.CopyFrom.KeyName && k.ExpiresAt != "" {
-					needExpiry = false
+				if k.Name == in.CopyFrom.KeyName {
+					found = true
+					needExpiry = needExpiry && k.ExpiresAt == ""
 				}
 			}
+			needExpiry = needExpiry && found
 		}
 		if needExpiry {
 			// A key that expires needs a new expiry with its new value.

@@ -10,6 +10,7 @@ import (
 
 	"github.com/shermanhuman/waxseal/internal/computed"
 	"github.com/shermanhuman/waxseal/internal/core"
+	"github.com/shermanhuman/waxseal/internal/store"
 )
 
 const copySentinel = "sentinel-value-must-never-appear"
@@ -405,7 +406,7 @@ func TestAddKey_CopyRotationOverrides(t *testing.T) {
 	}
 	// external → generated has no generator to rotate with: refused, naming --rotation.
 	_, err := s.AddKey(ctx, AddKeyInput{ShortName: "o", Key: KeySpec{Name: "K", CopyFrom: ref("tls-cert", "tls.key"), Mode: core.RotationGenerated}})
-	if err == nil || !strings.Contains(err.Error(), "--rotation") || !strings.Contains(err.Error(), "key edit") {
+	if err == nil || !strings.Contains(err.Error(), "--rotation") || !strings.Contains(err.Error(), "waxseal key edit o K --rotation generated") {
 		t.Errorf("got %v", err)
 	}
 	// --expires none clears the inherited expiry.
@@ -473,5 +474,59 @@ func TestImport_KeepsACopyHoldingTheSameValueAndDetachesAChangedOne(t *testing.T
 	m, _ := s.Repo.Metadata("o")
 	if m.Key("tls.crt").CopiedFrom == nil || m.Key("tls.key").CopiedFrom != nil {
 		t.Errorf("crt %+v key %+v", m.Key("tls.crt").CopiedFrom, m.Key("tls.key").CopiedFrom)
+	}
+}
+
+func TestAddKey_CopyOfGeneratedComputedKeyMadeStatic(t *testing.T) {
+	s, ctx := copyFixture(t)
+	if _, err := s.AddKey(ctx, AddKeyInput{ShortName: "my-app-secrets", Key: KeySpec{Name: "conn", Generator: &core.GeneratorConfig{Kind: core.GeneratorRandomHex},
+		Template: &TemplateSpec{Template: "redis://:{{secret}}@h"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddKey(ctx, AddKeyInput{ShortName: "o", Key: KeySpec{Name: "conn", CopyFrom: ref("my-app-secrets", "conn"), Mode: core.RotationStatic},
+		New: &NewSecret{Namespace: "o"}}); err != nil {
+		t.Fatal(err)
+	}
+	view, err := s.DescribeComputed(ctx, "o", "conn")
+	if err != nil || view.Generated {
+		t.Errorf("a static copy's payload must not carry a generator: %+v %v", view, err)
+	}
+	src, _ := s.DescribeComputed(ctx, "my-app-secrets", "conn")
+	if !src.Generated {
+		t.Error("the source's payload is untouched")
+	}
+}
+
+func TestImport_SkippedComputedCopyKeepsProvenanceAndReadErrorsSurface(t *testing.T) {
+	s, ctx := copyFixture(t)
+	if _, err := s.AddKey(ctx, AddKeyInput{ShortName: "my-app-secrets", Key: KeySpec{Name: "conn", Value: []byte("pw"),
+		Template: &TemplateSpec{Template: "redis://:{{secret}}@h"}}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []struct{ from, name string }{{"my-app-secrets/conn", "conn"}, {"tls-cert/tls.key", "tls.key"}} {
+		short, key, _ := strings.Cut(k.from, "/")
+		if _, err := s.AddKey(ctx, AddKeyInput{ShortName: "o", Key: KeySpec{Name: k.name, CopyFrom: ref(short, key)}, New: &NewSecret{Namespace: "o"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// conn is skipped (not a connection string); tls.key is rewritten with its copied value.
+	s.Cluster = &fakeCluster{secrets: map[string]map[string][]byte{"o/o": {"conn": []byte("not a url"), "tls.key": []byte("value-of-tls.key")}}}
+	res, err := s.Import(ctx, ImportInput{ShortName: "o"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Detached) != 0 || len(res.Skipped) != 1 {
+		t.Errorf("detached %+v skipped %+v", res.Detached, res.Skipped)
+	}
+	m, _ := s.Repo.Metadata("o")
+	if m.Key("conn").CopiedFrom == nil || m.Key("tls.key").CopiedFrom == nil {
+		t.Error("neither value changed; both stay copies")
+	}
+
+	// A GSM read failure is an error, not a cluster difference.
+	st := s.Store.(*store.FakeStore)
+	st.FailOn("AccessVersion", m.Key("tls.key").GSM.SecretResource, errBoom)
+	if _, err := s.Import(ctx, ImportInput{ShortName: "o", DryRun: true}); !errors.Is(err, errBoom) {
+		t.Errorf("got %v", err)
 	}
 }

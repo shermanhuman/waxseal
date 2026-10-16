@@ -174,9 +174,11 @@ func TestFromKey_ExpiryFlags(t *testing.T) {
 	if m.Key("API").Expiry != nil {
 		t.Errorf("expiry = %+v", m.Key("API").Expiry)
 	}
-	// An unregistered source is reported as such, not as a missing --expires.
-	_, errw, code := ta.run("--no-input", "key", "set", "my-app-secrets", "api_key", "--from-key", "nope/x")
-	if code == 0 || !strings.Contains(errw, "not registered") {
-		t.Errorf("exit %d\n%s", code, errw)
+	// An unregistered source or key is reported as such, not as a missing --expires.
+	for from, want := range map[string]string{"nope/x": "not registered", "my-app-secrets/nope": "key not found"} {
+		_, errw, code := ta.run("--no-input", "key", "set", "my-app-secrets", "api_key", "--from-key", from)
+		if code == 0 || !strings.Contains(errw, want) {
+			t.Errorf("%s: exit %d\n%s", from, code, errw)
+		}
 	}
 }

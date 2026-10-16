@@ -68,7 +68,7 @@ func (c *copySource) computed() bool { return c.key.Source.Kind == "computed" }
 // definition (kind, template, rotation, expiry, operator hints) and its
 // stored bytes verbatim, under the target's own GSM resource. spec.Mode and
 // spec.ExpiresAt override the inherited values.
-func (c *copySource) newKey(spec KeySpec, resource string) (core.KeyMetadata, keyWrite, error) {
+func (c *copySource) newKey(spec KeySpec, target, resource string) (core.KeyMetadata, keyWrite, error) {
 	src := c.key
 	meta := core.KeyMetadata{
 		KeyName:       spec.Name,
@@ -97,8 +97,8 @@ func (c *copySource) newKey(spec KeySpec, resource string) (core.KeyMetadata, ke
 			meta.Rotation.Generator = nil
 		case meta.Rotation.Generator == nil:
 			return core.KeyMetadata{}, keyWrite{}, core.NewValidationError("--rotation", fmt.Sprintf(
-				"%s/%s has no generator; copy it first, then run `waxseal key edit <secret> %s --rotation generated --generator <kind>`",
-				c.secret.ShortName, src.KeyName, spec.Name))
+				"%s/%s has no generator; copy it first, then run `waxseal key edit %s %s --rotation generated --generator <kind>`",
+				c.secret.ShortName, src.KeyName, target, spec.Name))
 		}
 	}
 	switch {
@@ -127,6 +127,14 @@ func (c *copySource) newKey(spec KeySpec, resource string) (core.KeyMetadata, ke
 	}
 	meta.Computed = &core.ComputedConfig{Kind: "template", Template: src.Computed.Template, GSM: ref}
 	w.seal = []byte(out)
+	if p.Generator != nil && (meta.Rotation == nil || meta.Rotation.Generator == nil) {
+		// A copy that isn't generated records no generator in its payload
+		// either; the rest of the payload is copied as is.
+		p.Generator = nil
+		if w.gsm, err = p.Marshal(); err != nil {
+			return core.KeyMetadata{}, keyWrite{}, err
+		}
+	}
 	return meta, w, nil
 }
 

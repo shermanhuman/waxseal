@@ -189,7 +189,7 @@ func (s *Service) AddKey(ctx context.Context, in AddKeyInput) (*MutationResult, 
 		if in.Key.Name == "" {
 			return nil, &core.MissingInputError{Field: "<key>"}
 		}
-		meta, write, err = src.newKey(in.Key, s.gsmResource(m.ShortName, in.Key.Name))
+		meta, write, err = src.newKey(in.Key, m.ShortName, s.gsmResource(m.ShortName, in.Key.Name))
 	} else {
 		meta, write, err = in.Key.build(s.gsmResource(m.ShortName, in.Key.Name))
 	}

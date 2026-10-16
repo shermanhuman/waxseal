@@ -74,9 +74,6 @@ func (s *Service) Import(ctx context.Context, in ImportInput) (*ImportResult, er
 			m.Keys = append(m.Keys, core.KeyMetadata{KeyName: name, Rotation: &core.RotationConfig{Mode: core.RotationExternal}})
 			k = &m.Keys[len(m.Keys)-1]
 		}
-		if !isNew && k.CopiedFrom != nil && !s.holds(ctx, k, value) {
-			detached = append(detached, detach(m.ShortName, k)...)
-		}
 		tmpl, values, secret, isConn := computed.DetectConnectionString(string(value))
 
 		switch {
@@ -86,6 +83,11 @@ func (s *Service) Import(ctx context.Context, in ImportInput) (*ImportResult, er
 			ref := &core.GSMRef{SecretResource: s.gsmResource(m.ShortName, name)}
 			if !isNew {
 				ref.SecretResource = k.Computed.GSM.SecretResource
+				d, err := s.detachIfChanged(ctx, m.ShortName, k, value)
+				if err != nil {
+					return nil, err
+				}
+				detached = append(detached, d...)
 			}
 			payload, err := computed.NewPayload(tmpl, values, secret, nil)
 			if err != nil {
@@ -112,6 +114,13 @@ func (s *Service) Import(ctx context.Context, in ImportInput) (*ImportResult, er
 			if k.GSM != nil {
 				ref.SecretResource = k.GSM.SecretResource
 			}
+			if !isNew {
+				d, err := s.detachIfChanged(ctx, m.ShortName, k, value)
+				if err != nil {
+					return nil, err
+				}
+				detached = append(detached, d...)
+			}
 			k.Source = core.SourceConfig{Kind: "gsm"}
 			k.Computed = nil
 			k.GSM = ref
@@ -136,27 +145,39 @@ func (s *Service) Import(ctx context.Context, in ImportInput) (*ImportResult, er
 	return res, nil
 }
 
-// holds reports whether a key's pinned GSM version already renders to
-// value. Import uses it to keep a copy's provenance when the cluster holds
-// the copied value, and to end it when the cluster was changed by hand.
-func (s *Service) holds(ctx context.Context, k *core.KeyMetadata, value []byte) bool {
+// detachIfChanged ends a key's copy provenance unless its pinned GSM
+// version already renders to // value, which import is about to store as its new version. A copy whose
+// stored value import really changes (the cluster was edited by hand) stops
+// being a copy; one that still holds the copied value keeps its provenance.
+// Only keys import rewrites get here, never ones it skips.
+func (s *Service) detachIfChanged(ctx context.Context, shortName string, k *core.KeyMetadata, value []byte) ([]CopyRef, error) {
 	ref := k.ActiveRef()
-	if ref == nil || s.Store == nil {
-		return false
+	if k.CopiedFrom == nil || ref == nil {
+		return nil, nil
+	}
+	if s.Store == nil {
+		return nil, errors.New("GSM access is required")
 	}
 	data, err := s.Store.AccessVersion(ctx, ref.SecretResource, ref.Version)
 	if err != nil {
-		return false
+		return nil, fmt.Errorf("read %s/%s (GSM version %s): %w", shortName, k.KeyName, ref.Version, err)
 	}
-	if k.Source.Kind != "computed" {
-		return bytes.Equal(data, value)
+	held := bytes.Equal(data, value)
+	if k.Source.Kind == "computed" {
+		p, err := computed.ParsePayload(data)
+		if err != nil {
+			return nil, fmt.Errorf("payload of %s/%s: %w", shortName, k.KeyName, err)
+		}
+		out, err := p.Compute()
+		if err != nil {
+			return nil, fmt.Errorf("payload of %s/%s: %w", shortName, k.KeyName, err)
+		}
+		held = out == string(value)
 	}
-	p, err := computed.ParsePayload(data)
-	if err != nil {
-		return false
+	if held {
+		return nil, nil
 	}
-	out, err := p.Compute()
-	return err == nil && out == string(value)
+	return detach(shortName, k), nil
 }
 
 // metadataForManifest builds fresh metadata for a discovered manifest whose
