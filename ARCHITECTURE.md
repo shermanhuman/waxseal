@@ -82,6 +82,12 @@ template, its non-secret values and the `{{secret}}` part. `rotate` and
 `key set` replace the secret part; `key edit --template/--param` replaces
 the rest.
 
+A key made with `--from-key` records `copiedFrom: {shortName, keyName,
+version}`: the source key and the version of its value that was copied.
+The copy has its own GSM secret, so it is never shared. Changing the
+copy's value any way other than `--from-key` removes `copiedFrom`. waxseal
+before 0.6 rejects metadata with this field.
+
 ## Security invariants
 
 - No plaintext on disk: results, changes and logs never carry values;

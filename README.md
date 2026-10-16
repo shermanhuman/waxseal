@@ -95,8 +95,48 @@ The full reference is in [docs/cli](docs/cli/waxseal.md) and in
 
 Secret values are never taken from the command line. `key add` and
 `key set` read them from `--from-file PATH` (or `-` for stdin), generate
-them with `--generate`, or ask at a masked prompt on a terminal. One
+them with `--generate`, copy them from another registered key with
+`--from-key SECRET/KEY`, or ask at a masked prompt on a terminal. One
 trailing newline is stripped, so `echo` works as expected.
+
+### Copying a key
+
+`--from-key` reuses a value waxseal already manages, in any namespace,
+without the value ever leaving waxseal: the source key's pinned Secret
+Manager version is copied into the new key's own Secret Manager secret.
+The new key also takes the source's kind, template, rotation mode and
+expiry (`--rotation` and `--expires` override them), and a new secret
+takes the source secret's type unless `--type` is given. The copy is
+recorded in metadata as `copiedFrom`.
+
+```sh
+# the same registry credential in another namespace
+waxseal key add support-cannon-ghcr .dockerconfigjson \
+  --from-key default-ghcr/.dockerconfigjson --namespace support-cannon --name ghcr-pull-secret
+
+# a key moving to a new secret under a new name; retire the old one after
+waxseal key add support-cannon-ai ANTHROPIC_API_KEY \
+  --from-key default-ai/anthropic_api_key --namespace support-cannon
+waxseal secret retire default-ai --replaced-by support-cannon-ai
+```
+
+A copy is independent: it has its own Secret Manager secret and versions.
+
+- When the source gets a new value (`key set` or `rotate`), Next prints
+  the command that re-copies each copy:
+  `waxseal key set <secret> <key> --from-key <source>/<key>`.
+- Until then, `waxseal check metadata` warns that the copy is behind its
+  source.
+- Setting a copy's value any other way, or rotating it, makes it an
+  ordinary key: `copiedFrom` is removed and the output says so.
+- Retiring the source changes nothing for the copy; `check` stops
+  comparing them.
+- `key set --from-key` copies between keys of the same kind; for computed
+  keys it copies the `{{secret}}` part and keeps the target's template.
+
+`check metadata` also warns when two keys point at the same Secret Manager
+secret but pin different versions of it, which happens when one of them
+is set and the other is not.
 
 ### Rotation modes
 
@@ -122,6 +162,20 @@ waxseal rotate my-app DATABASE_URL                              # new password, 
 
 `import` recognises connection strings in cluster secrets and turns them
 into computed keys automatically.
+
+A template also gives a generated value a fixed shape, such as a keyring
+entry `v1:<base64 of 32 bytes>`:
+
+```sh
+waxseal key add my-app ENCRYPTION_KEYS --template 'v1:{{secret}}' \
+  --generate --generator randomBase64 --bytes 32 --rotation static
+```
+
+Give a keyring `--rotation static`. `rotate` replaces `{{secret}}`, so on
+a keyring it would drop `v1` and make data encrypted with it unreadable.
+A keyring rotates by adding `v2` in front of `v1`; set that value with
+`key set --from-file -`. With a mode other than `generated`, `--generate`
+makes the first value only, and no generator is recorded.
 
 ## Files in the repository
 
