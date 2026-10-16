@@ -22,6 +22,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -182,6 +183,29 @@ func TestSmoke(t *testing.T) {
 	h.must("rotate", "smoke-strict")
 	h.kubectl("apply", "-f", filepath.Join(h.repo, "apps", "smoke-strict", "sealed-secret.yaml"))
 	waitFor(t, func() bool { return len(h.clusterSecret("smoke-strict")["token"]) == 16 })
+
+	// --from-key: a stored value copied into a new secret decrypts to the
+	// same value, and a re-copy follows the source's new value.
+	h.must("key", "add", "smoke-copy", "password", "--from-key", "smoke-strict/password", "--namespace", namespace)
+	h.made = append(h.made, fmt.Sprintf("projects/%s/secrets/smoke-copy-password", h.project()))
+	h.kubectl("apply", "-f", filepath.Join(h.repo, "apps", "smoke-copy", "sealed-secret.yaml"))
+	waitFor(t, func() bool { return h.clusterSecret("smoke-copy")["password"] == "rotated-by-hand" })
+	h.stdin.WriteString("rotated-again\n")
+	if out := h.must("key", "set", "smoke-strict", "password", "--from-file", "-"); !strings.Contains(out, "--from-key smoke-strict/password") {
+		t.Errorf("key set on the source should list the copy in Next:\n%s", out)
+	}
+	h.must("key", "set", "smoke-copy", "password", "--from-key", "smoke-strict/password")
+	h.kubectl("apply", "-f", filepath.Join(h.repo, "apps", "smoke-strict", "sealed-secret.yaml"))
+	h.kubectl("apply", "-f", filepath.Join(h.repo, "apps", "smoke-copy", "sealed-secret.yaml"))
+	waitFor(t, func() bool { return h.clusterSecret("smoke-copy")["password"] == "rotated-again" })
+
+	// A keyring: a generated value with a fixed shape, never rotated.
+	h.must("key", "add", "smoke-copy", "ENCRYPTION_KEYS", "--template", "v1:{{secret}}",
+		"--generate", "--generator", "randomBase64", "--bytes", "32", "--rotation", "static")
+	h.made = append(h.made, fmt.Sprintf("projects/%s/secrets/smoke-copy-ENCRYPTION_KEYS", h.project()))
+	h.kubectl("apply", "-f", filepath.Join(h.repo, "apps", "smoke-copy", "sealed-secret.yaml"))
+	keyring := regexp.MustCompile(`^v1:[A-Za-z0-9+/]{43}=$`)
+	waitFor(t, func() bool { return keyring.MatchString(h.clusterSecret("smoke-copy")["ENCRYPTION_KEYS"]) })
 
 	// discover / import round trip: forget the metadata, import it back
 	// from the cluster, and reseal; the result must still decrypt.

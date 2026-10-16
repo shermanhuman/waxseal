@@ -215,7 +215,95 @@ func (s *Service) checkMetadata() []Finding {
 			}
 		}
 	}
+	findings = append(findings, checkCopies(secrets)...)
+	findings = append(findings, checkSharedResources(secrets)...)
 	findings = append(findings, Finding{SeverityInfo, CheckMetadata, "", fmt.Sprintf("%d secrets validated", checked)})
+	return findings
+}
+
+// checkCopies compares each active copy with the key it was copied from.
+// A retired source is skipped: the copy was a move and now stands alone.
+func checkCopies(secrets []*core.SecretMetadata) []Finding {
+	byName := map[string]*core.SecretMetadata{}
+	for _, m := range secrets {
+		byName[m.ShortName] = m
+	}
+	var findings []Finding
+	for _, m := range secrets {
+		if m.IsRetired() {
+			continue
+		}
+		for _, k := range m.Keys {
+			cf := k.CopiedFrom
+			if cf == nil {
+				continue
+			}
+			subject := m.ShortName + "/" + k.KeyName
+			from := cf.ShortName + "/" + cf.KeyName
+			src := byName[cf.ShortName]
+			if src != nil && src.IsRetired() {
+				continue
+			}
+			var ref *core.GSMRef
+			if src != nil {
+				if sk := src.Key(cf.KeyName); sk != nil {
+					ref = sk.ActiveRef()
+				}
+			}
+			if ref == nil {
+				findings = append(findings, Finding{SeverityInfo, CheckMetadata, subject,
+					"copied from " + from + ", which is no longer registered"})
+				continue
+			}
+			if ref.Version != cf.Version {
+				findings = append(findings, Finding{SeverityWarning, CheckMetadata, subject,
+					fmt.Sprintf("behind its source %s (copied version %s, source is at %s); run `waxseal key set %s %s --from-key %s`",
+						from, cf.Version, ref.Version, m.ShortName, k.KeyName, from)})
+			}
+		}
+	}
+	return findings
+}
+
+// checkSharedResources reports active keys that share one GSM secret but
+// pin different versions of it: a value changed through one of them did
+// not reach the others.
+func checkSharedResources(secrets []*core.SecretMetadata) []Finding {
+	type pin struct{ subject, version string }
+	pins := map[string][]pin{}
+	var order []string
+	for _, m := range secrets {
+		if m.IsRetired() {
+			continue
+		}
+		for i := range m.Keys {
+			ref := m.Keys[i].ActiveRef()
+			if ref == nil {
+				continue
+			}
+			if _, seen := pins[ref.SecretResource]; !seen {
+				order = append(order, ref.SecretResource)
+			}
+			pins[ref.SecretResource] = append(pins[ref.SecretResource], pin{m.ShortName + "/" + m.Keys[i].KeyName, ref.Version})
+		}
+	}
+	var findings []Finding
+	for _, resource := range order {
+		ps := pins[resource]
+		differ := false
+		for _, p := range ps[1:] {
+			differ = differ || p.version != ps[0].version
+		}
+		if !differ {
+			continue
+		}
+		var parts []string
+		for _, p := range ps {
+			parts = append(parts, p.subject+" pins version "+p.version)
+		}
+		findings = append(findings, Finding{SeverityWarning, CheckMetadata, resource,
+			"keys sharing this GSM secret disagree: " + strings.Join(parts, ", ")})
+	}
 	return findings
 }
 

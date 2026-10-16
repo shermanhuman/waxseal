@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.6.0 (2026-10-16)
+
+### Added
+
+- `key add --from-key <secret>/<key>` copies a value waxseal already
+  manages into a new key, in any namespace, without the value leaving
+  waxseal. The source's pinned Secret Manager version goes into the new
+  key's own Secret Manager secret, and its kind, template, rotation mode
+  and expiry come with it. A new secret takes the source secret's type
+  unless `--type` is given. `--dry-run` shows the source and version.
+- The copy is recorded in metadata as `copiedFrom` and shown by
+  `secret show`. `key set --from-key` re-copies the source's current
+  value.
+- When `key set` or `rotate` gives a key a new value, Next lists the
+  command that re-copies each of its copies. `check metadata` warns when a
+  copy is behind its source.
+- `check metadata` warns when keys sharing one Secret Manager secret pin
+  different versions of it.
+
+### Fixed
+
+- `--generate` works with every `--rotation` mode, so
+  `--template 'v1:{{secret}}' --generate --rotation static` makes a
+  fixed-shape value (such as a keyring entry) that `rotate` will not
+  replace. A generator is recorded only for `generated` keys, and
+  `--generator` defaults to `randomBase64`.
+- `key add --rotation generated --from-file …` stores the given value and
+  keeps the generator for later rotations; it used to fail asking for a
+  value.
+- Conflicting value flags (for example `--from-file` with `--generate`)
+  exit 2 (usage) instead of 1.
+- `key add` and `import` refuse a new key whose Secret Manager secret
+  another registered key already uses. Names map to `<secret>-<key>`, so `a-b`/`c` and
+  `a`/`b-c` collide; the second add used to add a version to the first
+  key's secret, silently sharing it.
+
+### Upgrading
+
+Metadata with `copiedFrom` cannot be read by waxseal 0.5, which rejects
+unknown fields. Upgrade every machine and CI job that runs waxseal on a
+repository before using `--from-key` in it.
+
 ## 0.5.0 (2026-09-18)
 
 A ground-up rewrite. Every command can be driven entirely by flags; on a

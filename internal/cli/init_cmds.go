@@ -133,6 +133,9 @@ func (r *importResult) Text(p *ui.Printer) {
 		if len(s.Skipped) > 0 {
 			p.Warn("%s: computed keys left unchanged (their cluster value is rendered): %s", s.ShortName, strings.Join(s.Skipped, ", "))
 		}
+		for _, d := range s.Detached {
+			p.Info("%s/%s is no longer a copy of %s/%s: the cluster holds a different value", d.Target.ShortName, d.Target.KeyName, d.Source.ShortName, d.Source.KeyName)
+		}
 	}
 	if !r.DryRun {
 		p.Next([]string{"review rotation modes: waxseal secret show <secret>; adjust with waxseal key edit", "commit .waxseal/metadata and the manifests"})

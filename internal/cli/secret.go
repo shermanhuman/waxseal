@@ -91,6 +91,10 @@ func (r *showResult) Text(p *ui.Printer) {
 	p.KV(pairs)
 	p.Println()
 	rows := make([][]string, 0, len(v.Keys))
+	copies := false
+	for _, k := range v.Keys {
+		copies = copies || k.CopiedFrom != ""
+	}
 	for _, k := range v.Keys {
 		expiry := ""
 		if k.DaysLeft != nil {
@@ -105,9 +109,17 @@ func (r *showResult) Text(p *ui.Printer) {
 		if k.GSMResource != "" {
 			gsm = k.GSMResource[strings.LastIndex(k.GSMResource, "/")+1:] + "@" + k.GSMVersion
 		}
-		rows = append(rows, []string{k.Name, k.Source, k.RotationMode, k.Generator, gsm, expiry})
+		row := []string{k.Name, k.Source, k.RotationMode, k.Generator, gsm, expiry}
+		if copies {
+			row = append(row, k.CopiedFrom)
+		}
+		rows = append(rows, row)
 	}
-	p.Table([]string{"KEY", "SOURCE", "ROTATION", "GENERATOR", "GSM", "EXPIRY"}, rows)
+	headers := []string{"KEY", "SOURCE", "ROTATION", "GENERATOR", "GSM", "EXPIRY"}
+	if copies {
+		headers = append(headers, "COPIED FROM")
+	}
+	p.Table(headers, rows)
 }
 
 func newSecretShowCmd(app *App) *cobra.Command {

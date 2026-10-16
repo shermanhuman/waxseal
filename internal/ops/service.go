@@ -52,6 +52,13 @@ type Change struct {
 	Op     string `json:"op"`     // create | update | delete
 	Kind   string `json:"kind"`   // gsm-version | gsm-secret | metadata | manifest | cert | config | reminder
 	Target string `json:"target"` // path, GSM resource, or item name; never a secret value
+	// Source names the key a copied value comes from, as short/key@version.
+	Source string `json:"source,omitempty"`
 }
 
-func (c Change) String() string { return fmt.Sprintf("%s %s %s", c.Op, c.Kind, c.Target) }
+func (c Change) String() string {
+	if c.Source != "" {
+		return fmt.Sprintf("%s %s %s (from %s)", c.Op, c.Kind, c.Target, c.Source)
+	}
+	return fmt.Sprintf("%s %s %s", c.Op, c.Kind, c.Target)
+}

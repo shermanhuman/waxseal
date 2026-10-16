@@ -2,6 +2,7 @@ package core
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -332,6 +333,49 @@ func TestGSMRef_NumericVersionOnly(t *testing.T) {
 			err := g.Validate()
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Validate() for version %q: got err=%v, wantErr=%v", tt.version, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestParseMetadata_CopiedFrom(t *testing.T) {
+	base := `shortName: app
+manifestPath: apps/app/sealed.yaml
+sealedSecret:
+  name: app
+  namespace: prod
+  scope: strict
+keys:
+  - keyName: token
+    source:
+      kind: gsm
+    gsm:
+      secretResource: projects/p/secrets/app-token
+      version: "1"
+    copiedFrom:
+`
+	tests := []struct {
+		name, copied string
+		wantErr      string
+	}{
+		{"valid", "      shortName: other\n      keyName: token\n      version: \"3\"\n", ""},
+		{"missing key name", "      shortName: other\n      version: \"3\"\n", "copiedFrom.keyName"},
+		{"alias version", "      shortName: other\n      keyName: token\n      version: latest\n", "copiedFrom.version"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m, err := ParseMetadata([]byte(base + tt.copied))
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got := m.Key("token").CopiedFrom.String(); got != "other/token@3" {
+					t.Errorf("copiedFrom = %s", got)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("got %v, want an error naming %s", err, tt.wantErr)
 			}
 		})
 	}

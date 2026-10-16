@@ -19,6 +19,9 @@ type mutationResult struct {
 	DryRun  bool         `json:"dryRun"`
 	Changes []ops.Change `json:"changes"`
 	Next    []string     `json:"next,omitempty"`
+	// Copies and Detached pass ops' copy bookkeeping through to -o json.
+	Copies   []ops.CopyRef `json:"copies,omitempty"`
+	Detached []ops.CopyRef `json:"detached,omitempty"`
 }
 
 func (r *mutationResult) Text(p *ui.Printer) {
@@ -27,6 +30,10 @@ func (r *mutationResult) Text(p *ui.Printer) {
 		verb = map[string]string{"create": "Would create", "update": "Would update", "delete": "Would delete"}
 	}
 	for _, c := range r.Changes {
+		if c.Source != "" {
+			p.Printf("%s %s %s (from %s)\n", verb[c.Op], c.Kind, c.Target, c.Source)
+			continue
+		}
 		p.Printf("%s %s %s\n", verb[c.Op], c.Kind, c.Target)
 	}
 	if r.Summary != "" {

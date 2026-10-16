@@ -1,6 +1,7 @@
 package ops
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -64,6 +65,7 @@ func (s *Service) Import(ctx context.Context, in ImportInput) (*ImportResult, er
 	slices.Sort(names)
 
 	var writes []keyWrite
+	var detached []CopyRef
 	for _, name := range names {
 		value := data[name]
 		k := m.Key(name)
@@ -78,9 +80,18 @@ func (s *Service) Import(ctx context.Context, in ImportInput) (*ImportResult, er
 		case isNew && isConn, k.Source.Kind == "computed" && isConn && k.Computed != nil && k.Computed.GSM != nil:
 			// A new connection string becomes a computed key; an existing
 			// computed key gets a new payload version on its own resource.
-			ref := &core.GSMRef{SecretResource: s.gsmResource(m.ShortName, name)}
-			if !isNew {
+			ref := &core.GSMRef{}
+			if isNew {
+				if ref.SecretResource, err = s.newResource(m.ShortName, name); err != nil {
+					return nil, err
+				}
+			} else {
 				ref.SecretResource = k.Computed.GSM.SecretResource
+				d, err := s.detachIfChanged(ctx, m.ShortName, k, value)
+				if err != nil {
+					return nil, err
+				}
+				detached = append(detached, d...)
 			}
 			payload, err := computed.NewPayload(tmpl, values, secret, nil)
 			if err != nil {
@@ -103,9 +114,18 @@ func (s *Service) Import(ctx context.Context, in ImportInput) (*ImportResult, er
 			continue
 		default:
 			// A plain key keeps its resource; a new key gets one.
-			ref := &core.GSMRef{SecretResource: s.gsmResource(m.ShortName, name)}
+			ref := &core.GSMRef{}
 			if k.GSM != nil {
 				ref.SecretResource = k.GSM.SecretResource
+			} else if ref.SecretResource, err = s.newResource(m.ShortName, name); err != nil {
+				return nil, err
+			}
+			if !isNew {
+				d, err := s.detachIfChanged(ctx, m.ShortName, k, value)
+				if err != nil {
+					return nil, err
+				}
+				detached = append(detached, d...)
 			}
 			k.Source = core.SourceConfig{Kind: "gsm"}
 			k.Computed = nil
@@ -127,7 +147,44 @@ func (s *Service) Import(ctx context.Context, in ImportInput) (*ImportResult, er
 	if err != nil {
 		return nil, err
 	}
+	res.Detached = detached
 	return res, nil
+}
+
+// detachIfChanged ends a key's copy provenance unless its pinned GSM
+// version already renders to value, which import is about to store as the
+// key's new version. A copy whose stored value import really changes (the
+// cluster was edited by hand) stops being a copy; one that still holds the
+// copied value keeps its provenance. Only keys import rewrites get here,
+// never ones it skips.
+func (s *Service) detachIfChanged(ctx context.Context, shortName string, k *core.KeyMetadata, value []byte) ([]CopyRef, error) {
+	ref := k.ActiveRef()
+	if k.CopiedFrom == nil || ref == nil {
+		return nil, nil
+	}
+	if s.Store == nil {
+		return nil, errors.New("GSM access is required")
+	}
+	data, err := s.Store.AccessVersion(ctx, ref.SecretResource, ref.Version)
+	if err != nil {
+		return nil, fmt.Errorf("read %s/%s (GSM version %s): %w", shortName, k.KeyName, ref.Version, err)
+	}
+	held := bytes.Equal(data, value)
+	if k.Source.Kind == "computed" {
+		p, err := computed.ParsePayload(data)
+		if err != nil {
+			return nil, fmt.Errorf("payload of %s/%s: %w", shortName, k.KeyName, err)
+		}
+		out, err := p.Compute()
+		if err != nil {
+			return nil, fmt.Errorf("payload of %s/%s: %w", shortName, k.KeyName, err)
+		}
+		held = out == string(value)
+	}
+	if held {
+		return nil, nil
+	}
+	return detach(shortName, k), nil
 }
 
 // metadataForManifest builds fresh metadata for a discovered manifest whose

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -63,7 +64,7 @@ func TestKeyAdd_InteractiveWalksEveryInput(t *testing.T) {
 	for _, a := range ta.Prompter.Asked {
 		flags = append(flags, a.Flag)
 	}
-	if strings.Join(flags, " ") != "<secret> <key> --namespace confirm --scope --rotation --from-file or --generate" {
+	if strings.Join(flags, " ") != "<secret> <key> --namespace confirm --scope --rotation --from-file, --generate or --from-key" {
 		t.Errorf("asked: %v", flags)
 	}
 	value, _ := ta.Store.AccessVersion(t.Context(), "projects/waxseal-test-project/secrets/web-password", "1")
@@ -146,7 +147,7 @@ func TestKeySet(t *testing.T) {
 
 	// Bug 5: --yes never stands in for a value.
 	_, errw, code = ta.run("key", "set", "my-app-secrets", "database_username", "--yes", "--no-input")
-	if code != ExitUsage || !strings.Contains(errw, "--from-file or --generate") {
+	if code != ExitUsage || !strings.Contains(errw, "--from-file, --generate or --from-key") {
 		t.Errorf("--yes without a value: exit %d\n%s", code, errw)
 	}
 }
@@ -326,6 +327,7 @@ func TestRemindersCommands(t *testing.T) {
 func TestDryRunJSONGolden(t *testing.T) {
 	cases := [][]string{
 		{"key", "add", "web", "password", "--namespace", "frontend", "--rotation", "external", "--from-file", "-"},
+		{"key", "add", "ghcr", ".dockerconfigjson", "--namespace", "support-cannon", "--from-key", "docker-registry/.dockerconfigjson"},
 		{"key", "set", "my-app-secrets", "database_password", "--generate"},
 		{"rotate", "my-app-secrets"},
 		{"reseal", "my-app-secrets", "--skip-cert-check"},
@@ -342,6 +344,9 @@ func TestDryRunJSONGolden(t *testing.T) {
 		name := args[0]
 		if len(args) > 1 && !strings.HasPrefix(args[1], "-") {
 			name += "_" + args[1]
+		}
+		if slices.Contains(args, "--from-key") {
+			name += "_from-key"
 		}
 		t.Run(name, func(t *testing.T) {
 			ta := newTestApp(t, false)
