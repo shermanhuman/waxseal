@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -594,5 +595,40 @@ func TestSetKeyValue_FromKeyRefusesCycles(t *testing.T) {
 	// The acyclic direction is fine: c re-copies from api_key.
 	if _, err := s.SetKeyValue(ctx, SetKeyValueInput{ShortName: "my-app-secrets", Key: "c", CopyFrom: ref("my-app-secrets", "api_key")}); err != nil {
 		t.Errorf("acyclic re-point: %v", err)
+	}
+}
+
+func TestNewResource_GuardsImportAndUnreadableMetadata(t *testing.T) {
+	s, ctx := copyFixture(t)
+	if _, err := s.AddKey(ctx, AddKeyInput{ShortName: "my-app", Key: KeySpec{Name: "secrets-zzz", Value: []byte("v")}, New: &NewSecret{Namespace: "n"}}); err != nil {
+		t.Fatal(err)
+	}
+	before := s.Store.(*store.FakeStore).Resources()
+
+	// import: a new cluster key zzz in my-app-secrets maps to my-app-secrets-zzz too.
+	s.Cluster = clusterMatching(t, s)
+	s.Cluster.(*fakeCluster).secrets["my-app/my-app-secrets"]["zzz"] = []byte("x")
+	if _, err := s.Import(ctx, ImportInput{ShortName: "my-app-secrets"}); err == nil || !strings.Contains(err.Error(), "which my-app/secrets-zzz already uses") {
+		t.Errorf("import: got %v", err)
+	}
+
+	// A retired owner says so.
+	if _, err := s.Retire(RetireInput{ShortName: "my-app"}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := s.AddKey(ctx, AddKeyInput{ShortName: "my-app-secrets", Key: KeySpec{Name: "zzz", Value: []byte("v")}})
+	if err == nil || !strings.Contains(err.Error(), "which my-app/secrets-zzz (retired) already uses") {
+		t.Errorf("retired owner: got %v", err)
+	}
+
+	// An unreadable metadata file is an error, not a pass.
+	if err := os.WriteFile(s.Repo.MetadataPath("my-app"), []byte("not: [valid"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddKey(ctx, AddKeyInput{ShortName: "my-app-secrets", Key: KeySpec{Name: "zzz", Value: []byte("v")}}); err == nil || !strings.Contains(err.Error(), "cannot check that") {
+		t.Errorf("unreadable metadata: got %v", err)
+	}
+	if got := s.Store.(*store.FakeStore).Resources(); !reflect.DeepEqual(got, before) {
+		t.Errorf("a refused add or import wrote to GSM: %v", got)
 	}
 }

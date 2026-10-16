@@ -164,18 +164,30 @@ func (c *copySource) valueFor(target *core.KeyMetadata, targetName string) ([]by
 	return []byte(p.Secret), nil
 }
 
-// resourceOwner names the registered key, of any status, whose value lives
-// in the GSM secret resource, or "" when none does.
-func (s *Service) resourceOwner(resource string) string {
-	secrets, _ := s.Repo.AllMetadata()
+// newResource names the GSM secret for a new key and makes sure no
+// registered key, of any status, already keeps its value there. Names map
+// to <short>-<key>, so a-b/c and a/b-c collide; adding a version to another
+// key's secret would silently share it. An unreadable metadata file is an
+// error: the check must not pass because it could not look.
+func (s *Service) newResource(shortName, keyName string) (string, error) {
+	resource := s.gsmResource(shortName, keyName)
+	secrets, errs := s.Repo.AllMetadata()
 	for _, m := range secrets {
 		for i := range m.Keys {
 			if ref := m.Keys[i].ActiveRef(); ref != nil && ref.SecretResource == resource {
-				return m.ShortName + "/" + m.Keys[i].KeyName
+				owner := m.ShortName + "/" + m.Keys[i].KeyName
+				if m.IsRetired() {
+					owner += " (retired)"
+				}
+				return "", core.NewValidationError("<key>", fmt.Sprintf(
+					"%s/%s would be stored in %s, which %s already uses; choose another key or secret name", shortName, keyName, resource, owner))
 			}
 		}
 	}
-	return ""
+	if len(errs) > 0 {
+		return "", fmt.Errorf("cannot check that %s is unused: %w", resource, errors.Join(errs...))
+	}
+	return resource, nil
 }
 
 // copiedFromChain reports whether from is target, or was copied (directly

@@ -80,8 +80,12 @@ func (s *Service) Import(ctx context.Context, in ImportInput) (*ImportResult, er
 		case isNew && isConn, k.Source.Kind == "computed" && isConn && k.Computed != nil && k.Computed.GSM != nil:
 			// A new connection string becomes a computed key; an existing
 			// computed key gets a new payload version on its own resource.
-			ref := &core.GSMRef{SecretResource: s.gsmResource(m.ShortName, name)}
-			if !isNew {
+			ref := &core.GSMRef{}
+			if isNew {
+				if ref.SecretResource, err = s.newResource(m.ShortName, name); err != nil {
+					return nil, err
+				}
+			} else {
 				ref.SecretResource = k.Computed.GSM.SecretResource
 				d, err := s.detachIfChanged(ctx, m.ShortName, k, value)
 				if err != nil {
@@ -110,9 +114,11 @@ func (s *Service) Import(ctx context.Context, in ImportInput) (*ImportResult, er
 			continue
 		default:
 			// A plain key keeps its resource; a new key gets one.
-			ref := &core.GSMRef{SecretResource: s.gsmResource(m.ShortName, name)}
+			ref := &core.GSMRef{}
 			if k.GSM != nil {
 				ref.SecretResource = k.GSM.SecretResource
+			} else if ref.SecretResource, err = s.newResource(m.ShortName, name); err != nil {
+				return nil, err
 			}
 			if !isNew {
 				d, err := s.detachIfChanged(ctx, m.ShortName, k, value)

@@ -183,12 +183,9 @@ func (s *Service) AddKey(ctx context.Context, in AddKeyInput) (*MutationResult, 
 	if m.Key(in.Key.Name) != nil {
 		return nil, fmt.Errorf("%s/%s: %w", m.ShortName, in.Key.Name, ErrKeyExists)
 	}
-	resource := s.gsmResource(m.ShortName, in.Key.Name)
-	if owner := s.resourceOwner(resource); owner != "" {
-		// Names map to <short>-<key>, so a-b/c and a/b-c collide; adding a
-		// version to someone else's secret would silently share it.
-		return nil, core.NewValidationError("<key>", fmt.Sprintf(
-			"%s/%s would be stored in %s, which %s already uses; choose another key or secret name", m.ShortName, in.Key.Name, resource, owner))
+	resource, err := s.newResource(m.ShortName, in.Key.Name)
+	if err != nil {
+		return nil, err
 	}
 	var meta core.KeyMetadata
 	var write keyWrite
