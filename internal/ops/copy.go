@@ -66,8 +66,9 @@ func (c *copySource) computed() bool { return c.key.Source.Kind == "computed" }
 
 // newKey builds a key named spec.Name that carries the source key's
 // definition (kind, template, rotation, expiry, operator hints) and its
-// stored bytes verbatim, under the target's own GSM resource. spec.Mode and
-// spec.ExpiresAt override the inherited values.
+// stored bytes verbatim (minus the payload's generator when the copy is not
+// generated), under the target's own GSM resource. spec.Mode, spec.ExpiresAt
+// and spec.ClearExpiry override the inherited values.
 func (c *copySource) newKey(spec KeySpec, target, resource string) (core.KeyMetadata, keyWrite, error) {
 	src := c.key
 	meta := core.KeyMetadata{

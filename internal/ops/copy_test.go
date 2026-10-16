@@ -530,3 +530,31 @@ func TestImport_SkippedComputedCopyKeepsProvenanceAndReadErrorsSurface(t *testin
 		t.Errorf("got %v", err)
 	}
 }
+
+func TestImport_ComputedConnectionStringCopy(t *testing.T) {
+	s, ctx := copyFixture(t)
+	const tmpl = "postgresql://app:{{secret}}@{{host}}:5432/app"
+	if _, err := s.AddKey(ctx, AddKeyInput{ShortName: "my-app-secrets", Key: KeySpec{Name: "DB_URL", Value: []byte("pw1"),
+		Template: &TemplateSpec{Template: tmpl, Values: map[string]string{"host": "db"}}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddKey(ctx, AddKeyInput{ShortName: "o", Key: KeySpec{Name: "DB_URL", CopyFrom: ref("my-app-secrets", "DB_URL")}, New: &NewSecret{Namespace: "o"}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		cluster  string
+		detached int
+	}{
+		{"postgresql://app:pw1@db:5432/app", 0}, // still the copied value
+		{"postgresql://app:edited@db:5432/app", 1},
+	} {
+		s.Cluster = &fakeCluster{secrets: map[string]map[string][]byte{"o/o": {"DB_URL": []byte(tc.cluster)}}}
+		res, err := s.Import(ctx, ImportInput{ShortName: "o", DryRun: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res.Detached) != tc.detached {
+			t.Errorf("%s: detached %+v", tc.cluster, res.Detached)
+		}
+	}
+}

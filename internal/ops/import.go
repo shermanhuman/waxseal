@@ -146,10 +146,11 @@ func (s *Service) Import(ctx context.Context, in ImportInput) (*ImportResult, er
 }
 
 // detachIfChanged ends a key's copy provenance unless its pinned GSM
-// version already renders to // value, which import is about to store as its new version. A copy whose
-// stored value import really changes (the cluster was edited by hand) stops
-// being a copy; one that still holds the copied value keeps its provenance.
-// Only keys import rewrites get here, never ones it skips.
+// version already renders to value, which import is about to store as the
+// key's new version. A copy whose stored value import really changes (the
+// cluster was edited by hand) stops being a copy; one that still holds the
+// copied value keeps its provenance. Only keys import rewrites get here,
+// never ones it skips.
 func (s *Service) detachIfChanged(ctx context.Context, shortName string, k *core.KeyMetadata, value []byte) ([]CopyRef, error) {
 	ref := k.ActiveRef()
 	if k.CopiedFrom == nil || ref == nil {
