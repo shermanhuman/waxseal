@@ -162,10 +162,11 @@ func keySpec(cmd *cobra.Command, io *IO, app *App, value *valueFlags, kc *keyCon
 			return spec, core.NewValidationError("--from-key", "cannot be combined with --generator or --bytes; a copied key keeps its source's generator (change it afterwards with `key edit`)")
 		}
 		spec.CopyFrom, spec.Mode = from, kc.rotation
-		if kc.expires != "" {
+		if cmd.Flags().Changed("expires") {
 			if spec.ExpiresAt, err = parseExpiry(kc.expires); err != nil {
 				return spec, err
 			}
+			spec.ClearExpiry = spec.ExpiresAt == ""
 		}
 		return spec, nil
 	}
@@ -196,7 +197,7 @@ func keySpec(cmd *cobra.Command, io *IO, app *App, value *valueFlags, kc *keyCon
 			value.generate = true
 		}
 	}
-	v, _, err := value.resolve(io, app.Stdin, spec.Generator, ui.Spec{Flag: valueFlagNames, Title: "Value for " + keyName})
+	v, _, err := value.resolve(io, app.Stdin, spec.Generator, ui.Spec{Flag: ops.ValueFlagNames, Title: "Value for " + keyName})
 	if err != nil {
 		return spec, err
 	}
@@ -211,6 +212,13 @@ func keySpec(cmd *cobra.Command, io *IO, app *App, value *valueFlags, kc *keyCon
 		spec.ExpiresAt = exp
 	}
 	return spec, nil
+}
+
+func viewKeys(v *ops.SecretView) []ops.KeyView {
+	if v == nil {
+		return nil
+	}
+	return v.Keys
 }
 
 func orDefault(v, def string, useDefault bool) string {
@@ -266,7 +274,7 @@ re-copies each.`,
 			if key.Generator != "" {
 				gen = &core.GeneratorConfig{Kind: key.Generator}
 			}
-			v, gen, err := value.resolve(io, app.Stdin, gen, ui.Spec{Flag: valueFlagNames, Title: "New value for " + keyName})
+			v, gen, err := value.resolve(io, app.Stdin, gen, ui.Spec{Flag: ops.ValueFlagNames, Title: "New value for " + keyName})
 			if err != nil {
 				return nil, err
 			}
@@ -281,11 +289,13 @@ re-copies each.`,
 		// takes its source's expiry when the source has one.
 		needExpiry := key.ExpiresAt != "" || cmd.Flags().Changed("expires")
 		if in.CopyFrom != nil && !cmd.Flags().Changed("expires") {
-			if src, err := svc.Show(in.CopyFrom.ShortName); err == nil {
-				for _, k := range src.Keys {
-					if k.Name == in.CopyFrom.KeyName && k.ExpiresAt != "" {
-						needExpiry = false
-					}
+			// When the source can't be read, ops reports why; don't ask
+			// for an expiry first.
+			src, err := svc.Show(in.CopyFrom.ShortName)
+			needExpiry = err == nil && needExpiry
+			for _, k := range viewKeys(src) {
+				if k.Name == in.CopyFrom.KeyName && k.ExpiresAt != "" {
+					needExpiry = false
 				}
 			}
 		}

@@ -90,7 +90,19 @@ func (c *copySource) newKey(spec KeySpec, resource string) (core.KeyMetadata, ke
 		}
 		meta.Rotation.Mode = spec.Mode
 	}
+	if meta.Rotation != nil {
+		switch {
+		case meta.Rotation.Mode != core.RotationGenerated:
+			// As in build: a generator is recorded only for a generated key.
+			meta.Rotation.Generator = nil
+		case meta.Rotation.Generator == nil:
+			return core.KeyMetadata{}, keyWrite{}, core.NewValidationError("--rotation", fmt.Sprintf(
+				"%s/%s has no generator; copy it first, then run `waxseal key edit <secret> %s --rotation generated --generator <kind>`",
+				c.secret.ShortName, src.KeyName, spec.Name))
+		}
+	}
 	switch {
+	case spec.ClearExpiry:
 	case spec.ExpiresAt != "":
 		meta.Expiry = &core.ExpiryConfig{ExpiresAt: spec.ExpiresAt}
 	case src.Expiry != nil:

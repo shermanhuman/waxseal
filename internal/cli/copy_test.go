@@ -162,3 +162,21 @@ func TestRotate_NextListsEachCopy(t *testing.T) {
 		t.Errorf("exit %d\n%s%s", code, out, errw)
 	}
 }
+
+func TestFromKey_ExpiryFlags(t *testing.T) {
+	ta := newTestApp(t, false)
+	ta.seedStore(t)
+	// --expires none on a copy drops the inherited expiry.
+	if _, errw, code := ta.run("--no-input", "key", "add", "o", "API", "--from-key", "my-app-secrets/api_key", "--namespace", "o", "--expires", "none"); code != 0 {
+		t.Fatalf("exit %d\n%s", code, errw)
+	}
+	m, _ := ta.Repo().Metadata("o")
+	if m.Key("API").Expiry != nil {
+		t.Errorf("expiry = %+v", m.Key("API").Expiry)
+	}
+	// An unregistered source is reported as such, not as a missing --expires.
+	_, errw, code := ta.run("--no-input", "key", "set", "my-app-secrets", "api_key", "--from-key", "nope/x")
+	if code == 0 || !strings.Contains(errw, "not registered") {
+		t.Errorf("exit %d\n%s", code, errw)
+	}
+}

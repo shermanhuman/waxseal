@@ -26,9 +26,6 @@ type valueFlags struct {
 	fromKey  string
 }
 
-// valueFlagNames names the value flags in errors and prompts.
-const valueFlagNames = "--from-file, --generate or --from-key"
-
 func (v *valueFlags) register(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&v.fromFile, "from-file", "", "read the value from a file, or from stdin with -")
 	cmd.Flags().BoolVar(&v.generate, "generate", false, "generate a random value")

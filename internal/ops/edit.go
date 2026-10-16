@@ -130,5 +130,12 @@ func (s *Service) UpdateComputed(ctx context.Context, in UpdateComputedInput) (*
 	}
 	k.Computed.Template = p.Template
 	write := keyWrite{name: k.KeyName, ref: k.Computed.GSM, gsm: data, seal: []byte(p.Computed)}
-	return s.apply(ctx, m, []keyWrite{write}, false, in.DryRun)
+	res, err := s.apply(ctx, m, []keyWrite{write}, false, in.DryRun)
+	if err != nil {
+		return nil, err
+	}
+	// The payload has a new version, so copies are behind it; re-copying
+	// realigns them (their {{secret}} is unchanged).
+	res.Copies = s.copiesOf(m.ShortName, k.KeyName)
+	return res, nil
 }

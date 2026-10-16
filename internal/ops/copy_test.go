@@ -391,3 +391,87 @@ func assertNoSentinel(t *testing.T, v any) {
 		t.Errorf("result leaks the value: %s", b)
 	}
 }
+
+func TestAddKey_CopyRotationOverrides(t *testing.T) {
+	s, ctx := copyFixture(t)
+	// generated → static drops the generator, as build does.
+	if _, err := s.AddKey(ctx, AddKeyInput{ShortName: "o", Key: KeySpec{Name: "PW", CopyFrom: ref("my-app-secrets", "database_password"), Mode: core.RotationStatic},
+		New: &NewSecret{Namespace: "o"}}); err != nil {
+		t.Fatal(err)
+	}
+	m, _ := s.Repo.Metadata("o")
+	if r := m.Key("PW").Rotation; r.Mode != core.RotationStatic || r.Generator != nil {
+		t.Errorf("rotation = %+v", r)
+	}
+	// external → generated has no generator to rotate with: refused, naming --rotation.
+	_, err := s.AddKey(ctx, AddKeyInput{ShortName: "o", Key: KeySpec{Name: "K", CopyFrom: ref("tls-cert", "tls.key"), Mode: core.RotationGenerated}})
+	if err == nil || !strings.Contains(err.Error(), "--rotation") || !strings.Contains(err.Error(), "key edit") {
+		t.Errorf("got %v", err)
+	}
+	// --expires none clears the inherited expiry.
+	if _, err := s.AddKey(ctx, AddKeyInput{ShortName: "o", Key: KeySpec{Name: "API", CopyFrom: ref("my-app-secrets", "api_key"), ClearExpiry: true}}); err != nil {
+		t.Fatal(err)
+	}
+	m, _ = s.Repo.Metadata("o")
+	if m.Key("API").Expiry != nil {
+		t.Errorf("expiry = %+v, want none", m.Key("API").Expiry)
+	}
+}
+
+func TestRotate_DryRunDoesNotListACopyItDetaches(t *testing.T) {
+	s, ctx := copyFixture(t)
+	if _, err := s.AddKey(ctx, AddKeyInput{ShortName: "my-app-secrets", Key: KeySpec{Name: "pw_copy", CopyFrom: ref("my-app-secrets", "database_password")}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, dry := range []bool{true, false} {
+		res, err := s.Rotate(ctx, RotateInput{ShortName: "my-app-secrets", DryRun: dry})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res.Copies) != 0 || len(res.Detached) != 1 {
+			t.Errorf("dry=%v: copies %+v detached %+v", dry, res.Copies, res.Detached)
+		}
+	}
+}
+
+func TestUpdateComputed_ListsCopies(t *testing.T) {
+	s, ctx := copyFixture(t)
+	if _, err := s.AddKey(ctx, AddKeyInput{ShortName: "my-app-secrets", Key: KeySpec{Name: "conn", Value: []byte("pw"),
+		Template: &TemplateSpec{Template: "redis://:{{secret}}@{{host}}", Values: map[string]string{"host": "a"}}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddKey(ctx, AddKeyInput{ShortName: "o", Key: KeySpec{Name: "conn", CopyFrom: ref("my-app-secrets", "conn")}, New: &NewSecret{Namespace: "o"}}); err != nil {
+		t.Fatal(err)
+	}
+	res, err := s.UpdateComputed(ctx, UpdateComputedInput{ShortName: "my-app-secrets", Key: "conn", Values: map[string]string{"host": "b"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Copies) != 1 || res.Copies[0].Target.ShortName != "o" {
+		t.Errorf("copies = %+v", res.Copies)
+	}
+}
+
+func TestImport_KeepsACopyHoldingTheSameValueAndDetachesAChangedOne(t *testing.T) {
+	s, ctx := copyFixture(t)
+	for _, k := range []string{"tls.crt", "tls.key"} {
+		if _, err := s.AddKey(ctx, AddKeyInput{ShortName: "o", Key: KeySpec{Name: k, CopyFrom: ref("tls-cert", k)}, New: &NewSecret{Namespace: "o"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.Cluster = &fakeCluster{secrets: map[string]map[string][]byte{"o/o": {
+		"tls.crt": []byte("value-of-tls.crt"), // what was copied
+		"tls.key": []byte("edited by hand"),
+	}}}
+	res, err := s.Import(ctx, ImportInput{ShortName: "o"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Detached) != 1 || res.Detached[0].Target.KeyName != "tls.key" {
+		t.Errorf("detached = %+v", res.Detached)
+	}
+	m, _ := s.Repo.Metadata("o")
+	if m.Key("tls.crt").CopiedFrom == nil || m.Key("tls.key").CopiedFrom != nil {
+		t.Errorf("crt %+v key %+v", m.Key("tls.crt").CopiedFrom, m.Key("tls.key").CopiedFrom)
+	}
+}

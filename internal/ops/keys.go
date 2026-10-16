@@ -26,6 +26,8 @@ type KeySpec struct {
 	// not recorded.
 	Mode      string
 	ExpiresAt string // RFC3339, optional
+	// ClearExpiry drops an expiry a copy would inherit (--expires none).
+	ClearExpiry bool
 }
 
 // TemplateSpec describes a computed key's template and its non-secret values.
@@ -44,7 +46,7 @@ func (k KeySpec) build(resource string) (core.KeyMetadata, keyWrite, error) {
 		return core.KeyMetadata{}, keyWrite{}, errors.New("a copied key is built from its source, not by build")
 	}
 	if k.Value == nil && k.Generator == nil {
-		return core.KeyMetadata{}, keyWrite{}, &core.MissingInputError{Field: valueFlagNames}
+		return core.KeyMetadata{}, keyWrite{}, &core.MissingInputError{Field: ValueFlagNames}
 	}
 	// A Value given with a Generator is the first value; the generator is
 	// kept for future rotations.
@@ -99,8 +101,9 @@ func (k KeySpec) build(resource string) (core.KeyMetadata, keyWrite, error) {
 	return meta, keyWrite{name: k.Name, ref: ref, gsm: data, seal: []byte(payload.Computed)}, nil
 }
 
-// valueFlagNames names the inputs that can supply a key's value.
-const valueFlagNames = "--from-file, --generate or --from-key"
+// ValueFlagNames names the inputs that can supply a key's value, for
+// errors and prompts.
+const ValueFlagNames = "--from-file, --generate or --from-key"
 
 func btoi(b bool) int {
 	if b {
@@ -140,7 +143,7 @@ func (s *Service) AddKey(ctx context.Context, in AddKeyInput) (*MutationResult, 
 	var src *copySource
 	if in.Key.CopyFrom != nil {
 		if in.Key.Value != nil || in.Key.Generator != nil {
-			return nil, core.NewValidationError("value", "give exactly one of "+valueFlagNames)
+			return nil, core.NewValidationError("value", "give exactly one of "+ValueFlagNames)
 		}
 		if in.Key.Template != nil {
 			return nil, core.NewValidationError("--from-key", "a copied key keeps its source's template; change it afterwards with `key edit`")
@@ -222,7 +225,7 @@ func (s *Service) SetKeyValue(ctx context.Context, in SetKeyValueInput) (*Mutati
 		return nil, err
 	}
 	if btoi(len(in.Value) > 0)+btoi(in.Generate)+btoi(in.CopyFrom != nil) > 1 {
-		return nil, core.NewValidationError("value", "give exactly one of "+valueFlagNames)
+		return nil, core.NewValidationError("value", "give exactly one of "+ValueFlagNames)
 	}
 	var src *copySource
 	if in.CopyFrom != nil {
@@ -245,7 +248,7 @@ func (s *Service) SetKeyValue(ctx context.Context, in SetKeyValueInput) (*Mutati
 		}
 	}
 	if len(in.Value) == 0 {
-		return nil, &core.MissingInputError{Field: valueFlagNames}
+		return nil, &core.MissingInputError{Field: ValueFlagNames}
 	}
 	write, err := s.valueWrite(ctx, k, in.Value)
 	if err != nil {

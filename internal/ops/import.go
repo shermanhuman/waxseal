@@ -1,6 +1,7 @@
 package ops
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -64,6 +65,7 @@ func (s *Service) Import(ctx context.Context, in ImportInput) (*ImportResult, er
 	slices.Sort(names)
 
 	var writes []keyWrite
+	var detached []CopyRef
 	for _, name := range names {
 		value := data[name]
 		k := m.Key(name)
@@ -71,6 +73,9 @@ func (s *Service) Import(ctx context.Context, in ImportInput) (*ImportResult, er
 		if isNew {
 			m.Keys = append(m.Keys, core.KeyMetadata{KeyName: name, Rotation: &core.RotationConfig{Mode: core.RotationExternal}})
 			k = &m.Keys[len(m.Keys)-1]
+		}
+		if !isNew && k.CopiedFrom != nil && !s.holds(ctx, k, value) {
+			detached = append(detached, detach(m.ShortName, k)...)
 		}
 		tmpl, values, secret, isConn := computed.DetectConnectionString(string(value))
 
@@ -127,7 +132,31 @@ func (s *Service) Import(ctx context.Context, in ImportInput) (*ImportResult, er
 	if err != nil {
 		return nil, err
 	}
+	res.Detached = detached
 	return res, nil
+}
+
+// holds reports whether a key's pinned GSM version already renders to
+// value. Import uses it to keep a copy's provenance when the cluster holds
+// the copied value, and to end it when the cluster was changed by hand.
+func (s *Service) holds(ctx context.Context, k *core.KeyMetadata, value []byte) bool {
+	ref := k.ActiveRef()
+	if ref == nil || s.Store == nil {
+		return false
+	}
+	data, err := s.Store.AccessVersion(ctx, ref.SecretResource, ref.Version)
+	if err != nil {
+		return false
+	}
+	if k.Source.Kind != "computed" {
+		return bytes.Equal(data, value)
+	}
+	p, err := computed.ParsePayload(data)
+	if err != nil {
+		return false
+	}
+	out, err := p.Compute()
+	return err == nil && out == string(value)
 }
 
 // metadataForManifest builds fresh metadata for a discovered manifest whose

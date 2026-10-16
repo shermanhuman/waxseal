@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/shermanhuman/waxseal/internal/core"
 )
@@ -83,7 +84,13 @@ func (s *Service) Rotate(ctx context.Context, in RotateInput) (*RotateResult, er
 	}
 	res.Detached = detached
 	for _, name := range res.Rotated {
-		res.Copies = append(res.Copies, s.copiesOf(m.ShortName, name)...)
+		for _, c := range s.copiesOf(m.ShortName, name) {
+			// In a dry run the repo still records a copy this rotation
+			// detaches; it is not a copy any more.
+			if !slices.ContainsFunc(detached, func(d CopyRef) bool { return d.Target == c.Target }) {
+				res.Copies = append(res.Copies, c)
+			}
+		}
 	}
 	return res, nil
 }
