@@ -183,15 +183,22 @@ func (s *Service) AddKey(ctx context.Context, in AddKeyInput) (*MutationResult, 
 	if m.Key(in.Key.Name) != nil {
 		return nil, fmt.Errorf("%s/%s: %w", m.ShortName, in.Key.Name, ErrKeyExists)
 	}
+	resource := s.gsmResource(m.ShortName, in.Key.Name)
+	if owner := s.resourceOwner(resource); owner != "" {
+		// Names map to <short>-<key>, so a-b/c and a/b-c collide; adding a
+		// version to someone else's secret would silently share it.
+		return nil, core.NewValidationError("<key>", fmt.Sprintf(
+			"%s/%s would be stored in %s, which %s already uses; choose another key or secret name", m.ShortName, in.Key.Name, resource, owner))
+	}
 	var meta core.KeyMetadata
 	var write keyWrite
 	if src != nil {
 		if in.Key.Name == "" {
 			return nil, &core.MissingInputError{Field: "<key>"}
 		}
-		meta, write, err = src.newKey(in.Key, m.ShortName, s.gsmResource(m.ShortName, in.Key.Name))
+		meta, write, err = src.newKey(in.Key, m.ShortName, resource)
 	} else {
-		meta, write, err = in.Key.build(s.gsmResource(m.ShortName, in.Key.Name))
+		meta, write, err = in.Key.build(resource)
 	}
 	if err != nil {
 		return nil, err
@@ -229,8 +236,10 @@ func (s *Service) SetKeyValue(ctx context.Context, in SetKeyValueInput) (*Mutati
 	}
 	var src *copySource
 	if in.CopyFrom != nil {
-		if in.CopyFrom.ShortName == m.ShortName && in.CopyFrom.KeyName == k.KeyName {
-			return nil, core.NewValidationError("--from-key", "a key cannot be copied from itself")
+		if s.copiedFromChain(*in.CopyFrom, core.KeyRef{ShortName: m.ShortName, KeyName: k.KeyName}) {
+			return nil, core.NewValidationError("--from-key", fmt.Sprintf(
+				"%s/%s is %s/%s or was copied from it; copying it back would make copies that are never in sync",
+				in.CopyFrom.ShortName, in.CopyFrom.KeyName, m.ShortName, k.KeyName))
 		}
 		if src, err = s.copySource(ctx, *in.CopyFrom); err != nil {
 			return nil, err

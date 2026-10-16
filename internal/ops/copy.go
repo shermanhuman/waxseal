@@ -164,6 +164,43 @@ func (c *copySource) valueFor(target *core.KeyMetadata, targetName string) ([]by
 	return []byte(p.Secret), nil
 }
 
+// resourceOwner names the registered key, of any status, whose value lives
+// in the GSM secret resource, or "" when none does.
+func (s *Service) resourceOwner(resource string) string {
+	secrets, _ := s.Repo.AllMetadata()
+	for _, m := range secrets {
+		for i := range m.Keys {
+			if ref := m.Keys[i].ActiveRef(); ref != nil && ref.SecretResource == resource {
+				return m.ShortName + "/" + m.Keys[i].KeyName
+			}
+		}
+	}
+	return ""
+}
+
+// copiedFromChain reports whether from is target, or was copied (directly
+// or through other copies) from target. Copying from such a key back into
+// target would make a loop whose members are never all in sync.
+func (s *Service) copiedFromChain(from, target core.KeyRef) bool {
+	seen := map[core.KeyRef]bool{}
+	for ref := from; !seen[ref]; {
+		if ref == target {
+			return true
+		}
+		seen[ref] = true
+		m, err := s.Repo.Metadata(ref.ShortName)
+		if err != nil {
+			return false
+		}
+		k := m.Key(ref.KeyName)
+		if k == nil || k.CopiedFrom == nil {
+			return false
+		}
+		ref = core.KeyRef{ShortName: k.CopiedFrom.ShortName, KeyName: k.CopiedFrom.KeyName}
+	}
+	return false
+}
+
 // copiesOf lists the active keys recorded as copies of shortName/keyName.
 func (s *Service) copiesOf(shortName, keyName string) []CopyRef {
 	secrets, _ := s.Repo.AllMetadata()

@@ -173,9 +173,11 @@ waxseal key add my-app ENCRYPTION_KEYS --template 'v1:{{secret}}' \
 
 Give a keyring `--rotation static`. `rotate` replaces `{{secret}}`, so on
 a keyring it would drop `v1` and make data encrypted with it unreadable.
-A keyring rotates by adding `v2` in front of `v1`; set that value with
-`key set --from-file -`. With a mode other than `generated`, `--generate`
-makes the first value only, and no generator is recorded.
+waxseal cannot rotate a keyring yet
+([#5](https://github.com/shermanhuman/waxseal/issues/5)): a keyring rotates
+by adding `v2` in front of `v1`, and `key set` would put the whole new
+keyring inside the `v1:` template. With a mode other than `generated`,
+`--generate` makes the first value only, and no generator is recorded.
 
 ## Files in the repository
 

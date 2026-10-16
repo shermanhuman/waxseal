@@ -244,7 +244,7 @@ func TestSetKeyValue_FromKey(t *testing.T) {
 		t.Errorf("a detached key is not a copy: %+v", got)
 	}
 
-	if _, err := s.SetKeyValue(ctx, SetKeyValueInput{ShortName: "ghcr", Key: "cfg", CopyFrom: ref("ghcr", "cfg")}); err == nil {
+	if _, err := s.SetKeyValue(ctx, SetKeyValueInput{ShortName: "ghcr", Key: "cfg", CopyFrom: ref("ghcr", "cfg")}); err == nil || !strings.Contains(err.Error(), "never in sync") {
 		t.Error("copying a key from itself must be refused")
 	}
 }
@@ -556,5 +556,43 @@ func TestImport_ComputedConnectionStringCopy(t *testing.T) {
 		if len(res.Detached) != tc.detached {
 			t.Errorf("%s: detached %+v", tc.cluster, res.Detached)
 		}
+	}
+}
+
+func TestAddKey_RefusesAResourceAnotherKeyUses(t *testing.T) {
+	s, ctx := copyFixture(t)
+	if _, err := s.AddKey(ctx, AddKeyInput{ShortName: "a", Key: KeySpec{Name: "b-c", Value: []byte("v")}, New: &NewSecret{Namespace: "n"}}); err != nil {
+		t.Fatal(err)
+	}
+	before := s.Store.(*store.FakeStore).Resources()
+	// a-b/c and a/b-c both map to projects/…/secrets/a-b-c.
+	for _, spec := range []KeySpec{{Name: "c", Value: []byte("v")}, {Name: "c", CopyFrom: ref("a", "b-c")}} {
+		_, err := s.AddKey(ctx, AddKeyInput{ShortName: "a-b", Key: spec, New: &NewSecret{Namespace: "n"}})
+		if err == nil || !strings.Contains(err.Error(), "which a/b-c already uses") {
+			t.Errorf("%+v: got %v", spec, err)
+		}
+	}
+	if got := s.Store.(*store.FakeStore).Resources(); !reflect.DeepEqual(got, before) {
+		t.Errorf("a refused add wrote to GSM: %v", got)
+	}
+}
+
+func TestSetKeyValue_FromKeyRefusesCycles(t *testing.T) {
+	s, ctx := copyFixture(t)
+	for _, step := range [][2]string{{"b", "api_key"}, {"c", "b"}} {
+		if _, err := s.AddKey(ctx, AddKeyInput{ShortName: "my-app-secrets", Key: KeySpec{Name: step[0], CopyFrom: ref("my-app-secrets", step[1])}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// b ← api_key and c ← b: copying b or c back into api_key would loop.
+	for _, from := range []string{"b", "c", "api_key"} {
+		_, err := s.SetKeyValue(ctx, SetKeyValueInput{ShortName: "my-app-secrets", Key: "api_key", CopyFrom: ref("my-app-secrets", from)})
+		if err == nil || !strings.Contains(err.Error(), "never in sync") {
+			t.Errorf("from %s: got %v", from, err)
+		}
+	}
+	// The acyclic direction is fine: c re-copies from api_key.
+	if _, err := s.SetKeyValue(ctx, SetKeyValueInput{ShortName: "my-app-secrets", Key: "c", CopyFrom: ref("my-app-secrets", "api_key")}); err != nil {
+		t.Errorf("acyclic re-point: %v", err)
 	}
 }
