@@ -11,7 +11,7 @@ golangci-lint run ./...                               # lint incl. layering rule
 ./scripts/dod.sh                                      # the grep-based rules
 mkdir -p docs/cli && go run ./cmd/waxseal docs docs/cli   # regenerate the command reference
 go test ./internal/cli -run 'TestHelpGolden|TestDryRunJSONGolden' -update   # accept surface changes (review the diff)
-go test -tags e2e ./tests/e2e/                        # needs a kind cluster with sealed-secrets; see .github/workflows/e2e.yml
+KUBECONFIG="${WAXSEAL_E2E_KUBECONFIG:?dedicated kubeconfig required}" go test -tags e2e ./tests/e2e/ # isolated kind; see README, Preparing a release
 ```
 
 ## Rules
@@ -37,6 +37,6 @@ go test -tags e2e ./tests/e2e/                        # needs a kind cluster wit
 
 Follow [Preparing a release](README.md#preparing-a-release): bump
 `internal/version/version.go` in the PR and publish only when separately
-authorized. The release helper commits and tags on main; do not run it
-in a PR or to publish a version already bumped by a PR. Breaking CLI
+authorized. Do not run `go run ./scripts/release` in a PR or to publish its
+already-bumped version: it bumps, commits and tags the current checkout. Breaking CLI
 changes bump the minor version while below 1.0.

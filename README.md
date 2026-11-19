@@ -257,21 +257,46 @@ secrets) to add keys, set values and rotate.
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the package layout and the
 rules CI enforces, and [AGENTS.md](AGENTS.md) for the commands.
 
-## License
-
-[MIT](LICENSE)
-
-## Preparing a release
+### Preparing a release
 
 A PR bumps `internal/version/version.go` once. The release helper
-`go run ./scripts/release <major|minor|patch>` commits and tags on main, so it
+`go run ./scripts/release <major|minor|patch>` bumps, commits and tags the current checkout, so it
 must not run inside a PR or after an already-bumped PR to publish that version:
 it would bump again. After merge, a separately authorized publication tags the
 reviewed merge commit with that version; `release.yml` runs E2E before
-GoReleaser. A housekeeping PR does not authorize tagging or publishing.
+GoReleaser. Merging a PR does not itself authorize tagging or publishing.
+
+Only when publication is explicitly requested, substitute the reviewed merge SHA
+and its version in these commands (the `v` prefix triggers the release workflow):
+
+```sh
+git tag -a vX.Y.Z <merge-sha> -m vX.Y.Z
+git push origin vX.Y.Z
+```
 
 E2E runs on main pushes, manual dispatch and release workflow calls, not on
 PR pushes. When a local kind cluster cannot run the suite, the existing
 `e2e.yml` workflow can be dispatched against the feature branch and its run
-linked on the PR. A local kind run needs its own kubeconfig file so it does not
-change the shared current context. See [the E2E workflow](.github/workflows/e2e.yml).
+linked on the PR:
+
+```sh
+mise exec -- gh workflow run e2e.yml --ref <feature-branch>
+```
+
+For local E2E, set an explicit path to a dedicated kubeconfig, verify it is
+nonempty, and use it for cluster creation, controller setup and tests:
+
+```sh
+export WAXSEAL_E2E_KUBECONFIG="$(mktemp -d)/config"
+export KUBECONFIG="${WAXSEAL_E2E_KUBECONFIG:?dedicated kubeconfig required}"
+mise exec -- kind create cluster --config tests/e2e/kind-config.yaml --kubeconfig "$KUBECONFIG"
+# Install the controller and prerequisites as .github/workflows/e2e.yml does,
+# keeping this KUBECONFIG for every kubectl command.
+mise exec -- go test -tags e2e ./tests/e2e/
+```
+
+See [the E2E workflow](.github/workflows/e2e.yml) for the complete setup.
+
+## License
+
+[MIT](LICENSE)
