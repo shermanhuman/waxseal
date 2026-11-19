@@ -260,3 +260,18 @@ rules CI enforces, and [AGENTS.md](AGENTS.md) for the commands.
 ## License
 
 [MIT](LICENSE)
+
+## Preparing a release
+
+A PR bumps `internal/version/version.go` once. The release helper
+`go run ./scripts/release <major|minor|patch>` commits and tags on main, so it
+must not run inside a PR or after an already-bumped PR to publish that version:
+it would bump again. After merge, a separately authorized publication tags the
+reviewed merge commit with that version; `release.yml` runs E2E before
+GoReleaser. A housekeeping PR does not authorize tagging or publishing.
+
+E2E runs on main pushes, manual dispatch and release workflow calls, not on
+PR pushes. When a local kind cluster cannot run the suite, the existing
+`e2e.yml` workflow can be dispatched against the feature branch and its run
+linked on the PR. A local kind run needs its own kubeconfig file so it does not
+change the shared current context. See [the E2E workflow](.github/workflows/e2e.yml).

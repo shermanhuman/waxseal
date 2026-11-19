@@ -35,6 +35,8 @@ go test -tags e2e ./tests/e2e/                        # needs a kind cluster wit
 
 ## Releases
 
-Versions are tagged with `go run ./scripts/release <major|minor|patch>`;
-the tag triggers goreleaser after the e2e workflow passes. Breaking CLI
+Follow [Preparing a release](README.md#preparing-a-release): bump
+`internal/version/version.go` in the PR and publish only when separately
+authorized. The release helper commits and tags on main; do not run it
+in a PR or to publish a version already bumped by a PR. Breaking CLI
 changes bump the minor version while below 1.0.
