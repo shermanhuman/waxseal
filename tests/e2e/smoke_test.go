@@ -5,9 +5,10 @@
 // kubectl, and a fake Secret Manager. It covers exactly what the unit
 // fakes cannot: that the controller decrypts what waxseal seals.
 //
-// Run: kind create cluster --config tests/e2e/kind-config.yaml, install the
-// controller as .github/workflows/e2e.yml does, then
-// go test -tags e2e ./tests/e2e/
+// Use an isolated kubeconfig as README.md's "Preparing a release" describes:
+// kind create cluster --config tests/e2e/kind-config.yaml --kubeconfig "$WAXSEAL_E2E_KUBECONFIG"
+// Install the controller as .github/workflows/e2e.yml does, using that same
+// KUBECONFIG, then KUBECONFIG="$WAXSEAL_E2E_KUBECONFIG" go test -tags e2e ./tests/e2e/.
 //
 // With WAXSEAL_GSM_E2E=<project>, the real Secret Manager of that project
 // is used instead of the fake; secrets it creates are deleted afterwards.

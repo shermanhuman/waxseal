@@ -3,10 +3,10 @@ package version
 
 import "runtime/debug"
 
-// Build information. Version is bumped by scripts/release; all three can be
+// Build information. Version is bumped in the PR; all three can be
 // overridden at build time via -ldflags "-X".
 var (
-	Version   = "0.6.0"
+	Version   = "0.6.1"
 	Commit    = ""
 	BuildDate = ""
 )
